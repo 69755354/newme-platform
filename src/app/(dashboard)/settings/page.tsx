@@ -16,6 +16,7 @@ import WhatsAppPilot from "./whatsapp-pilot";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface Lead {
@@ -163,7 +164,7 @@ export default function SettingsPage() {
       setLeads((data.leads ?? []) as Lead[]);
       setProfiles((data.profiles ?? []) as Profile[]);
     } catch (e: any) {
-      setError(e.message);
+      onFetchFailure(e, () => setError(e.message));
     }
     setLoading(false);
   }, []);

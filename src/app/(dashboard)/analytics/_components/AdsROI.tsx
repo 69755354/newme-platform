@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface AdsROIData {
@@ -90,6 +91,7 @@ export default function AdsROI() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const res = await fetch("/api/dashboard/ads-roi");
@@ -103,12 +105,15 @@ export default function AdsROI() {
         const json = await res.json();
         setData(json);
       } catch (err: any) {
-        console.error("[analytics] ads roi fetch failed:", err);
-        setError(t("common.loadFailed"));
+        onFetchFailure(err, () => {
+          console.error("[analytics] ads roi fetch failed:", err);
+          setError(t("common.loadFailed"));
+        }, { isActive: () => active });
       } finally {
         setLoading(false);
       }
     })();
+    return () => { active = false; };
   }, []);
 
   if (loading) {

@@ -24,6 +24,7 @@ import { DEVICE_CATALOG, findDevice, QUOTATION_DEFAULTS } from "@/lib/device-cat
 import { calculateQuotation, type CalculateResult } from "@/lib/quotation-engine";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
+import { logFetchFailure } from "@/lib/fetch-interruption";
 
 interface Lead { id: string; customer_name: string | null; phone: string | null; }
 interface Room { id: string; name: string; type: string; floor: number; }
@@ -231,11 +232,11 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
         notes: `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")}: ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.project_management.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select("id, quote_no").single();
-      if (error || !quote?.quote_no) { console.error("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
+      if (error || !quote?.quote_no) { logFetchFailure("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
       // Notify about new quotation
       void import("@/lib/notify")
         .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: s.selectedLeadId, quote_no: quote.quote_no }))
-        .catch((notifyError) => console.error("quote_notification_failed", notifyError));
+        .catch((notifyError) => logFetchFailure("quote_notification_failed", notifyError));
       d({ type: "SQ", id: quote.id }); onSaved?.(); onOpenChange(false);
     } finally { d({ type: "SV", saving: false }); }
   };

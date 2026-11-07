@@ -49,6 +49,7 @@ function fmtAED(v: number | null | undefined): string {
 }
 
 import { fmtDubai } from "@/lib/utils";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 function fmtDate(d: string | null, locale: string): string {
   if (!d) return "—";
@@ -321,7 +322,7 @@ export default function LeadHealth() {
         if (d.error) throw new Error(d.error);
         setData(d);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => onFetchFailure(e, () => setError(e.message)))
       .finally(() => setLoading(false));
   }, []);
 

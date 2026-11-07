@@ -38,6 +38,7 @@ import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import { reassignFailureKey, reassignNeedsReload } from "@/lib/lead-reassign-feedback.mjs";
 import type { Lead } from "./useLeadsData";
+import { logFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 export interface SalesUser {
@@ -119,7 +120,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
           console.error("Failed to write business event:", res.status, json?.error || "");
         }
       } catch (e) {
-        console.error("Failed to write business event:", e);
+        logFetchFailure("Failed to write business event:", e);
       }
     },
     [currentUserId]

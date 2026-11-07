@@ -83,6 +83,7 @@ const milestoneColors: Record<string, string> = {
 }
 
 import { fmtDubai } from "@/lib/utils";
+import { onFetchFailure } from "@/lib/fetch-interruption"
 
 function formatDate(value: string | undefined, locale: string) {
   if (!value) return "—"
@@ -128,7 +129,7 @@ export default function WorkbenchPage() {
         const json = (await res.json()) as WorkbenchData
         setData(json)
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Unknown error")
+        onFetchFailure(err, () => setError(err instanceof Error ? err.message : "Unknown error"))
       } finally {
         setLoading(false)
       }

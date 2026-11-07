@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface WeekData {
@@ -101,6 +102,7 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const res = await fetch("/api/dashboard/weekly-trends");
@@ -108,12 +110,15 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
         const json = await res.json();
         setData(json);
       } catch (err: any) {
-        console.error("[analytics] weekly trends fetch failed:", err);
-        setError(t("common.loadFailed"));
+        onFetchFailure(err, () => {
+          console.error("[analytics] weekly trends fetch failed:", err);
+          setError(t("common.loadFailed"));
+        }, { isActive: () => active });
       } finally {
         setLoading(false);
       }
     })();
+    return () => { active = false; };
   }, []);
 
   if (loading) {

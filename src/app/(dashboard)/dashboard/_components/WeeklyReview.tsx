@@ -3,6 +3,7 @@ import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 // ─── API-mode response types (PRD §五.3 / GET /api/dashboard/weekly-review) ───
 type Period = "today" | "this_week" | "last_week" | "this_month" | "custom";
@@ -240,9 +241,12 @@ function WeeklyReviewApi({ language }: { language: string }) {
     } catch (e) {
       // The status code / browser message is English; show a localized sentence.
       const forbidden = e instanceof Error && e.message === (locale === "zh" ? "无权限" : "Forbidden");
-      if (!forbidden) console.error("[weekly-review] fetch failed:", e);
-      setError(forbidden ? (locale === "zh" ? "无权限" : "Forbidden") : (locale === "zh" ? "请稍后重试" : "please retry"));
-      setData(null);
+      // A request cut short by navigation is not a failure: no log, no error text.
+      onFetchFailure(e, () => {
+        if (!forbidden) console.error("[weekly-review] fetch failed:", e);
+        setError(forbidden ? (locale === "zh" ? "无权限" : "Forbidden") : (locale === "zh" ? "请稍后重试" : "please retry"));
+        setData(null);
+      });
     } finally {
       setLoading(false);
     }

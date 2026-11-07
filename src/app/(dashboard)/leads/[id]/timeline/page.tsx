@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Plus, Phone, MoreHorizontal, Clock, MessageSquare } from "lucide-react";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
 
 interface FollowUpLogRow {
   id: string;
@@ -69,13 +70,15 @@ export default function LeadTimelinePage() {
           .eq("lead_id", id)
           .order("created_at", { ascending: false });
         if (error) {
-          toast.error(lang === "zh" ? "加载跟进记录失败" : "Failed to load follow-up logs");
+          onFetchFailure(error, () => toast.error(lang === "zh" ? "加载跟进记录失败" : "Failed to load follow-up logs"));
           return;
         }
         setLogs((data ?? []) as FollowUpLogRow[]);
       } catch (err) {
-        console.error("[Timeline] fetch error:", err);
-        toast.error(lang === "zh" ? "加载跟进记录失败" : "Failed to load follow-up logs");
+        onFetchFailure(err, () => {
+          console.error("[Timeline] fetch error:", err);
+          toast.error(lang === "zh" ? "加载跟进记录失败" : "Failed to load follow-up logs");
+        });
       } finally {
         setLoading(false);
       }
@@ -116,7 +119,7 @@ export default function LeadTimelinePage() {
         .order("created_at", { ascending: false });
       if (!reloadError) setLogs((data ?? []) as FollowUpLogRow[]);
     } catch (err) {
-      console.error("[Timeline] submit error:", err);
+      logFetchFailure("[Timeline] submit error:", err);
       toast.error(lang === "zh" ? "保存失败" : "Save failed");
     } finally {
       setSubmitting(false);

@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, CheckCircle2, Clock, XCircle, Loader2, Alert
 import { fmtDubai } from "@/lib/utils";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Constants ─── */
 const PAGE_SIZE = 20;
@@ -128,8 +129,10 @@ export default function TasksPage() {
       setProfiles((json.profiles ?? []) as ProfileInfo[]);
       setTotalCount(json.totalCount ?? 0);
     } catch (err: unknown) {
-      console.error(t("tasks.loadFailed"), err);
-      setError(errorMessage(err, t("tasks.loadFailed")));
+      onFetchFailure(err, () => {
+        console.error(t("tasks.loadFailed"), err);
+        setError(errorMessage(err, t("tasks.loadFailed")));
+      });
     }
     setLoading(false);
   }, [page, statusFilter, assigneeFilter, t]);

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { cn } from "@/lib/utils";
 import { WandSparkles, Loader2, CheckCircle, XCircle, FileText } from "lucide-react";
+import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
 
 interface KnxDesignResult {
   lead_id: string;
@@ -75,7 +76,7 @@ export default function KnxDesignPanel({ leadId }: { leadId: string }) {
           setGenerating(false);
         }
       } catch (err: any) {
-        console.error("[KNX Design] Poll error:", err);
+        logFetchFailure("[KNX Design] Poll error:", err);
       }
     }, 5000);
   }, []);
@@ -109,9 +110,11 @@ export default function KnxDesignPanel({ leadId }: { leadId: string }) {
         progress_label: "knxProgressAnalyzing",
       });
     } catch (err: any) {
-      console.error("[KNX Design] Generate error:", err);
-      setError(err.message || "Failed to start KNX design");
       setGenerating(false);
+      onFetchFailure(err, () => {
+        console.error("[KNX Design] Generate error:", err);
+        setError(err.message || "Failed to start KNX design");
+      });
     }
   }, [leadId, startPolling]);
 

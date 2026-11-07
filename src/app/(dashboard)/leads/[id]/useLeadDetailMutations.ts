@@ -35,6 +35,7 @@ import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
 import type { Database, Json } from "@/types/database";
+import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
 
 const STAGE_HINT_REASONS = new Set([
   "next_followup_required",
@@ -216,7 +217,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     if (!confirmed) return;
     const { error: delErr } = await supabase.from("leads").delete().eq("id", lead.id);
     if (delErr) {
-      console.error("[LeadDetail] delete failed");
+      onFetchFailure(delErr, () => console.error("[LeadDetail] delete failed"));
       toast.error(t("common.saveFailed") || "Delete failed");
       return;
     }
@@ -373,7 +374,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     if (err || !updated) {
       // S6: localized message (never raw supabase/network text) + sign-in
       // redirect when the session ended; the draft stays in the form.
-      console.error("[LeadDetail] project info save failed", err);
+      logFetchFailure("[LeadDetail] project info save failed", err);
       setProjectInfoStatus("error");
       reportMutationFailure(err ?? { code: "42501" }, t, "common.saveFailedRetry");
       return;
@@ -437,7 +438,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         .select("id")
         .single();
       if (err || !updated) {
-        console.error("[LeadDetail] task update failed");
+        onFetchFailure(err, () => console.error("[LeadDetail] task update failed"));
         setError(t("common.saveFailed") || "Save failed");
         return;
       }
@@ -451,7 +452,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         source: "manual",
       });
       if (err) {
-        console.error("[LeadDetail] task create failed");
+        onFetchFailure(err, () => console.error("[LeadDetail] task create failed"));
         setError(t("common.saveFailed") || "Save failed");
         return;
       }
@@ -474,8 +475,8 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       if (!updated) return false;
       toast.success(t("leads.markedWon"));
       return true;
-    } catch {
-      console.error("[LeadDetail] handleWon error");
+    } catch (error) {
+      onFetchFailure(error, () => console.error("[LeadDetail] handleWon error"));
       toast.error(t("common.operationFailed"));
       return false;
     } finally {
@@ -490,8 +491,8 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       if (!updated) return false;
       toast.success(t("leads.markedLost"));
       return true;
-    } catch {
-      console.error("[LeadDetail] handleLost error");
+    } catch (error) {
+      onFetchFailure(error, () => console.error("[LeadDetail] handleLost error"));
       toast.error(t("common.operationFailed"));
       return false;
     } finally {

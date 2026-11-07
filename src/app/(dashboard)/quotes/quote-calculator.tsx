@@ -21,6 +21,7 @@ import { reportMutationFailure } from "@/lib/mutation-feedback";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DEVICE_CATALOG, findDevice, type DeviceInfo, type CategoryInfo } from "@/lib/device-catalog";
 import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
+import { logFetchFailure } from "@/lib/fetch-interruption";
 
 interface Lead { id: string; customer_name: string | null; phone: string | null; }
 
@@ -140,11 +141,11 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
 notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${area}㎡\n${t("quotes.calc.installLabor")}: ${calc.installLabor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.pm.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select("id, quote_no").single();
-      if (error || !quote?.quote_no) { console.error("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
+      if (error || !quote?.quote_no) { logFetchFailure("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
       // Notify about new quotation
       void import("@/lib/notify")
         .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: selectedLeadId, quote_no: quote.quote_no }))
-        .catch((notifyError) => console.error("quote_notification_failed", notifyError));
+        .catch((notifyError) => logFetchFailure("quote_notification_failed", notifyError));
       setSavedQuoteId(quote.id); onSaved?.(); onOpenChange(false);
     } finally { setSaving(false); }
   };

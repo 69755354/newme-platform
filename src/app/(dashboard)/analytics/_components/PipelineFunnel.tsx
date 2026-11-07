@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Users, Clock, ChevronRight, TrendingDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface StageData {
@@ -102,6 +103,7 @@ export default function PipelineFunnel() {
 
   useEffect(() => {
     if (!userRole) return;
+    let active = true;
     (async () => {
       try {
         setLoading(true);
@@ -110,11 +112,14 @@ export default function PipelineFunnel() {
         const json = await res.json();
         setData(json);
       } catch (err) {
-        setError(t("common.loadFailed"));
-        console.error(err);
+        onFetchFailure(err, () => {
+          setError(t("common.loadFailed"));
+          console.error(err);
+        }, { isActive: () => active });
       }
       setLoading(false);
     })();
+    return () => { active = false; };
   }, [userRole]);
 
   const isManagement = userRole === "admin" || userRole === "boss" || userRole === "operator";

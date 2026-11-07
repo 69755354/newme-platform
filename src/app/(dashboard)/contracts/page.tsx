@@ -27,6 +27,7 @@ import { fmtAED } from "@/shared/utils/format";
 // src/types/contracts.ts for what they disagreed about.
 import type { ContractListResponse, ContractListRow } from "@/types/contracts";
 import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 type Contract = ContractListRow;
 
@@ -278,6 +279,7 @@ export default function ContractsPage() {
 
   // Fetch auth + contracts from BFF API
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const params = new URLSearchParams();
@@ -298,11 +300,14 @@ export default function ContractsPage() {
         setRole(json.role);
         setUserId(json.userId ?? null);
       } catch (err) {
-        console.error(err);
-        setError(t("common.loadFailedRetry"));
+        onFetchFailure(err, () => {
+          console.error(err);
+          setError(t("common.loadFailedRetry"));
+        }, { isActive: () => active });
       }
       setLoading(false);
     })();
+    return () => { active = false; };
   }, [page, statusFilter]);
 
   if (roleLoading || blocked) return null;

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import type { PostgrestError } from "@supabase/supabase-js";
+import { isAbortError } from "@/lib/fetch-interruption";
 
 // ─── Types ───
 interface QueryState<T> {
@@ -110,7 +111,7 @@ export function useSupabaseQuery<T = any>(
       if (!mountedRef.current) return;
 
       // Check if it was an abort (timeout or manual cancel)
-      if (err instanceof DOMException && err.name === "AbortError") {
+      if (isAbortError(err)) {
         // Retry on timeout if retries remain
         if (retryCount.current < retry) {
           retryCount.current += 1;

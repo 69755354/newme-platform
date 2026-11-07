@@ -16,6 +16,7 @@ import {
   Building2, Phone, Mail, ArrowLeft,
 } from "lucide-react";
 import Link from "next/link";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Phase config ─── */
 interface PhaseConfig {
@@ -188,8 +189,10 @@ export default function ProjectsClient({ initialData, fetchError }: ProjectsClie
       .limit(500);
 
     if (err) {
-      console.error("Failed to fetch projects:", err);
-      setError(t("common.loadFailedRetry"));
+      onFetchFailure(err, () => {
+        console.error("Failed to fetch projects:", err);
+        setError(t("common.loadFailedRetry"));
+      });
       setLoading(false);
       return;
     }

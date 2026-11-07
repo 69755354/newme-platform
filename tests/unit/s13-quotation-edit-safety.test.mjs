@@ -89,3 +89,35 @@ test("the read-only notices exist in Chinese and English", async () => {
   assert.match(src, /linesLocked_includes_services: "[^"]*\b(regenerate|Regenerate)[^"]*"/);
   assert.match(src, /linesLocked_includes_services: "[^"]*重新生成[^"]*"/);
 });
+
+test("quotationLinesEditability: a hand-typed total without line items is read-only with its own reason", async () => {
+  const { quotationLinesEditability } = await import("../../src/lib/quotation-rules.mjs");
+  const manualTotal = { status: "draft", devices_json: null, subtotal: 1000, discount_rate: 0, tax_rate: 5, total_amount: 1050 };
+  assert.deepEqual(quotationLinesEditability(manualTotal), { editable: false, reason: "manual_total" });
+  assert.equal(quotationLinesEditability({ ...manualTotal, devices_json: [] }).reason, "manual_total");
+  // a brand-new empty draft (no total yet) can still get lines
+  assert.equal(quotationLinesEditability({ ...manualTotal, devices_json: [], subtotal: 0, total_amount: 0 }).editable, true);
+  assert.equal(quotationLinesEditability({ ...manualTotal, devices_json: null, total_amount: null }).editable, true);
+});
+
+test("an explicit 0% tax rate is a real rate, not 5%, and such a quotation stays editable", async () => {
+  const { quotationLinesEditability } = await import("../../src/lib/quotation-rules.mjs");
+  const zeroTax = {
+    status: "draft",
+    devices_json: [{ product_id: "p1", product_name: "Switch", quantity: 2, unit_price: 100, total_price: 200 }],
+    subtotal: 200, discount_rate: 0, tax_rate: 0, total_amount: 200,
+  };
+  assert.deepEqual(quotationLinesEditability(zeroTax), { editable: true, reason: null });
+  const page = read("src/app/(dashboard)/quotations/[id]/page.tsx");
+  assert.doesNotMatch(page, /tax_rate \|\| 5/, "page must use ?? 5");
+  assert.match(page, /tax_rate \?\? 5/);
+  assert.doesNotMatch(read("src/lib/quotation-rules.mjs"), /tax_rate\) \|\| 5/);
+});
+
+test("the manual-total notice exists in both languages and does not say engine", () => {
+  const src = read("src/lib/i18n/translations.ts");
+  assert.equal((src.match(/linesLocked_manual_total: "/g) ?? []).length, 2);
+  assert.match(src, /linesLocked_manual_total: "该报价为手填总价，不能逐行编辑，如需修改请重新生成或新建报价/);
+  assert.match(src, /linesLocked_manual_total: "This quotation has a hand-typed total[^"]*"/);
+  assert.doesNotMatch(src.match(/linesLocked_manual_total: "[^"]*"/)[0], /engine|引擎/);
+});

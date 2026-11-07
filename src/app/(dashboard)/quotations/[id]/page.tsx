@@ -174,7 +174,7 @@ export default function QuotationDetailPage() {
 
   // Why the lines cannot be edited (null = editable). Decided from the stored row, not the
   // normalized copy, because the engine's service fees are not visible in the line items.
-  const [lineLock, setLineLock] = useState<"not_draft" | "includes_services" | null>(null);
+  const [lineLock, setLineLock] = useState<"not_draft" | "includes_services" | "manual_total" | null>(null);
 
   // Line items
   const [lineItems, setLineItems] = useState<QuotationLineItem[]>([]);
@@ -277,7 +277,7 @@ export default function QuotationDetailPage() {
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
       const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
-      const taxRate = quotation.tax_rate || 5;
+      const taxRate = quotation.tax_rate ?? 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
@@ -333,7 +333,7 @@ export default function QuotationDetailPage() {
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
       const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
-      const taxRate = quotation.tax_rate || 5;
+      const taxRate = quotation.tax_rate ?? 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
@@ -388,7 +388,7 @@ export default function QuotationDetailPage() {
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
       const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
-      const taxRate = quotation.tax_rate || 5;
+      const taxRate = quotation.tax_rate ?? 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
@@ -636,7 +636,7 @@ export default function QuotationDetailPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1">
-                {t("quotations.tax") || "Tax"} ({quotation.tax_rate || 5}%)
+                {t("quotations.tax") || "Tax"} ({quotation.tax_rate ?? 5}%)
               </p>
               <p className="text-sm font-medium">
                 {fmtAED(quotation.tax_amount)}

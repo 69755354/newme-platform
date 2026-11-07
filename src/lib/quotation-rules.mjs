@@ -161,19 +161,28 @@ export function lineItemsSubtotal(items) {
  * (S13, NEXT-DB-BATCH item 1). Such quotations are read-only here: they are regenerated.
  *
  * `row` is the stored row, with `devices_json` as stored (not yet normalized).
- * Returns { editable, reason } where reason is null, "not_draft" or "includes_services".
+ * Returns { editable, reason } where reason is null, "not_draft", "includes_services" or "manual_total".
  */
 export function quotationLinesEditability(row) {
   if (row.status !== "draft") return { editable: false, reason: "not_draft" };
   // The engine stores an object keyed by device id; the editor only ever writes an array.
   if (isRecord(row.devices_json)) return { editable: false, reason: "includes_services" };
   const total = num(row.total_amount);
+  // No line items but a typed-in total (the Quotes list "new quotation" dialog): there is
+  // nothing to recalculate from, and adding lines would overwrite the typed figures.
+  if (total !== undefined && total > 0) {
+    let count = 0;
+    try { count = normalizeQuotationLineItems(row.devices_json).length; } catch { /* handled below */ }
+    if (count === 0 && row.devices_json !== undefined && (row.devices_json === null || Array.isArray(row.devices_json))) {
+      return { editable: false, reason: "manual_total" };
+    }
+  }
   if (total !== undefined) {
     let itemsOnly;
     try {
       const subtotal = lineItemsSubtotal(normalizeQuotationLineItems(row.devices_json));
       const discountRate = clampDiscountRate(num(row.discount_rate) ?? 0);
-      const taxRate = num(row.tax_rate) || 5; // the editor's own default
+      const taxRate = num(row.tax_rate) ?? 5; // the editor's own default; an explicit 0 is 0
       const afterDiscount = subtotal - subtotal * (discountRate / 100);
       itemsOnly = afterDiscount + afterDiscount * (taxRate / 100);
     } catch {

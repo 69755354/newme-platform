@@ -28,4 +28,4 @@ export interface QuotationLinesEditabilityInput {
 }
 export declare function quotationLinesEditability(
   row: QuotationLinesEditabilityInput,
-): { editable: boolean; reason: "not_draft" | "includes_services" | null };
+): { editable: boolean; reason: "not_draft" | "includes_services" | "manual_total" | null };

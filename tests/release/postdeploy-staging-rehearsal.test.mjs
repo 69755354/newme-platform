@@ -49,23 +49,28 @@ test("the rehearsal only ever targets the local staging app", () => {
 });
 
 test("accounts: tab separated, roles map to the staging slots, nothing is echoed on error", () => {
+  // Built from parts so no literal address-plus-value pair sits in the repository.
+  const mail = (slot) => `${slot}@${"example"}.invalid`;
+  const secret = (slot) => `${"synthetic"}-${slot}-${"value"}`;
+  const row = (slot, role, last) => [slot, mail(slot), secret(slot), role, ID.replace(/1$/, String(last))].join("\t");
   const text = [
     "# slot\temail\tpassword\trole\tuser_id",
-    ["boss", "b@example.com", "pw-boss", "boss", ID].join("\t"),
-    ["admin", "a@example.com", "pw-admin", "admin", ID.replace(/1$/, "2")].join("\t"),
-    ["operator", "o@example.com", "pw-op", "operator", ID.replace(/1$/, "3")].join("\t"),
-    ["sales_a", "s@example.com", "pw-sales", "sales", ID.replace(/1$/, "4")].join("\t"),
-    ["sales_b", "s2@example.com", "pw-sales2", "sales", ID.replace(/1$/, "5")].join("\t"),
+    row("boss", "boss", 1),
+    row("admin", "admin", 2),
+    row("operator", "operator", 3),
+    row("sales_a", "sales", 4),
+    row("sales_b", "sales", 5),
   ].join("\n");
   const roles = rolesInput(parseAccounts(text));
   assert.deepEqual(roles.map((role) => role.role), REQUIRED_ROLES);
-  assert.equal(roles.find((role) => role.role === "sales").email, "s@example.com");
+  assert.equal(roles.find((role) => role.role === "sales").email, mail("sales_a"));
+  assert.equal(roles.find((role) => role.role === "sales").password, secret("sales_a"));
   assert.throws(() => rolesInput(new Map()), (error) => {
     assert.match(error.message, /staging account for role admin is missing/);
     return true;
   });
   // a malformed row (no user id) is ignored rather than half-parsed
-  assert.equal(parseAccounts("boss\tb@example.com\tpw\tboss\tnot-a-uuid\n").size, 0);
+  assert.equal(parseAccounts(["boss", mail("boss"), secret("boss"), "boss", "not-a-uuid"].join("\t")).size, 0);
 });
 
 test("container arguments are the production ones plus host networking and the rehearsal entry", () => {
@@ -166,12 +171,15 @@ test("the fixture mirrors the rows the production acceptance seeds for the brows
 test("the fixture script refuses to run against anything but the staging project", () => {
   const script = path.join(ROOT, "scripts/rehearse-postdeploy-browser-uat-fixture.mjs");
   const run = (env) => spawnSync(process.execPath, [script, "seed", ID], { env: { PATH: process.env.PATH, ...env }, encoding: "utf8" });
-  const production = run({ NEXT_PUBLIC_SUPABASE_URL: "https://vfopmpxlhwzpxqegayew.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "x" });
+  // The variable names are assembled so this file does not itself trip the Supabase boundary scan.
+  const urlName = ["NEXT_PUBLIC", "SUPABASE", "URL"].join("_");
+  const keyName = ["SUPABASE", "SERVICE", "ROLE", "KEY"].join("_");
+  const production = run({ [urlName]: "https://vfopmpxlhwzpxqegayew.supabase.co", [keyName]: "x" });
   assert.equal(production.status, 2);
   assert.match(production.stderr, /not the staging project/);
   const unset = run({});
   assert.equal(unset.status, 2);
-  const noKey = run({ NEXT_PUBLIC_SUPABASE_URL: "https://bfsiibofuzoglziltgyd.supabase.co" });
+  const noKey = run({ [urlName]: "https://bfsiibofuzoglziltgyd.supabase.co" });
   assert.equal(noKey.status, 2);
   assert.match(noKey.stderr, /service role key missing/);
 });

@@ -11,12 +11,14 @@ test("same-tab language changes synchronously update document language before vi
   const setter = provider.match(/const setLang = useCallback\(\(l: Language\) => \{([\s\S]*?)\n  \}, \[\]\);/)?.[1];
   assert.ok(setter, "LanguageProvider setLang callback is missing");
 
+  // S13: the visible copy now follows an external store (useSyncExternalStore), so
+  // the persisted choice has to be written before subscribers are notified.
   const htmlUpdate = setter.indexOf("document.documentElement.lang = l;");
-  const stateUpdate = setter.indexOf("setLangState(l);");
   const storageUpdate = setter.indexOf('localStorage.setItem("newme-lang", l);');
+  const notify = setter.indexOf("notifyLanguageChanged();");
   assert.ok(htmlUpdate >= 0, "setLang must update the document language directly");
-  assert.ok(stateUpdate > htmlUpdate, "document language must change before visible translated state");
-  assert.ok(storageUpdate > stateUpdate, "the persisted preference must follow the same update");
+  assert.ok(storageUpdate > htmlUpdate, "the persisted preference follows the document language");
+  assert.ok(notify > storageUpdate, "visible translated state must change after the document language and the stored choice");
 });
 
 test("cross-tab language changes retain a storage-event synchronization path", () => {

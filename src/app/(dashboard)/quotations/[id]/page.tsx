@@ -40,7 +40,7 @@ import {
 import { fmtAED } from "@/shared/utils/format";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Database, Json } from "@/types/database";
-import { clampDiscountRate, normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
+import { clampDiscountRate, normalizeQuotationLineItems, quotationLinesEditability } from "@/lib/quotation-rules.mjs";
 
 /* ─── Types ─── */
 interface QuotationLineItem extends Record<string, Json> {
@@ -172,6 +172,10 @@ export default function QuotationDetailPage() {
   // S6 (review 4d/4a): removing a saved line item asks first.
   const [removeIndex, setRemoveIndex] = useState<number | null>(null);
 
+  // Why the lines cannot be edited (null = editable). Decided from the stored row, not the
+  // normalized copy, because the engine's service fees are not visible in the line items.
+  const [lineLock, setLineLock] = useState<"not_draft" | "includes_services" | null>(null);
+
   // Line items
   const [lineItems, setLineItems] = useState<QuotationLineItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<string>("");
@@ -202,6 +206,15 @@ export default function QuotationDetailPage() {
         if (!data) throw new Error("Quotation not found");
 
         const parsedItems = parseLineItems(data.devices_json);
+        const editability = quotationLinesEditability({
+          status: data.status,
+          devices_json: data.devices_json,
+          subtotal: data.subtotal,
+          discount_rate: data.discount_rate,
+          tax_rate: data.tax_rate,
+          total_amount: data.total_amount,
+        });
+        setLineLock(editability.reason);
         setQuotation({ ...data, devices_json: parsedItems, leads: data.leads ?? null });
         setLineItems(parsedItems);
       } catch (err: unknown) {
@@ -232,9 +245,13 @@ export default function QuotationDetailPage() {
     fetchProducts();
   }, [supabase]);
 
+  // Editing is for drafts, and only where the items-only recalculation is exact.
+  const canEditLines = lineLock === null && quotation?.status === "draft";
+  const shownLock = lineLock ?? (quotation && quotation.status !== "draft" ? "not_draft" : null);
+
   /* ─── Add line item ─── */
   const handleAddLineItem = async () => {
-    if (!selectedProduct || !quotation) return;
+    if (!canEditLines || !selectedProduct || !quotation) return;
 
     const product = products.find((p) => p.id === selectedProduct);
     if (!product) return;
@@ -305,7 +322,7 @@ export default function QuotationDetailPage() {
 
   /* ─── Remove line item ─── */
   const handleRemoveLineItem = async (index: number) => {
-    if (!quotation) return;
+    if (!canEditLines || !quotation) return;
 
     const previousItems = lineItems;
     const updatedItems = lineItems.filter((_, i) => i !== index);
@@ -356,7 +373,7 @@ export default function QuotationDetailPage() {
 
   /* ─── Update line item quantity ─── */
   const handleUpdateQuantity = async (index: number, newQuantity: number) => {
-    if (!quotation || newQuantity < 1) return;
+    if (!canEditLines || !quotation || newQuantity < 1) return;
 
     const previousItems = lineItems;
     const updatedItems = lineItems.map((item, i) =>
@@ -651,7 +668,15 @@ export default function QuotationDetailPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Read-only notice: why the lines cannot be changed here */}
+          {shownLock && (
+            <p role="note" className="text-sm text-amber-400 border border-amber-500/20 bg-amber-500/10 rounded-lg p-3">
+              {t(`quotations.linesLocked_${shownLock}`)}
+            </p>
+          )}
+
           {/* Add item */}
+          {canEditLines && (
           <div className="flex gap-2">
             <Select value={selectedProduct} onValueChange={(v) => setSelectedProduct(v ?? '')}>
               <SelectTrigger className="flex-1">
@@ -679,6 +704,7 @@ export default function QuotationDetailPage() {
               )}
             </Button>
           </div>
+          )}
 
           {/* Items list */}
           {lineItems.length === 0 ? (
@@ -701,31 +727,45 @@ export default function QuotationDetailPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      min="1"
-                      value={item.quantity}
-                      onChange={(e) =>
-                        handleUpdateQuantity(index, parseInt(e.target.value))
-                      }
-                      className="w-20 h-8 text-center"
-                    />
-                    <span className="text-xs text-muted-foreground">
-                      × {fmtAED(item.unit_price)}
-                    </span>
-                    <span className="text-sm font-medium w-24 text-right">
-                      {fmtAED(item.total_price)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setRemoveIndex(index)}
-                      aria-label={t("quotations.removeItem")}
-                      title={t("quotations.removeItem")}
-                      className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {canEditLines ? (
+                      <>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) =>
+                            handleUpdateQuantity(index, parseInt(e.target.value))
+                          }
+                          className="w-20 h-8 text-center"
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          × {fmtAED(item.unit_price)}
+                        </span>
+                        <span className="text-sm font-medium w-24 text-right">
+                          {fmtAED(item.total_price)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setRemoveIndex(index)}
+                          aria-label={t("quotations.removeItem")}
+                          title={t("quotations.removeItem")}
+                          className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm w-20 text-center">{item.quantity}</span>
+                        <span className="text-xs text-muted-foreground">
+                          × {fmtAED(item.unit_price)}
+                        </span>
+                        <span className="text-sm font-medium w-24 text-right">
+                          {fmtAED(item.total_price)}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}

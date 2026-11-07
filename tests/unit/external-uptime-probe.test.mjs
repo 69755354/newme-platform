@@ -33,7 +33,9 @@ esac
   writeFileSync(join(root, "env"), "TELEGRAM_BOT_TOKEN=SECRET-TOKEN-VALUE\nTELEGRAM_CHAT_ID=-1001234567890\nFAIL_THRESHOLD=2\nDAILY_HEARTBEAT_HOUR_UTC=3\n");
   const run = (extra = {}) => spawnSync("sh", [script], {
     encoding: "utf8",
-    env: { PATH: `${join(root, "bin")}:${process.env.PATH}`, UPTIME_ENV_FILE: join(root, "env"), STATE_DIR: join(root, "state"), ...extra },
+    // The clock inputs are fixed (hour 12, a fixed day) so no case depends on when it runs; the
+    // fixture's heartbeat hour is 03, which only the heartbeat test selects explicitly.
+    env: { PATH: `${join(root, "bin")}:${process.env.PATH}`, UPTIME_ENV_FILE: join(root, "env"), STATE_DIR: join(root, "state"), UPTIME_NOW_HOUR_UTC: "12", UPTIME_TODAY: "2026-11-01", ...extra },
   });
   const sent = () => (existsSync(join(root, "sent.log")) ? readFileSync(join(root, "sent.log"), "utf8").trim().split("\n") : []);
   return { run, sent, root };

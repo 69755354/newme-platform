@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useCallback, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { translations, type Language } from "./translations";
-import { DEFAULT_LANGUAGE, languageCookie, parseLanguage } from "./language-preference.mjs";
+import { DEFAULT_LANGUAGE, languageAfterMount, languageCookie, parseLanguage } from "./language-preference.mjs";
 
 type NestedKeyOf<T> = T extends object
   ? { [K in keyof T]: `${K & string}${T[K] extends object ? `.${NestedKeyOf<T[K]>}` : ""}` }[keyof T]
@@ -17,7 +17,14 @@ interface LanguageContextType {
   t: (path: string) => string;
 }
 
-const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+// What the provider puts in context never changes while the page is open: the
+// language the server rendered with, and the setter.
+interface LanguageProviderValue {
+  rendered: Language;
+  setLang: (lang: Language) => void;
+}
+
+const LanguageContext = createContext<LanguageProviderValue | undefined>(undefined);
 
 // S6 (review 4d #21): the language the server already rendered with, read from
 // the `newme-lang` cookie by the root layout. Starting from it (instead of a
@@ -28,34 +35,82 @@ export function InitialLanguage({ lang, children }: { lang: Language | null; chi
   return <InitialLanguageContext.Provider value={lang}>{children}</InitialLanguageContext.Provider>;
 }
 
+// S13: the chosen language lives in localStorage, which the server cannot read, so
+// it is exposed as an external store read with useSyncExternalStore. React renders
+// the hydration pass of every component with the server snapshot (the language the
+// server HTML used) and then re-renders just that component if the client snapshot
+// differs. Putting the stored choice in React state or context instead changes the
+// value above a Suspense boundary that may still be waiting to hydrate, and React
+// throws error #418 for it (login page failed the production release check that way).
+let chosenInThisPage: Language | null = null;
+const listeners = new Set<() => void>();
+
+function readStoredLanguage(): Language | null {
+  try {
+    return parseLanguage(localStorage.getItem("newme-lang"));
+  } catch {
+    return null;
+  }
+}
+
+function subscribeLanguage(onChange: () => void) {
+  listeners.add(onChange);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === "newme-lang" || e.key === null) {
+      chosenInThisPage = null; // another tab changed it: storage wins again
+      onChange();
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function notifyLanguageChanged() {
+  listeners.forEach((l) => l());
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const initial = useContext(InitialLanguageContext);
-  const [lang, setLangState] = useState<Language>(initial ?? DEFAULT_LANGUAGE);
+  const rendered: Language = initial ?? DEFAULT_LANGUAGE;
 
-  // Sessions from before the cookie existed: copy the choice over once so
-  // the next page load renders in it straight away.
+  // After mount (never during render): make the document language and the cookie
+  // match the stored choice, so the next page load is rendered in it by the server.
   useEffect(() => {
-    const parsed = parseLanguage(localStorage.getItem("newme-lang"));
-    if (parsed && parsed !== initial) {
-      document.documentElement.lang = parsed;
-      document.cookie = languageCookie(parsed);
-    }
+    const target = languageAfterMount(readStoredLanguage(), initial);
+    if (!target) return;
+    document.documentElement.lang = target.lang;
+    if (target.writeCookie) document.cookie = languageCookie(target.lang);
   }, [initial]);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("newme-lang");
-    if (saved === "en" || saved === "zh") setLangState(saved);
-  }, []);
 
   const setLang = useCallback((l: Language) => {
     // Keep the document language in the same synchronous transaction as the
     // visible copy. Storage events do not fire in the tab that performed the
     // write, so HtmlLangSync's cross-tab fallback cannot own this update.
     document.documentElement.lang = l;
-    setLangState(l);
-    localStorage.setItem("newme-lang", l);
+    chosenInThisPage = l;
+    try {
+      localStorage.setItem("newme-lang", l);
+    } catch {
+      // storage unavailable: the choice still holds for this page view
+    }
     document.cookie = languageCookie(l);
+    notifyLanguageChanged();
   }, []);
+
+  const value = useMemo(() => ({ rendered, setLang }), [rendered, setLang]);
+  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+}
+
+export function useLanguage(): LanguageContextType {
+  const ctx = useContext(LanguageContext);
+  if (!ctx) throw new Error("useLanguage must be used within LanguageProvider");
+  const { rendered, setLang } = ctx;
+  const getSnapshot = useCallback(() => chosenInThisPage ?? readStoredLanguage() ?? rendered, [rendered]);
+  const getServerSnapshot = useCallback(() => rendered, [rendered]);
+  const lang = useSyncExternalStore(subscribeLanguage, getSnapshot, getServerSnapshot);
 
   const toggleLang = useCallback(() => {
     setLang(lang === "en" ? "zh" : "en");
@@ -77,15 +132,5 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     [lang]
   );
 
-  return (
-    <LanguageContext.Provider value={{ lang, setLang, toggleLang, t }}>
-      {children}
-    </LanguageContext.Provider>
-  );
-}
-
-export function useLanguage() {
-  const ctx = useContext(LanguageContext);
-  if (!ctx) throw new Error("useLanguage must be used within LanguageProvider");
-  return ctx;
+  return useMemo(() => ({ lang, setLang, toggleLang, t }), [lang, setLang, toggleLang, t]);
 }

@@ -17,3 +17,15 @@ export interface NormalizedQuotationLineItem {
 
 export declare function normalizeQuotationLineItems(devicesJson: unknown): NormalizedQuotationLineItem[];
 export declare function lineItemsSubtotal(items: readonly NormalizedQuotationLineItem[]): number;
+
+export interface QuotationLinesEditabilityInput {
+  status: string;
+  devices_json: unknown;
+  subtotal?: number | null;
+  discount_rate?: number | null;
+  tax_rate?: number | null;
+  total_amount?: number | null;
+}
+export declare function quotationLinesEditability(
+  row: QuotationLinesEditabilityInput,
+): { editable: boolean; reason: "not_draft" | "includes_services" | null };

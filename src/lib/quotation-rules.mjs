@@ -150,3 +150,37 @@ export function normalizeQuotationLineItems(devicesJson) {
 export function lineItemsSubtotal(items) {
   return round2(items.reduce((sum, item) => sum + (Number.isFinite(item.line_total) ? item.line_total : 0), 0));
 }
+
+/**
+ * Whether the line items of a saved quotation may be edited on the detail page.
+ *
+ * The page recalculates a total as (items - discount) + tax. That is only right for
+ * quotations whose total never had anything else in it. Engine and wizard quotations
+ * also carry installation, commissioning and project-management fees in `total_amount`,
+ * and editing their lines with the items-only formula silently dropped those fees
+ * (S13, NEXT-DB-BATCH item 1). Such quotations are read-only here: they are regenerated.
+ *
+ * `row` is the stored row, with `devices_json` as stored (not yet normalized).
+ * Returns { editable, reason } where reason is null, "not_draft" or "includes_services".
+ */
+export function quotationLinesEditability(row) {
+  if (row.status !== "draft") return { editable: false, reason: "not_draft" };
+  // The engine stores an object keyed by device id; the editor only ever writes an array.
+  if (isRecord(row.devices_json)) return { editable: false, reason: "includes_services" };
+  const total = num(row.total_amount);
+  if (total !== undefined) {
+    let itemsOnly;
+    try {
+      const subtotal = lineItemsSubtotal(normalizeQuotationLineItems(row.devices_json));
+      const discountRate = clampDiscountRate(num(row.discount_rate) ?? 0);
+      const taxRate = num(row.tax_rate) || 5; // the editor's own default
+      const afterDiscount = subtotal - subtotal * (discountRate / 100);
+      itemsOnly = afterDiscount + afterDiscount * (taxRate / 100);
+    } catch {
+      // rows the page cannot read are not safe to recalculate either
+      return { editable: false, reason: "includes_services" };
+    }
+    if (Math.abs(total - itemsOnly) > 0.05) return { editable: false, reason: "includes_services" };
+  }
+  return { editable: true, reason: null };
+}

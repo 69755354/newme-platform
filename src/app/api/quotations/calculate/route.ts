@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
 import { logger, genReqId } from "@/lib/logger";
+import { discountRateError, discountRateErrorZh } from "@/lib/quotation-rules.mjs";
 import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
 
 /**
@@ -40,6 +41,11 @@ export async function POST(request: NextRequest) {
         { error: "devices object is required with at least one device" },
         { status: 400 },
       );
+    }
+
+    const discountProblem = discountRateError(discount_rate);
+    if (discountProblem) {
+      return NextResponse.json({ error: discountProblem, error_zh: discountRateErrorZh(discount_rate), code: "discount_rate_invalid" }, { status: 400 });
     }
 
     // Validate all quantities are positive numbers

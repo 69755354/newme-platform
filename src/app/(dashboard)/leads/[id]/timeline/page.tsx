@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, fmtDubai } from "@/lib/utils";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { ArrowLeft, Plus, Phone, MoreHorizontal, Clock, MessageSquare } from "lucide-react";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -41,7 +41,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 const getTypeIcon = (type: string) => TYPE_OPTIONS.find((t) => t.value === type)?.icon ?? MoreHorizontal;
 const getTypeLabel = (type: string, lang: "en" | "zh") => TYPE_OPTIONS.find((t) => t.value === type)?.label[lang] ?? type;
-const formatDateTime = (iso: string | null) => (iso ? fmtDubai(new Date(iso), { locale: "zh-CN", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
+const formatDateTime = (iso: string | null, locale: string) => (iso ? fmtDubai(new Date(iso), { locale, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
 
 export default function LeadTimelinePage() {
   const { id } = useParams<{ id: string }>();
@@ -125,7 +125,7 @@ export default function LeadTimelinePage() {
 
   return (
     <DashboardScrollContainer className="bg-background">
-      <Toaster richColors position="top-center" />
+
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -159,10 +159,10 @@ export default function LeadTimelinePage() {
                         <Icon className="w-4 h-4 text-copper-500" />
                         <span>{getTypeLabel(log.contact_type, lang)}</span>
                         <Badge className={cn("text-[10px]", TYPE_COLORS[log.contact_type] || TYPE_COLORS.other)}>
-                          {lang === "zh" ? "实际动作时间" : "Action time"} {formatDateTime(log.contact_time || log.created_at)}
+                          {lang === "zh" ? "实际动作时间" : "Action time"} {formatDateTime(log.contact_time || log.created_at, (lang === "zh" ? "zh-CN" : "en-GB"))}
                         </Badge>
                       </div>
-                      <span className="text-xs text-muted-foreground">{formatDateTime(log.created_at)}</span>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(log.created_at, (lang === "zh" ? "zh-CN" : "en-GB"))}</span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">

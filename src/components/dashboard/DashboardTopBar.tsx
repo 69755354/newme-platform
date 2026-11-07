@@ -51,7 +51,7 @@ export function DashboardTopBar({
           onClick={() => window.location.reload()}
           className="text-xs text-rose-400 hover:text-rose-300 mr-2"
         >
-          Connection error — tap to retry
+          {t("common.connectionErrorRetry")}
         </button>
       )}
       {/* Notification bell */}

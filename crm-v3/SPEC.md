@@ -1180,3 +1180,77 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 `src/app/api/meta/ads-sync/route.ts` 在完整分页与映射成功后，只调用 `replace_meta_ad_spend_window` 执行整批写入，保留既有管理员权限边界。`src/lib/meta-ads-write.mjs` 校验原子回执，并将竞争、缺失迁移和数据库失败转为有限的错误码。`supabase/migrations/20261023123323_meta_ads_atomic_window.sql` 与前置审核 SQL 的字节哈希一致；例程以 SECURITY INVOKER 运行，只向 service_role 授予执行权限，包含跨进程事务锁、来源与日期范围限制和完整字段回读。共享事务回滚后不会留下已提交的空窗或半批数据。
 
 应用代码与部署状态分别记录。定时程序的安装、默认关闭状态、实际 HTTP 与程序的并发验收由私有运维回执证明；本节不声明定时同步已经运行。
+
+## 2026-11-07 OS 修复批次（S1–S10）：CI 转绿与文件覆盖补记
+
+本节补记 OS 修复批次（线索流程、权限收窄、报价与合同、统计口径、前端反馈、监控与备份、回归套件）自上一次更新本文件以来改动的文件及其契约。它描述代码与门禁覆盖；生产上线状态仍由发布门禁、预发布验证和生产验收单独证明。
+
+| Path | Contract covered by this release |
+| --- | --- |
+| `e2e/regression/global-setup.ts` | 回归套件的一次性登录：每个测试角色每轮只登录一次（或复用仍有效的缓存会话），会话文件 0600 写入被忽略的目录，保持在登录频率限制之内。 |
+| `e2e/regression/global-teardown.ts` | 回归套件收尾：通过应用自己的接口清理本轮创建的数据并记录无法清理的项；生产环境不创建数据，因此不运行清理。 |
+| `e2e/regression/lib/app.ts` | 应用级辅助：以浏览器自己的 cookie 调用接口、用用户自己的令牌直接探测数据库接口、经真实界面建线索、提示与导航发现。 |
+| `e2e/regression/lib/data.ts` | 测试数据辅助：以已登录用户自己的权限造线索，名称一律带 E2E 轮次前缀，并登记到收尾清理。 |
+| `e2e/regression/lib/fixtures.ts` | 回归套件共享的 Playwright 夹具：按角色打开已登录的新浏览器上下文，并带生产只读保护。 |
+| `e2e/regression/lib/paths.ts` | 缓存会话目录（按目标站点分文件夹，已被版本控制忽略）的路径定义。 |
+| `e2e/regression/lib/restcoords.ts` | 直接调用数据库接口所需的坐标：地址取自会话 cookie 名，公开匿名密钥来自环境变量或本机文件，不进仓库。 |
+| `e2e/regression/lib/ui.ts` | 多个用例共用的界面探测：整页文本、泄漏的翻译键、通知面板位置、过小的可点控件。 |
+| `e2e/regression/playwright.regression.config.ts` | 回归套件的 Playwright 配置：目标（预发布或生产冒烟）、单进程运行、报告输出；生产目标必须显式放行。 |
+| `e2e/regression/run.sh` | 回归套件入口：对预发布跑全量或冒烟子集，也可对生产跑只读冒烟，并生成中文 Markdown 报告。 |
+| `e2e/regression/specs/01-smoke.regression.ts` | 生产安全的冒烟子集：只读，外加对一条带标记的测试线索做一次可撤销的分配。 |
+| `e2e/regression/specs/02-lead-flow.regression.ts` | 线索流程用例：进入、查重、分配、联系与质量、里程碑、阶段、赢单与输单。 |
+| `e2e/regression/specs/03-quote-contract-payment.regression.ts` | 报价与合同用例：折扣上下限与导出、报价转合同、审批、生效、收款；无权角色必须得到 403 而不是 500。 |
+| `e2e/regression/specs/04-permissions.regression.ts` | 角色与动作矩阵：用各用户自己的令牌直接读数据库策略，并检查接口和页面级访问。 |
+| `e2e/regression/specs/05-ui-language-mobile.regression.ts` | 界面语言、手机端易用性、桌面布局和小型界面约定；Show room、FB、ins 按负责人决定保持英文。 |
+| `e2e/regression/specs/06-session-resilience.regression.ts` | 会话韧性用例：强制改密码、锁定、发布后旧页面、离线与慢保存、空闲。 |
+| `e2e/regression/specs/07-numbers.regression.ts` | 同一指标只有一个定义：同一数字在各处展示必须一致。 |
+| `infra/backup/newme-backup-freshness.sh` | 备份新鲜度检查（每小时）：最新完成的备份超过期限或不存在时报警，用来发现定时器从未触发。 |
+| `infra/backup/newme-backup-lib.sh` | 数据库备份与恢复演练共用的辅助函数（只被引用，不直接执行）：权限检查、失败先报警再退出，不打印任何凭据。 |
+| `infra/backup/newme-backup-onfailure.sh` | 由 systemd 在备份或演练单元失败时调用，覆盖脚本自己无法上报的情形（被超时或内存不足终止、无法启动）。 |
+| `infra/backup/newme-db-backup.sh` | 每日加密逻辑备份：对生产库只读（仅 pg_dump），先加密再保存，明文只存在于 0700 工作目录并在退出时删除。 |
+| `infra/backup/newme-restore-drill.sh` | 每月恢复演练：把最新备份恢复进本机一次性的 PostgreSQL 17（只监听本地套接字），结束即删除，不接触生产。 |
+| `infra/observability/l0-composite-probe.sh` | L0 综合探测：把健康、登录、依赖探测汇入同一个监控席位；整轮运行有时间上限，避免静默卡住。 |
+| `infra/observability/l0-watchdog.sh` | L0 探测的独立看门狗：每分钟在原锁之外检查心跳文件，过期则经同一报警状态机报警。 |
+| `infra/observability/meta-reconcile.sh` | 每日 Meta 线索对账入口：通过现有报警状态机上报，只输出计数和原因代码，不输出线索数据。 |
+| `infra/uptime/external-probe.sh` | 在生产服务器之外运行的外部可用性探测（公司网络存储或任何常开小机器），可发现服务器、证书、域名或网关故障。 |
+| `instrumentation-client.ts` | 浏览器端错误上报：只报错误，不开追踪、回放和性能采样，经同源隧道发送。 |
+| `src/app/(auth)/change-password/page.tsx` | 强制或主动改密码页：成功与失败提示在登录布局内可见，并给出本地化文案。 |
+| `src/app/(dashboard)/analytics/_components/LeadHealth.tsx` | 线索健康卡片：改用共享的指标定义，读取失败显示为错误。 |
+| `src/app/(dashboard)/analytics/_components/PaymentTracker.tsx` | 回款跟踪卡片：使用共享部署编号机制，发布后旧页面只刷新一次。 |
+| `src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx` | 管道漏斗卡片：读取失败显示为错误，“赢单”措辞，未知阶段显示标签，分页去重。 |
+| `src/app/(dashboard)/contracts/new/page.tsx` | 新建合同页：管理员、老板、运营可对任意线索建合同，销售只能对自己的线索建草稿，财务和设计师不能建。 |
+| `src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx` | 线索详情页的合同面板：按角色显示创建合同按钮并列出合同。 |
+| `src/app/(dashboard)/pipeline/_components/LeadCard.tsx` | 看板线索卡片：移动端布局与中文文案调整。 |
+| `src/app/(dashboard)/pipeline/_components/SalesKpiDashboard.tsx` | 销售业绩看板：读取失败显示为错误，“赢单”措辞，分页去重。 |
+| `src/app/(dashboard)/products/page.tsx` | 产品页：按服务端权限判断并本地化，未知分类显示为其他。 |
+| `src/app/(dashboard)/projects/projects-client.tsx` | 项目页客户端：移动端布局与中文文案调整。 |
+| `src/app/(dashboard)/quotes/quote-calculator.tsx` | 计算器报价：折扣上下限与计算器报价（S4）。 |
+| `src/app/(dashboard)/quotes/quote-wizard.tsx` | 报价向导：折扣上下限与计算器报价（S4）。 |
+| `src/app/(dashboard)/team/page.tsx` | 团队页：停用成员需二次确认并选择交接对象，布局与文案调整。 |
+| `src/app/api/cron/daily-digest/route.ts` | 每日摘要定时入口：已准备但默认关闭，运行环境未设置开关时一律返回已禁用。 |
+| `src/app/api/leads/route.ts` | 新建线索接口：以调用者自己的会话写入，行级安全仍决定谁能建；重复查找与通知用服务端客户端，重复时返回 DUPLICATE_LEAD。 |
+| `src/app/api/meta/leadgen-webhook/route.ts` | Meta 即时表单线索入口：按原因代码记录失败（不含线索内容），写入保持幂等。 |
+| `src/app/monitoring-tunnel/route.ts` | 浏览器错误上报的同源转发入口，只导出 POST，逻辑和防护在 src/lib/sentry-tunnel.mjs。 |
+| `src/components/ConnectionFailed.tsx` | 统一的“连接失败，重试”视图：认证服务暂不可用时显示它，而不是当作已退出登录。 |
+| `src/components/ReleaseUpdateBanner.tsx` | 发布后旧页面横幅：页面切回前台探测到新版本时只提示，由用户点击后刷新，不自动刷新。 |
+| `src/components/leads/LeadDuplicateNotice.tsx` | 重复线索提示：管理员、老板、运营可看到已有线索并说明原因后继续创建；销售只看到“可能重复”，不显示看不到的线索。 |
+| `src/components/pipeline/KanbanStats.tsx` | 看板阶段统计的统一展示单元：移动端布局与中文文案调整。 |
+| `src/components/team/MemberHandoverDialog.tsx` | 停用成员时选择线索交接对象（在岗同事或未分配队列），同时作为停用的二次确认。 |
+| `src/components/ui/confirm-dialog.tsx` | 共享的二次确认对话框，用于停用成员、删除报价行等一键破坏性操作；失败时保持打开并显示错误。 |
+| `src/hooks/useRequireRole.ts` | 客户端角色守卫：认证服务不可用时返回“暂不可用”，不把人踢到登录页。 |
+| `src/hooks/useUserRole.ts` | 通过共享会话读取接口获取角色，避免发布后旧页面因动作编号变化读成空角色。 |
+| `src/hooks/useVersionSkewReload.ts` | 发布期间打开的旧页面的两道保护：未捕获的动作失败只刷新一次，返回前台探测只显示横幅。 |
+| `src/lib/audit-log.ts` | 应用层审计写入：登录、账号与角色创建、报价导出写入审计表，尽力而为，失败只记日志，不阻塞调用方。 |
+| `src/lib/lead-duplicates.ts` | 查找同一客户的已有线索（任意格式的同一电话或同一邮箱），用服务端客户端以便发现其他销售持有的重复。 |
+| `src/lib/meta-crm-events.ts` | Meta 转化线索（CRM）事件：需要表单的线索编号，合同生效赢单时排队回传。 |
+| `src/lib/mutation-feedback.ts` | 用户发起写入的统一反馈模式：成功、失败、会话失效按同一规则提示。 |
+| `src/lib/notification-events.ts` | 新线索通知对象：已分配的只通知负责人，未分配的通知管理员与运营队列。 |
+| `src/lib/server-page-auth.ts` | 服务端渲染页面（报价、项目、广告设置、线缆成本）自己的权限判断，隐藏的资料行视为停用。 |
+| `src/lib/utils.ts` | 日期时间按迪拜时间格式化，并由调用方显式传入界面语言，不读浏览器设置。 |
+| `src/types/contracts.ts` | 合同列表读取模型的单一声明。 |
+| `tests/database/contract-activation-wins-lead.py` | 数据库用例：转合同不赢单，合同生效才赢单且幂等，赢单时间在生效时写入。 |
+| `tests/database/policy-equivalence.py` | 数据库用例：策略改写前后等价，session_token_is_current 一律用包裹写法（资料表保留原写法）。 |
+| `tests/database/role-permissions.py` | 数据库用例：按角色的权限矩阵，包括运营可关闭线索、合同创建按角色、设计师与财务的收窄。 |
+| `scripts/phase-tool-drill.sh` | 两阶段迁移工具演练：在最小回放底座上执行延后阶段前，补上生产已有、底座缺少的对象（线索文件表、线索工作流阶段表及触发器、项目经理与指派列、客户指派销售列、报价折扣列），使角色收窄迁移里“有表才建”的部分在演练库上与生产一致，规则检查才读得到真值；迁移文件和规则检查本身不变。 |
+
+验证边界：`scripts/check-published-credentials.mjs` 对本批次新增的测试夹具按文件和标识符逐条登记豁免并写明理由，规则本身未放宽。

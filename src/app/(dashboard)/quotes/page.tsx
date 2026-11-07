@@ -1,22 +1,18 @@
-import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { authorizeServerPage } from "@/lib/server-page-auth";
+import { ConnectionFailed } from "@/components/ConnectionFailed";
 import QuotesClient from "./quotes-client";
 import SubNavTabs from "@/components/SubNavTabs";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 
 export const dynamic = "force-dynamic";
 
-async function authorize() {
-  const supabase = await createServerSupabase();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) redirect("/login");
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (!profile?.role || !["admin", "boss", "sales"].includes(profile.role)) redirect("/dashboard");
-  return { user, role: profile.role };
-}
-
 export default async function QuotesPage() {
-  const { user, role } = await authorize();
+  const session = await authorizeServerPage({ roles: ["admin", "boss", "operator", "sales"] });
+  if (session.status === "unavailable") {
+    return <DashboardScrollContainer><ConnectionFailed /></DashboardScrollContainer>;
+  }
+  const { role } = session;
   let initialData: any[] = [];
   let fetchError: string | null = null;
 

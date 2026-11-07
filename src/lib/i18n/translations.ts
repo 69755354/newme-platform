@@ -1,6 +1,78 @@
 // Translation keys for NewMe CRM
 export const translations = {
   en: {
+    // ── S3 lead-flow fixes (2026-11-04) — separate block at the top of the language to avoid merge conflicts with S6 ──
+    leadFlow: {
+      notification: {
+        newLeadTitle: "New lead: {name}",
+        newLeadAssignedTitle: "New lead assigned: {name}",
+        leadAssignedTitle: "Lead assigned to you",
+        assignedToYouBody: "Lead \"{name}\" has been assigned to you",
+        waitingBody: "Lead \"{name}\" is waiting for assignment",
+        createdBody: "New lead \"{name}\" was created",
+      },
+      validation: {
+        nameRequired: "Customer name is required (at least 2 characters)",
+        nameTooLong: "Customer name is too long (max 100 characters)",
+        contactRequired: "Enter a valid phone number or email",
+        phoneInvalid: "Invalid phone number. Use a UAE number (e.g. 050 123 4567) or include the country code (+44…)",
+        emailInvalid: "Invalid email address",
+        locationTooLong: "Location is too long (max 200 characters)",
+        notesTooLong: "Notes are too long (max 2000 characters)",
+        fieldInvalid: "Invalid value",
+      },
+      duplicate: {
+        title: "Possible duplicate lead",
+        body: "A lead with the same phone or email already exists:",
+        ownedByOther: "Owned by another colleague — ask an admin or operator to check it",
+        open: "Open existing lead",
+        archived: "archived",
+        overrideReasonLabel: "Reason for creating a separate lead",
+        overrideReasonPlaceholder: "e.g. different project for the same customer",
+        overrideConfirm: "Create anyway",
+        overrideReasonRequired: "Please give a reason (at least 3 characters)",
+        salesBlocked: "You cannot create a duplicate lead. Please contact an admin or operator.",
+        banner: "Possible duplicate: another lead has the same phone or email",
+      },
+      reassign: {
+        conflict: "This lead was just changed by someone else. The latest data has been loaded — please try again.",
+        forbidden: "You do not have permission to reassign this lead",
+        invalidAssignee: "This person cannot receive leads",
+        failed: "Reassignment failed, please try again",
+      },
+      stage: {
+        advanced: "Stage moved to {stage}",
+      },
+      list: {
+        showing: "Showing {shown} of {total} leads",
+        total: "{total} leads",
+      },
+      team: {
+        handoverTitle: "Deactivate member",
+        handoverDescription: "{name} holds {count} lead(s). Choose who takes them over before deactivating.",
+        handoverTarget: "Hand leads over to",
+        handoverUnassigned: "Leave unassigned (admin queue)",
+        handoverChoose: "Choose a person or the admin queue",
+        handoverConfirm: "Deactivate and hand over",
+        handoverFailed: "Some leads could not be handed over; the member was not deactivated. Please retry.",
+        handoverDone: "Member deactivated; {count} lead(s) handed over",
+        handoverCountError: "Could not load how many leads {name} holds. Close and reopen this window to retry; all of their leads are still handed over when you confirm.",
+      },
+      stageHint: {
+        next_followup_required: "Milestone saved. To move the stage forward, set the next action and next follow-up date first.",
+        first_contact_gate: "Milestone saved. The stage moves on once a complete contact record and a quality assessment exist.",
+        not_permitted: "Milestone saved. Your role cannot change the stage; ask the owner or an admin.",
+        changed_concurrently: "Milestone saved. The stage was changed by someone else; the latest data has been loaded.",
+        stage_update_failed: "Milestone saved, but the stage could not be moved. Please try again.",
+      },
+      duplicateReview: {
+        salesWarning: "Possible duplicate: a lead with this phone or email may already exist. You can still create it with a reason; an admin/operator will review it.",
+        reasonLabel: "Why is this a new lead?",
+        flaggedTitle: "Possible duplicate lead to review: {name}",
+        flaggedBody: "Lead \"{name}\" was created despite a possible duplicate",
+      },
+      created: "Lead created",
+    },
     common: {
       unauthorized: "Unauthorized",
       saveFailedRetry: "Save failed — please try again",
@@ -64,6 +136,14 @@ export const translations = {
       cannotSkipStages: "Cannot skip stages — advance one step at a time",
       invalidStage: "Invalid stage",
       failedToUpdateStage: "Failed to update stage",
+      // OS fix S1 · shared connection-failed view (dashboard layout, server pages)
+      connectionFailed: "Connection failed",
+      connectionFailedHint: "The server did not answer. Check your network and retry.",
+      systemUpdatedRefresh: "The system was updated — save your work, then click here to refresh",
+      // ── S6 (OS fix) additions ──
+      notificationsRegion: "Notifications",
+      noData: "No data",
+      connectionErrorRetry: "Connection error — tap to retry",
     },
     nav: {
       dashboard: "Dashboard",
@@ -102,6 +182,10 @@ export const translations = {
       salesAnalytics: "Analytics",
       salesProducts: "Products",
       cableCosting: "Cable Costing",
+      // ── OS fix S2: finance / designer sidebars ──
+      roleFinance: "Finance",
+      roleDesigner: "Designer",
+      financePayments: "Payments",
     },
     // Cable & pulling-labour costing (employee self-service estimating tool).
     // Wording only — every figure on that page comes from /api/cable-costing/*,
@@ -262,6 +346,8 @@ export const translations = {
       activityLogged: "Activity logged",
       openWhatsApp: "Open WhatsApp",
       callPhone: "Call phone",
+      // ── S6 (OS fix) additions ──
+      sourceLine: "{n} leads · {won} won · {pct}%",
     },
     leads: {
       created: "Lead created successfully",
@@ -403,6 +489,12 @@ export const translations = {
       poorReasonPlaceholder: "e.g. No budget, wrong audience...",
       allQuality: "All Quality",
       contactQuality: "Contact Quality",
+      // ── S6 (OS fix) additions ──
+      noteSaveFailed: "Lead created, but the note could not be saved. Please add it again on the lead page.",
+      noteNeedsSignIn: "Lead created, but the note was not saved because you are not signed in.",
+      followupTaskFailed: "Lead created, but the follow-up task could not be created. Please set the next follow-up on the lead page.",
+      emailPlaceholder: "name@example.com",
+      locationPlaceholder: "e.g. Dubai, Palm Jumeirah",
     },
     settings: {
       subnavSystem: "System Settings",
@@ -479,6 +571,9 @@ export const translations = {
       stageLost: "Lost",
       hideEmpty: "Hide empty",
       showEmpty: "Show all",
+      // ── S6 (OS fix) additions ──
+      stageDistribution: "Pipeline stage distribution",
+      leadsPct: "{n} leads, {pct}%",
     },
     kpi: {
       title: "My Performance",
@@ -506,7 +601,8 @@ export const translations = {
       kpiSaved: "KPI targets saved",
       saveFailed: "Save failed",
       detailData: "Details",
-      contractCount: "Contracts",
+      contractCount: "Won this month (orders)",
+      wonOrders: "Won this month: {n}",
       onlyYourLeads: "Your leads only",
       loadFailed: "Failed to load, please refresh",
     },
@@ -536,6 +632,9 @@ export const translations = {
         first_payment_reminder: "First Payment Reminder",
         team_member_added: "Team Member Added",
       },
+      // ── S6 (OS fix) additions ──
+      titleNewLead: "New lead: ",
+      titleLeadAssigned: "New lead assigned: ",
     },
     payment: {
       title: "Payments",
@@ -686,6 +785,8 @@ export const translations = {
       noAccessDesc: "Sales role does not have access to this page",
       adminOnlyNote: "Only accessible by admin and boss roles.",
       noAccountData: "No data found",
+      // ── S6 (OS fix) additions ──
+      backToLeads: "Back to Leads",
     },
     leadDetail: {
       contactResultRequired: "Contact result is required",
@@ -992,6 +1093,24 @@ export const translations = {
       confirmPoor: "Confirm Poor",
       poorReasonPlaceholder: "Enter reason for Poor (min 3 chars)",
       firstContactGateHint: "At least 1 complete contact and quality are required; 3 contacts are recommended",
+      // ── S6 (OS fix) additions ──
+      budgetMustBeNumber: "Customer budget must be a number",
+      invalidJson: "Please enter valid JSON",
+      contactRecordsValid: "Contact records (with valid time)",
+      noContactYet: "No contact yet",
+      contactActivityNormal: "Contact activity normal",
+      noFollowupLogs: "No follow-up logs",
+      noSummary: "(no summary)",
+      qualityGoodBtn: "Good",
+      qualityNormalBtn: "Normal",
+      qualityPoorBtn: "Poor",
+      sectionCustomer: "Customer",
+      sectionProjectFacts: "Project facts",
+      followupOverdueSince: "Follow-up overdue (since {date})",
+      // S4 review fix: closed-lead notice and stage note label
+      leadClosedWon: "This lead is already won and closed; it cannot be marked again.",
+      leadClosedLost: "This lead is already lost and closed; it cannot be changed.",
+      stageNoteRequired: "Stage note (required)",
     },
     stageLabels: {
       new: "New Lead",
@@ -1062,6 +1181,9 @@ export const translations = {
       rateLimited: "Too many attempts. Please wait and try again.",
       inactiveAccount: "This account is disabled. Contact an administrator.",
       unavailable: "Sign-in is temporarily unavailable. Please try again.",
+      // ── S6 (OS fix) additions ──
+      rateLimitedWait: "Too many failed sign-in attempts (8 wrong passwords within 15 minutes locks the account). Please try again in {n} min.",
+      rateLimitedNetworkWait: "Too many sign-in attempts from this network (more than 20 within 5 minutes). Your account is not locked. Please try again in {n} min.",
     },
     changePassword: {
       title: "Change Password",
@@ -1078,6 +1200,17 @@ export const translations = {
       failed: "Failed to change password",
       success: "Password changed successfully",
       error: "Something went wrong",
+      // ── S6 (OS fix) additions ──
+      missingFields: "Please fill in all three fields.",
+      sameAsOld: "The new password must be different from your current password.",
+      wrongCurrent: "The current password is incorrect. Please check and try again.",
+      sessionExpired: "Your session has ended. Please sign in again.",
+      rateLimited: "Too many attempts. Please wait a few minutes and try again.",
+      partialSuccess: "Your password was changed, but a follow-up security step did not finish. Please sign in with the new password; if it fails, contact an administrator.",
+      networkError: "Network error — nothing was changed. Check your connection and try again.",
+      successContinuing: "Password changed. Signing you in…",
+      reloginRequired: "Password changed. For security, all sessions were signed out — please sign in again with your new password.",
+      goToLogin: "Go to sign in",
     },
     contracts: {
       subnavContracts: "Contracts & Payments",
@@ -1221,7 +1354,7 @@ export const translations = {
       passwordReset: "password has been reset",
       passwordAdminOnly: "This password is only visible to admins and will not be sent to the user.",
       close: "Close",
-      userDeleted: "User deleted",
+      userDeleted: "Member deactivated",
       fillRequired: "Please fill required fields",
       userCreated: "created successfully",
       justNow: "Just now",
@@ -1231,8 +1364,8 @@ export const translations = {
       retry: "Retry",
       fetchFailed: "Failed to fetch users",
       createFailed: "Failed to create user",
-      minutesAgo: "m ago",
-      hoursAgo: "h ago",
+      minutesAgo: "{n}m ago",
+      hoursAgo: "{n}h ago",
       roleAdmin: "Admin",
       roleBoss: "Boss",
       roleSales: "Sales",
@@ -1250,6 +1383,11 @@ export const translations = {
       activityActions: "Actions",
       activityNoActions: "No actions recorded",
       activityNoPermission: "You do not have permission to view the Activity Log.",
+      // ── S6 (OS fix) additions ──
+      deactivate: "Deactivate member",
+      deactivateTitle: "Deactivate this member?",
+      deactivateConfirm: "{name} will no longer be able to sign in, and their leads and contracts will be reassigned automatically. Continue?",
+      deactivateFailed: "Could not deactivate this member. Please try again.",
     },
     locale: {
       dateLocale: "en-GB",
@@ -1448,6 +1586,19 @@ export const translations = {
       services: "Services",
       next: "Next",
       close: "Close",
+      // ── S6 (OS fix) additions ──
+      contract_created: "Contract created",
+      won: "Won",
+      sendToClient: "Send to Client",
+      acceptAction: "Accept",
+      rejectAction: "Reject",
+      paymentSchedule: "Payment schedule",
+      installmentDescription: "Description",
+      addInstallment: "Add installment",
+      // ── OS fix S4: quote and contract error feedback (separate block) ──
+      invalidAmounts: "Discount must be between 0 and 100%, and amounts cannot be negative",
+      statusUpdateFailed: "The quote status could not be saved. Please try again.",
+      milestoneNotRecorded: "Quote status updated, but the lead's quotation milestone could not be recorded",
     },
     products: {
       title: "Product Catalog",
@@ -1483,6 +1634,7 @@ export const translations = {
         cables: "Cables",
         services: "Services",
         lighting: "Lighting",
+        other: "Other",
       },
     },
     analytics: {
@@ -1508,7 +1660,7 @@ export const translations = {
       qualityDistribution: "Quality Distribution",
       conversionRate: "Conversion Rate",
       followupRate: "Follow-up Rate",
-      wonAmount: "Won Amount",
+      wonAmount: "Won Amount (to date)",
       avgLoad: "Avg Load",
       imbalance: "Imbalance Detected",
       overloaded: "Overloaded",
@@ -1533,7 +1685,7 @@ export const translations = {
       totalSpend: "Total Spend",
       cpl: "Cost Per Lead",
       conversions: "Conversions",
-      signedAmount: "Signed Amount",
+      signedAmount: "Weekly Won Amount",
       roas: "ROAS",
       noData: "No data available",
       noAdsData: "No ad spend data available. Import from COS first.",
@@ -1562,7 +1714,7 @@ export const translations = {
       status: "Status",
       overdueDays: "Overdue",
       rep: "Rep",
-      signedShort: "Signed",
+      signedShort: "Contract value",
       collectedShort: "Collected",
       rate: "Rate",
       overdueShort: "Overdue",
@@ -1592,6 +1744,7 @@ export const translations = {
       lostColon: "Lost:",
       more: "more",
       whereILoseMost: "Where I Lose Most",
+      stageUnknown: "Unknown",
       lost: "lost",
       overdueFollowups: "Overdue Follow-ups",
       noOverdue: "No overdue follow-ups! Great job.",
@@ -1612,7 +1765,7 @@ export const translations = {
       noSourceData: "No source data",
       weeklyTrendsChart: "Weekly Trends (12 Weeks)",
       myWeeklyTrends: "My Weekly Trends (12 Weeks)",
-      signedAmountLabel: "Signed Amount",
+      signedAmountLabel: "Weekly Won Amount",
       convRateLabel: "Conv Rate",
       collectedLabel: "Collected",
       noWeeklyData: "No weekly data available yet.",
@@ -1634,6 +1787,17 @@ export const translations = {
       aboveAvg: "above avg",
       belowAvg: "below avg",
       bestSource: "Best converting source:",
+      // ── S6 (OS fix) additions ──
+      quickNotePrompt: "Add a quick note for this follow-up:",
+      noteAdded: "Note added",
+      noteAddFailed: "Failed to add note. Please try again.",
+      daysShort: "{n}d",
+      loadFailed: "Failed to load. Please refresh and try again.",
+      newThisWeek: "+{n} this week",
+      leadsCount: "{n} leads",
+      imbalanceDetail: "{names}: overloaded ({n} leads vs. average {avg}). {k} reps have capacity for new leads.",
+      // S5: numbers and statistics
+      qualityNormal: "Normal",
     },
     commandCenter: {
       title: "Command Center",
@@ -1680,6 +1844,10 @@ export const translations = {
       statusUpdated: "Status updated",
       documents: "Documents",
       downloadPDF: "Download PDF",
+      // ── S6 (OS fix) additions ──
+      removeItem: "Remove item",
+      removeItemTitle: "Remove this line item?",
+      removeItemConfirm: "The item will be removed from the saved quotation and the totals recalculated. Continue?",
     },
     workbench: {
       title: "Sales Workbench",
@@ -1703,9 +1871,116 @@ export const translations = {
         pendingQuality: "Pending Quality",
         stageAdvanced: "Stage Advanced",
       },
+      // ── S6 (OS fix) additions ──
+      followupAlerts: "Follow-up Alerts",
+      noAlerts: "No alerts",
+      noAnswer: "No answer",
+      newLead: "New Lead",
+      allLeads: "All Leads",
+      reportIssue: "Report Issue",
+      taskSource: { new: "New", meeting: "Meeting", basic_info: "Basic info", requirements: "Requirements", design_proposal: "Design proposal", contract: "Contract", decision: "Decision", follow_up: "Follow-up", manual: "Manual", system: "System", contacted: "Contacted", call: "Call" },
+    },
+    // ── S6 (OS fix) section ──
+    mutation: {
+      saving: "Saving…",
+      network: "Network error — not saved. Your input is kept; check the connection and try again.",
+      session: "Your sign-in has ended. Please sign in again — taking you to the sign-in page…",
+      forbidden: "You don't have permission to do this.",
+      conflict: "This record was just changed by someone else. Refresh and try again.",
+      validation: "Some of the information is invalid. Please check and try again.",
+      server: "Save failed due to a server error. Please try again.",
+      saved: "Saved",
+      // ── S6 (OS fix) additions ──
+      unexpected: "Something went wrong — not saved. Your input is kept; please try again. The problem has been recorded.",
+    },
+    // ── S6 (OS fix) section ──
+    apiErrors: {
+      lead_not_found: "Lead not found, or you no longer have access to it.",
+      stage_note_is_required: "Please enter a stage note.",
+      milestone_note_is_required: "Please enter a milestone note.",
+      concurrent_lead_update: "This lead was just changed by someone else. Refresh and try again.",
+      forbidden_invalid_crm_role: "Your role is not allowed to do this.",
+      forbidden: "You don't have permission to do this.",
+      contact_time_cannot_be_in_the_future: "Contact time cannot be in the future.",
+      terminal_lead_stage_cannot_be_changed: "This lead is already closed (won or lost); its stage can't be changed.",
+      lead_delete_blocked: "This lead has contact records or contracts and can't be deleted.",
+      invalid_request: "The request was invalid. Please check the input.",
+      not_found: "Not found.",
     },
   },
   zh: {
+    // ── S3 线索流程修复（2026-11-04）— 独立区块，放在语言开头以避免与 S6 合并冲突 ──
+    leadFlow: {
+      notification: {
+        newLeadTitle: "新线索：{name}",
+        newLeadAssignedTitle: "新分配线索：{name}",
+        leadAssignedTitle: "线索已分配给你",
+        assignedToYouBody: "线索「{name}」已分配给你",
+        waitingBody: "线索「{name}」等待分配",
+        createdBody: "新建线索「{name}」",
+      },
+      validation: {
+        nameRequired: "请填写客户姓名（至少 2 个字）",
+        nameTooLong: "客户姓名过长（最多 100 字）",
+        contactRequired: "请填写有效的电话或邮箱",
+        phoneInvalid: "电话格式不正确：请填阿联酋号码（如 050 123 4567）或带国家码（+44…）",
+        emailInvalid: "邮箱格式不正确",
+        locationTooLong: "地址过长（最多 200 字）",
+        notesTooLong: "备注过长（最多 2000 字）",
+        fieldInvalid: "填写内容不正确",
+      },
+      duplicate: {
+        title: "可能是重复线索",
+        body: "已有相同电话或邮箱的线索：",
+        ownedByOther: "该线索属于其他同事，请联系管理员或运营核对",
+        open: "打开已有线索",
+        archived: "已归档",
+        overrideReasonLabel: "仍要单独新建的原因",
+        overrideReasonPlaceholder: "例如：同一客户的另一个项目",
+        overrideConfirm: "仍然新建",
+        overrideReasonRequired: "请填写原因（至少 3 个字）",
+        salesBlocked: "不能新建重复线索，请联系管理员或运营。",
+        banner: "可能重复：已有线索使用相同电话或邮箱",
+      },
+      reassign: {
+        conflict: "该线索刚被其他人修改，已为你载入最新数据，请再试一次。",
+        forbidden: "你没有改派此线索的权限",
+        invalidAssignee: "此人不能接收线索",
+        failed: "改派失败，请重试",
+      },
+      stage: {
+        advanced: "阶段已推进到 {stage}",
+      },
+      list: {
+        showing: "显示 {shown} / 共 {total} 条线索",
+        total: "共 {total} 条线索",
+      },
+      team: {
+        handoverTitle: "停用成员",
+        handoverDescription: "{name} 名下有 {count} 条线索，停用前请选择由谁接手。",
+        handoverTarget: "线索交给",
+        handoverUnassigned: "暂不分配（进入管理员待分配队列）",
+        handoverChoose: "请选择接手人或待分配队列",
+        handoverConfirm: "停用并移交",
+        handoverFailed: "部分线索移交失败，成员未被停用，请重试。",
+        handoverDone: "成员已停用，已移交 {count} 条线索",
+        handoverCountError: "无法读取 {name} 名下的线索数量。请关闭后重新打开重试；确认后其名下全部线索仍会移交。",
+      },
+      stageHint: {
+        next_followup_required: "里程碑已保存。要推进阶段，请先填写下一步动作和下次跟进日期。",
+        first_contact_gate: "里程碑已保存。有完整联系记录并评估质量后，阶段才会推进。",
+        not_permitted: "里程碑已保存。你的角色不能改阶段，请联系负责人或管理员。",
+        changed_concurrently: "里程碑已保存。阶段刚被他人修改，已载入最新数据。",
+        stage_update_failed: "里程碑已保存，但阶段未能推进，请重试。",
+      },
+      duplicateReview: {
+        salesWarning: "可能重复：系统里可能已有相同电话或邮箱的线索。填写原因后仍可新建，管理员/运营会复核。",
+        reasonLabel: "为什么要单独新建？",
+        flaggedTitle: "待复核的疑似重复线索：{name}",
+        flaggedBody: "线索「{name}」在疑似重复的情况下被新建",
+      },
+      created: "线索已创建",
+    },
     common: {
       unauthorized: "未授权",
       saveFailedRetry: "保存失败，请重试",
@@ -1763,6 +2038,14 @@ export const translations = {
       cannotSkipStages: "无法跳过阶段——请逐级推进",
       invalidStage: "无效阶段",
       failedToUpdateStage: "更新阶段失败",
+      // OS fix S1 · 共用“连接失败”视图（仪表盘布局、服务端页面）
+      connectionFailed: "连接失败",
+      connectionFailedHint: "服务器暂时没有响应，请检查网络后重试。",
+      systemUpdatedRefresh: "系统已更新，请保存后点此刷新",
+      // ── S6 (OS fix) additions ──
+      notificationsRegion: "消息提示",
+      noData: "暂无数据",
+      connectionErrorRetry: "连接出错，点此重试",
     },
     nav: {
       dashboard: "驾驶舱",
@@ -1801,6 +2084,10 @@ export const translations = {
       salesAnalytics: "分析",
       salesProducts: "产品库",
       cableCosting: "线材报价",
+      // ── OS fix S2: finance / designer sidebars ──
+      roleFinance: "财务",
+      roleDesigner: "设计师",
+      financePayments: "回款",
     },
     cableCosting: {
       title: "线材与穿线报价",
@@ -1958,6 +2245,8 @@ export const translations = {
       activityLogged: "已记录",
       openWhatsApp: "打开 WhatsApp",
       callPhone: "拨打电话",
+      // ── S6 (OS fix) additions ──
+      sourceLine: "{n} 条线索 · 成交 {won} · {pct}%",
     },
     leads: {
       created: "线索创建成功",
@@ -2099,6 +2388,12 @@ export const translations = {
       poorReasonPlaceholder: "如：无预算、非目标客户...",
       allQuality: "全部质量",
       contactQuality: "联系质量",
+      // ── S6 (OS fix) additions ──
+      noteSaveFailed: "线索已创建，但备注没有保存成功，请到线索详情页重新添加。",
+      noteNeedsSignIn: "线索已创建，但因未登录，备注没有保存。",
+      followupTaskFailed: "线索已创建，但跟进任务没有建成功，请在线索详情页设置下次跟进。",
+      emailPlaceholder: "例如 name@example.com",
+      locationPlaceholder: "例如：迪拜 朱美拉棕榈岛",
     },
     settings: {
       subnavSystem: "系统设置",
@@ -2175,6 +2470,9 @@ export const translations = {
       stageLost: "已流失",
       hideEmpty: "隐藏空阶段",
       showEmpty: "显示全部",
+      // ── S6 (OS fix) additions ──
+      stageDistribution: "管线阶段分布",
+      leadsPct: "{n} 条线索，占 {pct}%",
     },
     kpi: {
       title: "我的业绩",
@@ -2202,7 +2500,8 @@ export const translations = {
       kpiSaved: "KPI 目标已保存",
       saveFailed: "保存失败",
       detailData: "详细数据",
-      contractCount: "合同数量",
+      contractCount: "本月赢单数",
+      wonOrders: "本月赢单 {n} 单",
       onlyYourLeads: "仅显示您的线索",
       loadFailed: "加载失败，请刷新重试",
     },
@@ -2232,6 +2531,9 @@ export const translations = {
         first_payment_reminder: "首付提醒",
         team_member_added: "新成员加入",
       },
+      // ── S6 (OS fix) additions ──
+      titleNewLead: "新线索：",
+      titleLeadAssigned: "分配给你的新线索：",
     },
     payment: {
       title: "回款管理",
@@ -2381,6 +2683,8 @@ export const translations = {
       noAccessDesc: "销售角色无权访问此页面",
       adminOnlyNote: "仅管理员和老板角色可访问。",
       noAccountData: "暂无数据",
+      // ── S6 (OS fix) additions ──
+      backToLeads: "返回线索",
     },
     leadDetail: {
       contactResultRequired: "请填写联系结果",
@@ -2683,6 +2987,24 @@ export const translations = {
       confirmPoor: "确认差",
       poorReasonPlaceholder: "请输入差的原因（至少3个字符）",
       firstContactGateHint: "至少需要1条完整联系记录并评估质量；建议填写3次联系记录",
+      // ── S6 (OS fix) additions ──
+      budgetMustBeNumber: "客户预算必须是数字",
+      invalidJson: "请输入有效的 JSON 格式",
+      contactRecordsValid: "联系记录（有有效时间）",
+      noContactYet: "尚未联系",
+      contactActivityNormal: "联系频率正常",
+      noFollowupLogs: "暂无跟进记录",
+      noSummary: "（无摘要）",
+      qualityGoodBtn: "优质",
+      qualityNormalBtn: "一般",
+      qualityPoorBtn: "差",
+      sectionCustomer: "客户",
+      sectionProjectFacts: "项目信息",
+      followupOverdueSince: "跟进已逾期（应于 {date}）",
+      // S4 review fix: closed-lead notice and stage note label
+      leadClosedWon: "该线索已赢单，阶段已关闭，无需再次标记。",
+      leadClosedLost: "该线索已输单，阶段已关闭，无法再修改。",
+      stageNoteRequired: "阶段备注（必填）",
     },
     stageLabels: {
       new: "新线索",
@@ -2753,6 +3075,9 @@ export const translations = {
       rateLimited: "尝试次数过多，请稍后再试。",
       inactiveAccount: "该账号已停用，请联系管理员。",
       unavailable: "登录服务暂时不可用，请重试。",
+      // ── S6 (OS fix) additions ──
+      rateLimitedWait: "登录失败次数过多（15 分钟内输错 8 次密码会暂时锁定）。请在 {n} 分钟后再试。",
+      rateLimitedNetworkWait: "当前网络的登录尝试过于频繁（5 分钟内超过 20 次），这不是账号被锁。请在 {n} 分钟后再试。",
     },
     changePassword: {
       title: "修改密码",
@@ -2769,6 +3094,17 @@ export const translations = {
       failed: "修改密码失败",
       success: "密码修改成功",
       error: "出错了，请重试",
+      // ── S6 (OS fix) additions ──
+      missingFields: "请填写全部三个密码栏。",
+      sameAsOld: "新密码不能与当前密码相同。",
+      wrongCurrent: "当前密码不正确，请检查后重试。",
+      sessionExpired: "登录已失效，请重新登录。",
+      rateLimited: "尝试次数过多，请等几分钟再试。",
+      partialSuccess: "密码已修改，但后续的安全步骤没有完成。请用新密码重新登录；如无法登录，请联系管理员。",
+      networkError: "网络连接失败，密码未修改。请检查网络后重试。",
+      successContinuing: "密码已修改，正在为你登录…",
+      reloginRequired: "密码已修改。出于安全考虑，所有登录都已退出，请用新密码重新登录。",
+      goToLogin: "去登录",
     },
     contracts: {
       subnavContracts: "合同&回款",
@@ -2901,7 +3237,7 @@ export const translations = {
       passwordReset: "密码已重置",
       passwordAdminOnly: "此密码仅在管理员端可见，不会发送给用户。",
       close: "关闭",
-      userDeleted: "用户已删除",
+      userDeleted: "成员已停用",
       fillRequired: "请填写必填字段",
       userCreated: "创建成功",
       justNow: "刚刚",
@@ -2911,8 +3247,8 @@ export const translations = {
       retry: "重试",
       fetchFailed: "获取用户失败",
       createFailed: "创建用户失败",
-      minutesAgo: "分钟前",
-      hoursAgo: "小时前",
+      minutesAgo: "{n} 分钟前",
+      hoursAgo: "{n} 小时前",
       roleAdmin: "管理员",
       roleBoss: "老板",
       roleSales: "销售",
@@ -2930,6 +3266,11 @@ export const translations = {
       activityActions: "操作",
       activityNoActions: "无操作记录",
       activityNoPermission: "您没有权限查看活动日志。",
+      // ── S6 (OS fix) additions ──
+      deactivate: "停用成员",
+      deactivateTitle: "确认停用该成员？",
+      deactivateConfirm: "停用后「{name}」将无法登录，名下的线索和合同会自动转给其他人。确定继续吗？",
+      deactivateFailed: "停用失败，请重试。",
     },
     locale: {
       dateLocale: "zh-CN",
@@ -3128,6 +3469,19 @@ export const translations = {
       services: "服务",
       next: "下一步",
       close: "关闭",
+      // ── S6 (OS fix) additions ──
+      contract_created: "已转合同",
+      won: "已成交",
+      sendToClient: "发送给客户",
+      acceptAction: "接受",
+      rejectAction: "拒绝",
+      paymentSchedule: "付款计划",
+      installmentDescription: "说明",
+      addInstallment: "添加分期",
+      // ── OS fix S4: quote and contract error feedback (separate block) ──
+      invalidAmounts: "折扣必须在 0 到 100% 之间，且金额不能为负数",
+      statusUpdateFailed: "报价状态未能保存，请重试",
+      milestoneNotRecorded: "报价状态已更新，但线索的“报价”里程碑未能记录",
     },
     products: {
       title: "产品目录",
@@ -3163,6 +3517,7 @@ export const translations = {
         cables: "线缆",
         services: "服务",
         lighting: "照明",
+        other: "其他",
       },
     },
     analytics: {
@@ -3188,7 +3543,7 @@ export const translations = {
       qualityDistribution: "质量分布",
       conversionRate: "转化率",
       followupRate: "跟进率",
-      wonAmount: "赢单金额",
+      wonAmount: "累计赢单金额",
       avgLoad: "平均负载",
       imbalance: "检测到负载不均",
       overloaded: "过载",
@@ -3213,7 +3568,7 @@ export const translations = {
       totalSpend: "总花费",
       cpl: "单线索成本",
       conversions: "转化数",
-      signedAmount: "签约金额",
+      signedAmount: "当周赢单金额",
       roas: "ROAS",
       noData: "暂无数据",
       noAdsData: "暂无广告数据，请先从COS导入",
@@ -3242,7 +3597,7 @@ export const translations = {
       status: "状态",
       overdueDays: "逾期",
       rep: "人员",
-      signedShort: "签约",
+      signedShort: "合同额",
       collectedShort: "已收",
       rate: "比率",
       overdueShort: "逾期",
@@ -3272,6 +3627,7 @@ export const translations = {
       lostColon: "输单:",
       more: "更多",
       whereILoseMost: "主要输单阶段",
+      stageUnknown: "未知",
       lost: "输单",
       overdueFollowups: "逾期跟进",
       noOverdue: "没有逾期跟进！表现很好。",
@@ -3292,7 +3648,7 @@ export const translations = {
       noSourceData: "暂无来源数据",
       weeklyTrendsChart: "周趋势 (12周)",
       myWeeklyTrends: "我的周趋势 (12周)",
-      signedAmountLabel: "签约金额",
+      signedAmountLabel: "当周赢单金额",
       convRateLabel: "转化率",
       collectedLabel: "已收款",
       noWeeklyData: "暂无周数据",
@@ -3314,6 +3670,17 @@ export const translations = {
       aboveAvg: "高于均值",
       belowAvg: "低于均值",
       bestSource: "转化最佳来源：",
+      // ── S6 (OS fix) additions ──
+      quickNotePrompt: "为这次跟进添加一条备注：",
+      noteAdded: "备注已添加",
+      noteAddFailed: "添加备注失败，请重试。",
+      daysShort: "{n} 天",
+      loadFailed: "加载失败，请刷新后重试。",
+      newThisWeek: "本周 +{n}",
+      leadsCount: "{n} 条线索",
+      imbalanceDetail: "{names} 负载过高（{n} 条线索，平均 {avg} 条）。另有 {k} 名销售可接新线索。",
+      // S5: numbers and statistics
+      qualityNormal: "一般",
     },
     commandCenter: {
       title: "战情室",
@@ -3360,6 +3727,10 @@ export const translations = {
       statusUpdated: "状态已更新",
       documents: "文档",
       downloadPDF: "下载 PDF",
+      // ── S6 (OS fix) additions ──
+      removeItem: "删除此项",
+      removeItemTitle: "确认删除这一行？",
+      removeItemConfirm: "该项目会从已保存的报价中删除，并重新计算总价。确定继续吗？",
     },
     workbench: {
       title: "销售工作台",
@@ -3383,6 +3754,41 @@ export const translations = {
         pendingQuality: "待判质量",
         stageAdvanced: "阶段推进",
       },
+      // ── S6 (OS fix) additions ──
+      followupAlerts: "跟进提醒",
+      noAlerts: "暂无提醒",
+      noAnswer: "未接通",
+      newLead: "新建线索",
+      allLeads: "全部线索",
+      reportIssue: "反馈问题",
+      taskSource: { new: "新线索", meeting: "会面", basic_info: "基本信息", requirements: "需求", design_proposal: "设计方案", contract: "合同", decision: "决策", follow_up: "跟进", manual: "手动", system: "系统", contacted: "已联系", call: "电话" },
+    },
+    // ── S6 (OS fix) section ──
+    mutation: {
+      saving: "正在保存…",
+      network: "网络连接失败，内容未保存。已保留你的输入，请检查网络后重试。",
+      session: "登录已失效，请重新登录。正在跳转到登录页…",
+      forbidden: "你没有执行此操作的权限。",
+      conflict: "该记录刚被他人修改，请刷新后重试。",
+      validation: "填写的内容有误，请检查后重试。",
+      server: "服务器出错，保存失败，请重试。",
+      saved: "已保存",
+      // ── S6 (OS fix) additions ──
+      unexpected: "出现意外错误，内容未保存。已保留你的输入，请重试；问题已记录。",
+    },
+    // ── S6 (OS fix) section ──
+    apiErrors: {
+      lead_not_found: "找不到该线索，或你已无权访问。",
+      stage_note_is_required: "请填写阶段备注。",
+      milestone_note_is_required: "请填写里程碑备注。",
+      concurrent_lead_update: "该线索刚被他人修改，请刷新后重试。",
+      forbidden_invalid_crm_role: "你的角色无权执行此操作。",
+      forbidden: "你没有执行此操作的权限。",
+      contact_time_cannot_be_in_the_future: "联系时间不能晚于现在。",
+      terminal_lead_stage_cannot_be_changed: "该线索已成交或已丢单，不能再改阶段。",
+      lead_delete_blocked: "该线索已有联系记录或合同，不能删除。",
+      invalid_request: "请求内容有误，请检查输入。",
+      not_found: "未找到。",
     },
   },
 } as const;

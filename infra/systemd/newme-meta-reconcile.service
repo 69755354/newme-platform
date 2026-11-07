@@ -1,0 +1,18 @@
+[Unit]
+Description=NewMe daily Meta lead reconciliation (read-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/newme/current
+EnvironmentFile=/etc/newme/newme-runtime.env
+ExecStart=/opt/hermes-scripts/observability/meta-reconcile.sh
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+Nice=10

@@ -5,6 +5,7 @@
 
 import { DEVICE_CATALOG, QUOTATION_DEFAULTS, buildDeviceLookup } from "./device-catalog";
 import { resolveInstallLabour } from "./quotation-labour-basis.mjs";
+import { clampDiscountRate } from "./quotation-rules.mjs";
 import type {
   BottomUpLabourRequest,
   InstallLabourBasis,
@@ -75,7 +76,10 @@ export interface CalculateResult {
 // ──────────────────────────────────────────────
 
 export function calculateQuotation(input: CalculateInput): CalculateResult {
-  const { devices, discount_rate = 0, notes } = input;
+  const { devices, notes } = input;
+  // Routes refuse out-of-range discounts with a 400 before they get here; this
+  // clamp is the last line, so no caller can price a negative total.
+  const discount_rate = clampDiscountRate(input.discount_rate ?? 0);
 
   // Build flat device lookup map: id → DeviceInfo
   const deviceLookup = buildDeviceLookup();

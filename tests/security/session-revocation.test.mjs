@@ -248,6 +248,7 @@ test("real lead stage handler rejects an inactive old session before business ac
       evaluateFirstContactGate: () => ({ allowed: true, reasons: [] }),
       isCompleteContact: () => true,
     },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, accountKey: () => "", writeAuditLog: async () => {} },
     "@/lib/logger": {
       logger: { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} },
       genReqId: () => "test-rid",
@@ -286,6 +287,7 @@ test("real auth-me handler rejects an inactive old token and accepts an active p
     "@/lib/supabase-cookie-names": {
       getSupabaseCookieNames: () => ({ authToken: "sb-test-auth-token", refreshToken: "sb-test-refresh-token" }),
     },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, accountKey: () => "", writeAuditLog: async () => {} },
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
     "next/server": nextServer,
   });

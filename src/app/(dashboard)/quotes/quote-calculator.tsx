@@ -17,8 +17,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { reportMutationFailure } from "@/lib/mutation-feedback";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DEVICE_CATALOG, findDevice, type DeviceInfo, type CategoryInfo } from "@/lib/device-catalog";
+import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
 
 interface Lead { id: string; customer_name: string | null; phone: string | null; }
 
@@ -119,6 +121,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
 
   const handleSave = async () => {
     if (!selectedLeadId) return;
+    if (discountRateError(discountRate)) { toast.error(t("quotes.invalidAmounts")); return; }
     setSaving(true);
     try {
       const devicesPayload = Object.entries(quantities).map(([id, qty]) => {
@@ -134,10 +137,10 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
         total_amount: calc.total, currency: "AED", status: "draft",
         devices_json: devicesPayload,
         created_by: user?.id || null,
-notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${area}㎡\n${t("quotes.calc.installLabor")} (30%): ${calc.installLabor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")} (12%): ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")} (8%): ${calc.pm.toFixed(2)} AED`,
+notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${area}㎡\n${t("quotes.calc.installLabor")}: ${calc.installLabor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.pm.toFixed(2)} AED`,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select("id, quote_no").single();
-      if (error || !quote?.quote_no) { console.error("Save error:", error); toast.error(t("quotes.calc.saveFailed") + (error?.message || "Missing database quote number")); return; }
+      if (error || !quote?.quote_no) { console.error("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
       // Notify about new quotation
       void import("@/lib/notify")
         .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: selectedLeadId, quote_no: quote.quote_no }))
@@ -148,7 +151,7 @@ notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.cal
 
   const handleExport = () => {
     if (!savedQuoteId) { toast.error(t("quotes.saveFirst")); return; }
-    window.open(`/api/quotations/export?quote_id=${savedQuoteId}`, "_blank");
+    window.open(`/api/quotations/export?id=${savedQuoteId}`, "_blank");
   };
 
   const handleSend = () => {
@@ -321,7 +324,7 @@ notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.cal
                 <span className="text-muted-foreground">{t("quotes.discountRate")}</span>
                 <div className="flex items-center gap-2">
                   <Input type="number" min={0} max={20} step={0.5} value={discountRate}
-                    onChange={(e) => setDiscountRate(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setDiscountRate(clampDiscountRate(e.target.value, 20))}
                     className="w-14 h-6 text-xs text-right px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                   <span className="text-muted-foreground text-[10px]">%</span>
                   {calc.discountAmount > 0 && (
@@ -330,7 +333,7 @@ notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.cal
                 </div>
               </div>
               <input type="range" min={0} max={20} step={0.5} value={discountRate}
-                onChange={(e) => setDiscountRate(parseFloat(e.target.value))}
+                onChange={(e) => setDiscountRate(clampDiscountRate(e.target.value, 20))}
                 className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-copper-500 bg-border" />
 
               {/* Services */}

@@ -251,7 +251,7 @@ export default function PipelineFunnel() {
               .sort(([, a], [, b]) => b - a)
               .slice(0, 3)
               .map(([stageKey, count]) => {
-                const stageLabel = data.stages.find(s => s.key === stageKey)?.label || stageKey;
+                const stageLabel = stageKey === "unknown" ? t("analytics.stageUnknown") : (data.stages.find(s => s.key === stageKey)?.label || stageKey);
                 return (
                   <div key={stageKey} className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-red-500/5 border border-red-500/10">
                     <span className="text-xs text-muted-foreground">{stageLabel}</span>

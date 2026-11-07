@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { getCurrentUser } from "@/app/actions/auth";
+import { readSessionIdentity } from "@/lib/session-identity";
 
 /* ─── Types ─── */
 interface PaymentSummary {
@@ -105,12 +105,16 @@ export default function PaymentTracker() {
 
   useEffect(() => {
     if (roleLoading) return;
-    getCurrentUser().then((user) => {
-      if (user) {
-        setUserId(user.id);
-        setUserRole(role);
-      }
+    // GET /api/auth/me rather than the getCurrentUser() server action: an
+    // action id changes with every release, so a tab opened before a deploy
+    // never got its user id here and the tracker stayed empty.
+    let cancelled = false;
+    readSessionIdentity().then((outcome) => {
+      if (cancelled || outcome.status !== "active") return;
+      setUserId(outcome.identity.userId);
+      setUserRole(role);
     });
+    return () => { cancelled = true; };
   }, [roleLoading, role]);
 
   useEffect(() => {

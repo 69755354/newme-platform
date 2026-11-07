@@ -6,6 +6,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { setImmediate as flush } from "node:timers/promises";
 
+const cosKey = await import("../../src/lib/cos-key.mjs");
+
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -68,14 +70,18 @@ for (const entry of ["action", "route"]) {
           };
         },
       };
+      const audit = [];
       const mocks = {
         "next/server": { NextResponse },
         "@/lib/supabase-admin": { supabaseAdmin: admin },
-        "@/lib/action-auth-context": { getActionAuthContext: async () => ({ role: "admin" }) },
+        // S7: audit rows are captured instead of written; actor ids are real UUIDs.
+        "@/lib/audit-log": { AUDIT_ACTIONS: { USER_CREATED: "user_created", ROLE_ASSIGNED: "role_assigned" }, writeAuditLog: async (entry) => { audit.push(entry); } },
+        "@/lib/action-auth-context": { getActionAuthContext: async () => ({ role: "admin", user: { id: "7c4f1a2e-1111-4111-8111-111111111111" } }) },
         "@/lib/lead-reassignment.mjs": {},
+        "@/lib/member-lead-handover.mjs": await import("../../src/lib/member-lead-handover.mjs"),
         "@/lib/notifications": { getAdminUserIds: async () => [], createNotificationsBulk: async () => {} },
         "@/lib/supabase-server": { createServerSupabase: async () => ({
-          auth: { getUser: async () => ({ data: { user: { id: "admin" } } }) },
+          auth: { getUser: async () => ({ data: { user: { id: "7c4f1a2e-1111-4111-8111-111111111111" } } }) },
           from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { role: "admin" } }) }) }) }),
         }) },
       };
@@ -87,6 +93,12 @@ for (const entry of ["action", "route"]) {
         assert.equal((await route.POST(request(member))).status, 201);
       }
       assert.equal(deleted, false);
+      // S7: creating an account with a role is audited by actor id; no e-mail/name in the rows.
+      assert.deepEqual(audit.map((entry) => [entry.action, entry.actorId, entry.targetId]), [
+        ["user_created", "7c4f1a2e-1111-4111-8111-111111111111", "new-user"],
+        ["role_assigned", "7c4f1a2e-1111-4111-8111-111111111111", "new-user"],
+      ]);
+      assert.ok(!JSON.stringify(audit).includes(member.email) && !JSON.stringify(audit).includes(member.full_name));
       assert.deepEqual(row, { id: "new-user", email: member.email, full_name: member.full_name, role: "sales", phone: member.phone, is_active: true, force_password_change: true });
     });
   }
@@ -109,6 +121,7 @@ function contractRoutes(role, owner = true) {
     "@/lib/supabase-server": { createServerSupabase: async () => client },
     "@/lib/logger": { logger: log, genReqId: () => "request" },
     "@/lib/release-script": { resolveReleaseScript: () => "/fixture/presign.py" },
+    "@/lib/cos-key.mjs": cosKey,
     child_process: { execFile: (_bin, args, _options, cb) => {
       signed.push(args[2]); cb(null, JSON.stringify({ url: "https://example.test/signed", key: args[2] }), "");
     } },

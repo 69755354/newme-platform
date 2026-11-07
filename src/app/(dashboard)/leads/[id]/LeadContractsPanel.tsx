@@ -23,6 +23,9 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
   const { t } = useLanguage();
   const [contracts, setContracts] = useState<ContractRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // /contracts/new admits admin, boss, operator and sales (review F-2); the role arrives
+  // with the contracts response so the panel needs no extra query.
+  const [canCreateContract, setCanCreateContract] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -31,7 +34,10 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
         const res = await fetch(`/api/contracts?lead_id=${leadId}`);
         if (!res.ok) return;
         const json = await res.json();
-        if (alive) setContracts(json.data ?? []);
+        if (alive) {
+          setContracts(json.data ?? []);
+          setCanCreateContract(["admin", "boss", "operator", "sales"].includes(json.role));
+        }
       } catch {
         /* ignore — panel is non-critical */
       } finally {
@@ -52,12 +58,14 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
     return (
       <div className="py-6 text-center space-y-3">
         <p className="text-sm text-muted-foreground">{t("leadDetail.contractNotCreated")}</p>
-        <Link prefetch={false}
-          href={`/contracts/new?lead_id=${leadId}`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-600 text-foreground text-xs font-medium hover:bg-slate-700 transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />{t("leadDetail.createContract")}
-        </Link>
+        {canCreateContract && (
+          <Link prefetch={false}
+            href={`/contracts/new?lead_id=${leadId}`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-600 text-foreground text-xs font-medium hover:bg-slate-700 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />{t("leadDetail.createContract")}
+          </Link>
+        )}
       </div>
     );
   }
@@ -100,12 +108,14 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
           </Link>
         );
       })}
-      <Link prefetch={false}
-        href={`/contracts/new?lead_id=${leadId}`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-copper-500/30 text-copper-400 text-xs font-medium hover:bg-copper-500/10 transition-colors mt-1"
-      >
-        <Plus className="w-3.5 h-3.5" />{t("leadDetail.createContract")}
-      </Link>
+      {canCreateContract && (
+        <Link prefetch={false}
+          href={`/contracts/new?lead_id=${leadId}`}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-copper-500/30 text-copper-400 text-xs font-medium hover:bg-copper-500/10 transition-colors mt-1"
+        >
+          <Plus className="w-3.5 h-3.5" />{t("leadDetail.createContract")}
+        </Link>
+      )}
     </div>
   );
 }

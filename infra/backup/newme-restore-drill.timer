@@ -1,0 +1,9 @@
+[Unit]
+Description=Monthly NewMe restore drill (3rd of each month, 22:30 UTC)
+
+[Timer]
+OnCalendar=*-*-03 22:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

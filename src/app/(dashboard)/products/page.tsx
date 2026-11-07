@@ -51,9 +51,19 @@ const CATEGORY_I18N_MAP: Record<string, string> = {
   cable: "cables", service: "services", lighting: "lighting",
 };
 
+// A category the dictionary does not know (e.g. "other", or one added in the
+// database later) is labelled "Other" instead of printing its raw key.
+const CATEGORY_LABEL_KEYS = new Set([...Object.values(CATEGORY_I18N_MAP), "other"]);
+const categoryLabelKey = (category: string | null | undefined) => {
+  const key = CATEGORY_I18N_MAP[category ?? ""] || category || "other";
+  return `products.categories.${CATEGORY_LABEL_KEYS.has(key) ? key : "other"}`;
+};
+
 export default function ProductsPage() {
   const { t } = useLanguage();
-  const { loading: roleLoading } = useRequireRole(["admin", "boss", "operator", "sales"]);
+  const { loading: roleLoading, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
+  // /quotes admits admin/boss/operator/sales (server redirect), so every role on this page may open it.
+  const canOpenQuotes = role === "admin" || role === "boss" || role === "operator" || role === "sales";
 
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
@@ -113,10 +123,12 @@ export default function ProductsPage() {
 
   return (
     <DashboardScrollContainer className="space-y-4">
-      <Link prefetch={false} href="/quotes" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-1">
-        <ArrowLeft className="w-3.5 h-3.5" />
-        {t("products.backToQuotes")}
-      </Link>
+      {canOpenQuotes && (
+        <Link prefetch={false} href="/quotes" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-1">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          {t("products.backToQuotes")}
+        </Link>
+      )}
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
         <div>
@@ -163,7 +175,6 @@ export default function ProductsPage() {
           const Icon = cat.icon;
           const count = categoryCounts[cat.key] || 0;
           const isActive = activeCategory === cat.key;
-          const i18nKey = CATEGORY_I18N_MAP[cat.key] || cat.key;
           return (
             <button
               key={cat.key}
@@ -176,7 +187,7 @@ export default function ProductsPage() {
               )}
             >
               <Icon className="w-3.5 h-3.5" />
-              {t(`products.categories.${i18nKey}`)}
+              {t(categoryLabelKey(cat.key))}
               <span className="text-[10px] opacity-60 ml-0.5">({count})</span>
             </button>
           );
@@ -204,7 +215,6 @@ export default function ProductsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map((p) => {
             const colorClass = CATEGORY_COLORS[p.category] || CATEGORY_COLORS.other;
-            const catI18nKey = CATEGORY_I18N_MAP[p.category] || p.category;
             return (
               <div
                 key={p.id}
@@ -222,7 +232,7 @@ export default function ProductsPage() {
                         </span>
                       )}
                       <Badge className={cn("text-[9px] px-1 py-0 border", colorClass)}>
-                        {t(`products.categories.${catI18nKey}`)}
+                        {t(categoryLabelKey(p.category))}
                       </Badge>
                     </div>
                   </div>

@@ -3,6 +3,8 @@ import { createMiddlewareClient } from "@/lib/supabase-middleware";
 import { reportServerError } from "@/lib/report-server-error";
 import { shouldRecordActivity } from "@/lib/activity-throttle.mjs";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
+// Relative on purpose: the proxy's existing tests stub each "@/" import by name.
+import { isMissingProfileRow, isRetryableAuthError } from "./lib/auth-retryable.mjs";
 import {
   FORCED_SESSION_ERROR,
   FORCED_SESSION_REDIRECT_PATH,
@@ -13,7 +15,9 @@ import {
 const PROTECTED_ROUTES: Record<string, string[]> = {
   "/settings": ["admin", "boss", "operator"],
   "/team": ["admin", "boss", "operator"],
-  "/pipeline": ["admin", "boss", "operator"],
+  // sales: /api/pipeline/list scopes the board to their own leads and the page
+  // shows them only their KPI panel (no board, no writes); it is in SALES_NAV.
+  "/pipeline": ["admin", "boss", "operator", "sales"],
 };
 
 const PUBLIC_API_PATHS = new Set([
@@ -77,6 +81,28 @@ async function withAuthTimeout<T>(operation: PromiseLike<T>): Promise<T> {
   }
 }
 
+/**
+ * A page navigation (GET/HEAD outside /api) whose edge auth check could not be
+ * completed (timeout, or a retryable auth-service error) is let through to
+ * render. Client-shell pages carry no data and prove their session again
+ * through GET /api/auth/me; the server-rendered pages (quotes, projects,
+ * settings/ads, cable-costing) run src/lib/server-page-auth.ts themselves,
+ * which re-checks the session, is_active and the forced-password-change
+ * boundary before rendering anything. Redirecting to /login here turned a
+ * slow Supabase into "logged out again" for a valid session.
+ *
+ * Nothing else is softened: API requests still get 503, and a POST to a page
+ * path (a server action) is refused with the unavailable redirect whenever
+ * the auth dependency failed at any stage.
+ */
+function isSoftFailNavigation(request: NextRequest, isApiRequest: boolean): boolean {
+  return !isApiRequest && ["GET", "HEAD"].includes(request.method);
+}
+
+function deferAuthCheck() {
+  return NextResponse.next();
+}
+
 function authUnavailable(request: NextRequest, isApiRequest: boolean) {
   if (isApiRequest) {
     return NextResponse.json({ error: "auth_unavailable" }, { status: 503 });
@@ -100,6 +126,7 @@ export async function proxy(request: NextRequest) {
   const isApiRequest = pathname.startsWith("/api/");
   const isPublicApiRequest = isApiRequest && (PUBLIC_API_PATHS.has(pathname) || pathname === SESSION_BOOTSTRAP_PATH);
   const protectedApiMutation = isProtectedApiMutation(request, pathname);
+  const softFailNavigation = isSoftFailNavigation(request, isApiRequest);
 
   // P3_6 (PRD §六 6.5): legacy URL redirects — return early so we don't run auth.
   // /command-center → /dashboard
@@ -149,6 +176,7 @@ export async function proxy(request: NextRequest) {
   try {
     middlewareClient = await withAuthTimeout(createMiddlewareClient(request, bearerToken));
   } catch {
+    if (softFailNavigation) return deferAuthCheck();
     return authUnavailable(request, isApiRequest);
   }
   const { supabase, getResponse } = middlewareClient;
@@ -156,8 +184,12 @@ export async function proxy(request: NextRequest) {
   let user: { id: string } | null = null;
   let authInfrastructureFailed = false;
   try {
-    const { data } = await withAuthTimeout(supabase.auth.getUser(bearerToken));
-    user = data.user;
+    const { data, error } = await withAuthTimeout(supabase.auth.getUser(bearerToken));
+    // auth-js reports an unreachable auth service or an upstream 5xx as an
+    // error result, not an exception; that is a dependency failure, not
+    // "no session".
+    if (isRetryableAuthError(error)) authInfrastructureFailed = true;
+    else user = data.user;
   } catch {
     authInfrastructureFailed = true;
   }
@@ -166,6 +198,18 @@ export async function proxy(request: NextRequest) {
     return authInfrastructureFailed
       ? authUnavailable(request, true)
       : NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  // No verdict about the session, only about the auth dependency: a page
+  // navigation renders and re-proves its session server-side. A real "no
+  // session" (user === null without a failure) still reaches the /login
+  // redirect below for role-protected pages.
+  if (authInfrastructureFailed && softFailNavigation) {
+    return deferAuthCheck();
+  }
+  // A server action posted to a page path is a write: with no verdict about
+  // the session it fails closed, at every stage, like an API write does.
+  if (authInfrastructureFailed && !isApiRequest) {
+    return authUnavailable(request, false);
   }
 
   let activeProfile: ActiveProfile | null = null;
@@ -210,16 +254,25 @@ export async function proxy(request: NextRequest) {
         }
       }
     } else {
-      const { data, error } = await withAuthTimeout(supabase
-        .from("profiles")
-        .select("role, is_active, password_changed_at, force_password_change")
-        .eq("id", user.id)
-        .single());
-      profile = data;
-      profileErr = error;
+      // The timeout rejects; uncaught it escaped the proxy as a 500 instead of
+      // reaching the unavailable/deferred handling below.
+      try {
+        const { data, error } = await withAuthTimeout(supabase
+          .from("profiles")
+          .select("role, is_active, password_changed_at, force_password_change")
+          .eq("id", user.id)
+          .single());
+        profile = data;
+        profileErr = error;
+      } catch (err) {
+        profileErr = err;
+      }
     }
 
-    if (profileErr) {
+    // No profile row (PGRST116): the session boundary policy hides a
+    // deactivated or banned user's own row. A verdict, not an outage.
+    if (profileErr && !isMissingProfileRow(profileErr)) {
+      if (softFailNavigation) return deferAuthCheck();
       return authUnavailable(request, isApiRequest);
     }
     if (!isActiveProfile(profile)) {

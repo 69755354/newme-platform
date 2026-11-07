@@ -50,3 +50,23 @@ test("SAM-61 preserves only authenticated sales workflow RPCs", async () => {
   assert.match(sql, /ALTER VIEW public\.lead_alerts SET \(security_invoker = true\);/);
   assert.match(sql, /FOR INSERT TO authenticated WITH CHECK \(false\);/);
 });
+
+// The combined S2 release redefines four money routines and adds one private helper.
+// None of them may lose the pinned search path or the session entry guard, and the
+// helper that moves a lead's stage must not be callable by any end-user role.
+test("S2 combined release: redefined definers keep a pinned search path and the entry guard; the stage helper is private", async () => {
+  const sql = await readFile(new URL("../../supabase/migrations/20261104110000_role_least_privilege.sql", import.meta.url), "utf8");
+  for (const fn of ["approve_contract", "set_contract_status", "convert_quotation_to_contract", "create_contract"]) {
+    const start = sql.indexOf(`create or replace function public.${fn}(`);
+    assert.notEqual(start, -1, fn);
+    const head = sql.slice(start, sql.indexOf("as $function$", start));
+    assert.match(head, /SECURITY DEFINER/, fn);
+    assert.match(head, /SET search_path TO 'pg_catalog', 'public', 'pg_temp'/, fn);
+    const body = sql.slice(start, sql.indexOf("$function$;", start + 20));
+    assert.match(body, /perform public\.assert_current_session_at_entry\(\);/, `${fn} keeps the session entry guard`);
+    assert.match(body, /public\.money_actor\(/, `${fn} keeps the actor/role check`);
+  }
+  assert.match(sql, /REVOKE ALL ON FUNCTION public\.advance_lead_to_pending_decision\(uuid, uuid, text\) FROM PUBLIC, anon, authenticated, service_role;/);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.advance_lead_to_pending_decision[\s\S]*?SET search_path = pg_catalog, public, pg_temp/);
+  assert.doesNotMatch(sql, /GRANT EXECUTE ON FUNCTION public\.advance_lead_to_pending_decision/);
+});

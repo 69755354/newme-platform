@@ -33,9 +33,32 @@ const withBundleAnalyzer = bundleAnalyzer({
 const gitHash = process.env.NEXT_PUBLIC_APP_VERSION ||
   execSync("git rev-parse --short HEAD").toString().trim();
 
+// One stable identifier per release. The release script passes the release SHA
+// as NEXT_DEPLOYMENT_ID (scripts/deploy-immutable.sh); local builds fall back to
+// the git hash. Next.js stamps it on every asset URL and navigation request, and
+// a client whose id no longer matches the server's does one full reload instead
+// of calling server actions that no longer exist ("Server Reference ID did not
+// match" / "Expected RSC response, got text/plain" after a deploy).
+const releaseId = process.env.NEXT_DEPLOYMENT_ID || gitHash;
+
 const nextConfig: NextConfig = {
+  deploymentId: releaseId,
+  // deploymentId makes BUILD_ID constant unless generateBuildId is set, and the
+  // release pipeline compares BUILD_ID between releases (deploy-immutable.sh).
+  generateBuildId: async () => releaseId,
   env: {
     NEXT_PUBLIC_APP_VERSION: gitHash,
+    // Exposed to both bundles so src/lib/deployment-skew.ts can compare the
+    // client's release with the one that answered /api/auth/me.
+    NEXT_PUBLIC_DEPLOYMENT_ID: releaseId,
+  },
+  experimental: {
+    // Release directories under /opt/newme/releases/<sha> are root-owned,
+    // 0550 and mounted read-only. The prerender/ISR file cache otherwise tries
+    // to promote seed pages into .next/server/app at startup and on every
+    // revalidatePath(), logging "Failed to update prerender cache ... ENOENT".
+    // Keep the page cache in memory only; seeds are still read from disk.
+    isrFlushToDisk: false,
   },
   poweredByHeader: false,
   async headers() {
@@ -105,6 +128,10 @@ const sentryConfig = withSentryConfig(nextConfig, {
   // Widen client file upload for Turbopack compatibility
   // Fixes React Client Manifest errors (global-error.tsx, icon-mark.js, etc.)
   widenClientFileUpload: true,
+
+  // Browser events go through our own forwarder (src/app/monitoring-tunnel/route.ts),
+  // NOT the plugin's tunnelRoute rewrite: that is a plain reverse proxy that
+  // relays session cookies and accepts any Sentry project.
 });
 
 export default withBundleAnalyzer(sentryConfig);

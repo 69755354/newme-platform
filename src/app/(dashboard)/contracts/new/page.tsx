@@ -18,7 +18,6 @@ import {
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Toaster } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
@@ -33,7 +32,7 @@ interface LeadOption {
 }
 
 function NewContractPageInner() {
-  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss"]);
+  const { loading: roleLoading, blocked } = useRequireRole(["admin", "boss", "operator", "sales"]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetLeadId = searchParams.get("lead_id");
@@ -352,7 +351,7 @@ function NewContractPageInner() {
         </DialogContent>
       </Dialog>
 
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

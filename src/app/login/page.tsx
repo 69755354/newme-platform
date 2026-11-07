@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LanguageProvider, useLanguage } from "@/lib/i18n/LanguageContext";
 import { safeRedirectPath } from "@/lib/safe-redirect";
+import { LanguageToggle } from "@/components/LanguageToggle";
+import { lockoutMessageKey, lockoutWaitMinutes } from "@/lib/login-lockout.mjs";
 
 /**
  * Sign-in is a single same-origin request to POST /api/auth/login.
@@ -32,10 +34,15 @@ function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  function messageFor(code: unknown): string {
+  function messageFor(code: unknown, retryAfter?: string | null, scope?: string | null): string {
     switch (code) {
-      case "rate_limited":
-        return t("login.rateLimited");
+      case "rate_limited": {
+        // S6 (review 4d #17): say how long to wait instead of "try later".
+        const minutes = lockoutWaitMinutes(retryAfter);
+        return minutes === null
+          ? t("login.rateLimited")
+          : t(lockoutMessageKey(scope)).replace("{n}", String(minutes));
+      }
       case "inactive_account":
         return t("login.inactiveAccount");
       case "auth_unavailable":
@@ -61,7 +68,7 @@ function LoginPageInner() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok || data?.ok !== true || data?.isActive !== true) {
-        setError(messageFor(data?.error));
+        setError(messageFor(data?.error, res.headers.get("Retry-After"), res.headers.get("X-RateLimit-Scope")));
         setLoading(false);
         return;
       }
@@ -78,7 +85,10 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
+    <div className="relative min-h-screen bg-black flex items-center justify-center p-4">
+      <div className="absolute right-4 top-4">
+        <LanguageToggle />
+      </div>
       <Card className="w-full max-w-md border-gold-500/20 bg-gray-950">
         <CardHeader className="text-center">
           <div className="mx-auto w-12 h-12 rounded-xl bg-gradient-to-br from-gold-500 to-gold-700 flex items-center justify-center font-bold text-black text-xl mb-3">
@@ -115,7 +125,7 @@ function LoginPageInner() {
                 className="bg-gray-900 border-gray-700 text-white"
               />
             </div>
-            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {error && <p role="alert" className="text-red-400 text-sm">{error}</p>}
             <Button
               type="submit"
               disabled={loading}
@@ -133,7 +143,7 @@ function LoginPageInner() {
 export default function LoginPage() {
   return (
     <LanguageProvider>
-      <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><p className="text-white">Loading...</p></div>}>
+      <Suspense fallback={<div className="min-h-screen bg-black" aria-busy="true" />}>
         <LoginPageInner />
       </Suspense>
     </LanguageProvider>

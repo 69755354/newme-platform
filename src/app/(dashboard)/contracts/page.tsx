@@ -20,13 +20,13 @@ import { DashboardScrollContainer } from "@/components/DashboardScrollContainer"
 import SubNavTabs from "@/components/SubNavTabs";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Toaster } from "sonner";
 import { approveContract } from "@/app/actions/contracts";
 import { fmtAED } from "@/shared/utils/format";
 // R5: this page used to declare its own `interface Contract`, and the route cast its
 // rows to `any[]`. Two unchecked declarations of one read model — see
 // src/types/contracts.ts for what they disagreed about.
 import type { ContractListResponse, ContractListRow } from "@/types/contracts";
+import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
 
 type Contract = ContractListRow;
 
@@ -57,6 +57,7 @@ export default function ContractsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -264,17 +265,16 @@ export default function ContractsPage() {
   // Check which approval buttons to show
   const canApproveReject = (c: Contract) => {
     if (c.status === "pending_admin" && (role === "admin" || role === "operator")) return true;
-    if (c.status === "pending_ceo" && role === "boss") return true;
+    if (c.status === "pending_ceo" && (role === "admin" || role === "boss")) return true;
     return false;
   };
 
-  const canUpload = (c: Contract) => {
-    return ["draft", "pending_admin", "pending_ceo"].includes(c.status);
-  };
-
-  const canRevoke = (c: Contract) => {
-    return (role === "admin" || role === "boss") && ["active", "approved"].includes(c.status);
-  };
+  // S2: the same per-role rules the detail page and the routines use.
+  const actionPermissions = (c: Contract) =>
+    contractActionPermissions(role ?? "", !!userId && c.sales_id === userId, c.status);
+  const canUpload = (c: Contract) => actionPermissions(c).upload;
+  const canRevoke = (c: Contract) => actionPermissions(c).revoke;
+  const canRemind = (c: Contract) => actionPermissions(c).remind;
 
   // Fetch auth + contracts from BFF API
   useEffect(() => {
@@ -296,6 +296,7 @@ export default function ContractsPage() {
         setContracts(json.contracts ?? []);
         setTotalCount(json.totalCount ?? 0);
         setRole(json.role);
+        setUserId(json.userId ?? null);
       } catch (err) {
         console.error(err);
         setError(t("common.loadFailedRetry"));
@@ -336,10 +337,14 @@ export default function ContractsPage() {
       />
       <div className="flex items-center justify-between mb-6 mt-5">
         <h1 className="text-2xl font-bold">{t("contracts.title")}</h1>
-        <Link prefetch={false} href="/contracts/new" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-600 text-foreground text-sm font-medium hover:bg-slate-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          {t("contracts.newContract")}
-        </Link>
+        {/* /contracts/new admits admin, boss, operator and sales (useRequireRole
+            there), so the link is shown to nobody else instead of bouncing them (S2). */}
+        {(role === "admin" || role === "boss" || role === "operator" || role === "sales") && (
+          <Link prefetch={false} href="/contracts/new" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-600 text-foreground text-sm font-medium hover:bg-slate-700 transition-colors">
+            <Plus className="w-4 h-4" />
+            {t("contracts.newContract")}
+          </Link>
+        )}
       </div>
 
       {/* Status filter */}
@@ -383,7 +388,7 @@ export default function ContractsPage() {
           <Card className="bg-card border-border"><CardContent className="p-8 text-center text-muted-foreground">{t("contracts.noContracts")}</CardContent></Card>
         ) : contracts.map(c => {
           const fpBadge = getFirstPaymentBadge(c);
-          const needsReminder = c.first_payment_status !== "paid";
+          const needsReminder = c.first_payment_status !== "paid" && canRemind(c);
           const showApproveReject = canApproveReject(c);
           const showUpload = canUpload(c);
           const showRevoke = canRevoke(c);
@@ -569,7 +574,7 @@ export default function ContractsPage() {
         </DialogContent>
       </Dialog>
 
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

@@ -44,8 +44,8 @@ export async function approveContract(
       throw new Error('Only admin or operator can approve the admin_review step')
     }
   } else if (currentStep === 'ceo_review') {
-    if (userRole !== 'boss') {
-      throw new Error('Only boss can approve the ceo_review step')
+    if (!['admin', 'boss'].includes(userRole)) {
+      throw new Error('Only admin or boss can approve the ceo_review step')
     }
   } else {
     throw new Error(`Unknown approval step: ${currentStep}`)

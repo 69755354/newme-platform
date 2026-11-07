@@ -1,6 +1,7 @@
 "use client"
 
 import { useLanguage } from "@/lib/i18n/LanguageContext"
+import { localizeServerText } from "@/lib/i18n/server-text.mjs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -83,13 +84,12 @@ const milestoneColors: Record<string, string> = {
 
 import { fmtDubai } from "@/lib/utils";
 
-function formatDate(value?: string) {
+function formatDate(value: string | undefined, locale: string) {
   if (!value) return "—"
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
   return fmtDubai(d, {
-    locale: "en-US",
-    month: "short",
+    locale, month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
@@ -107,6 +107,13 @@ function MetricBox({ label, value }: { label: string; value: number }) {
 
 export default function WorkbenchPage() {
   const { lang, t } = useLanguage()
+  // S6 (review 4d section 4): task sources are raw enum values (new, meeting,
+  // basic_info…); show a translated label, or the raw value if unknown.
+  const taskSourceLabel = (source: string) => {
+    const key = `workbench.taskSource.${source}`
+    const label = t(key)
+    return label === key ? source : label
+  }
   const [data, setData] = useState<WorkbenchData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -191,7 +198,7 @@ export default function WorkbenchPage() {
                     <>
                       <div className="flex items-center justify-between gap-2">
                         <span className="line-clamp-1 text-sm font-medium">
-                          {task.title}
+                          {localizeServerText(task.title, lang)}
                         </span>
                       </div>
                       {task.lead_name && (
@@ -202,7 +209,7 @@ export default function WorkbenchPage() {
                       {task.due_at && (
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
-                          {formatDate(task.due_at)}
+                          {formatDate(task.due_at, t("locale.dateLocale"))}
                         </span>
                       )}
                     </>
@@ -285,7 +292,7 @@ export default function WorkbenchPage() {
                               }`}
                             >
                               <Clock className="h-3 w-3" />
-                              {formatDate(item.next_followup_date)}
+                              {formatDate(item.next_followup_date, t("locale.dateLocale"))}
                             </span>
                           )}
                         </div>
@@ -324,11 +331,11 @@ export default function WorkbenchPage() {
                     <>
                       <div className="flex items-center justify-between gap-2">
                         <span className="line-clamp-1 text-sm font-medium">
-                          {task.title}
+                          {localizeServerText(task.title, lang)}
                         </span>
                         {task.source && (
                           <Badge variant="secondary" className="shrink-0 text-[10px]">
-                            {task.source}
+                            {taskSourceLabel(task.source)}
                           </Badge>
                         )}
                       </div>
@@ -339,7 +346,7 @@ export default function WorkbenchPage() {
                       )}
                       <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" />
-                        {formatDate(task.due_at)}
+                        {formatDate(task.due_at, t("locale.dateLocale"))}
                       </span>
                     </>
                   )
@@ -385,7 +392,7 @@ export default function WorkbenchPage() {
                   const inner = (
                     <>
                       <span className="line-clamp-1 text-sm font-medium text-red-800">
-                        {task.title}
+                        {localizeServerText(task.title, lang)}
                       </span>
                       {task.lead_name && (
                         <span className="line-clamp-1 text-xs text-red-500/80">
@@ -394,7 +401,7 @@ export default function WorkbenchPage() {
                       )}
                       <span className="flex items-center gap-1 text-xs text-red-600">
                         <Clock className="h-3 w-3" />
-                        {formatDate(task.due_at)}
+                        {formatDate(task.due_at, t("locale.dateLocale"))}
                       </span>
                     </>
                   )
@@ -470,7 +477,7 @@ export default function WorkbenchPage() {
               {t("workbench.weeklyStats") || "本周我的表现 (This Week)"}
             </span>
             <span className="text-xs text-muted-foreground">
-              {formatDate(data?.myWeeklyStats?.period_start)} – {formatDate(data?.myWeeklyStats?.period_end)}
+              {formatDate(data?.myWeeklyStats?.period_start, t("locale.dateLocale"))} – {formatDate(data?.myWeeklyStats?.period_end, t("locale.dateLocale"))}
             </span>
           </summary>
           <div className="grid grid-cols-2 gap-4 px-6 pb-5 pt-1 sm:grid-cols-4">
@@ -497,14 +504,14 @@ export default function WorkbenchPage() {
         <Card className="flex flex-col border-amber-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="text-sm font-medium text-amber-700">
-              Follow-up Alerts
+              {t("workbench.followupAlerts")}
             </CardTitle>
             <AlertTriangle className="h-4 w-4 text-amber-600" />
           </CardHeader>
           <CardContent className="flex-1">
             {alerts.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                No alerts
+                {t("workbench.noAlerts")}
               </p>
             ) : (
               <ul className="-mx-2 max-h-[320px] space-y-1 overflow-y-auto">
@@ -533,12 +540,12 @@ export default function WorkbenchPage() {
                           <span className="flex shrink-0 items-center gap-1">
                             {isOverdue && (
                               <Badge className="bg-amber-500 text-[10px] text-white">
-                                {a.days_overdue}d
+                                {t("analytics.daysShort").replace("{n}", String(a.days_overdue))}
                               </Badge>
                             )}
                             {a.no_answer_flag && (
                               <Badge className="bg-red-500 text-[10px] text-white">
-                                No answer
+                                {t("workbench.noAnswer")}
                               </Badge>
                             )}
                           </span>
@@ -563,12 +570,12 @@ export default function WorkbenchPage() {
         <Link prefetch={false} href="/leads/new">
           <Button>
             <User className="mr-2 h-4 w-4" />
-            New Lead
+            {t("workbench.newLead")}
           </Button>
         </Link>
         <Link prefetch={false} href="/leads">
           <Button variant="outline">
-            All Leads
+            {t("workbench.allLeads")}
           </Button>
         </Link>
       </div>
@@ -587,7 +594,7 @@ export default function WorkbenchPage() {
             rel="noopener noreferrer"
           >
             <Button variant="outline" size="sm" className="h-7 text-xs">
-              Report Issue
+              {t("workbench.reportIssue")}
             </Button>
           </a>
         </CardContent>

@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
-import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmWonForQuotation } from "@/lib/meta-crm-events";
 import type { Json } from "@/types/database";
@@ -140,8 +139,10 @@ export async function POST(
 
     if (rpcErr) {
       const failure = moneyRpcFailure(rpcErr, "Failed to convert quotation");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,
@@ -183,24 +184,9 @@ export async function POST(
       );
     }
 
-    // Resolve the pending step and approvers from the committed contract.
-    try {
-      await dispatchPersistedNotification({
-        actorId: user.id,
-        input: {
-          type: "contract_pending_approval",
-          contract_id: conversion.contract_id,
-        },
-      });
-    } catch (notifyErr) {
-      logger.warn({
-        err: notifyErr,
-        request_id,
-        operation: "quotation_convert_notification",
-        user_id: user.id,
-        contract_id: conversion.contract_id,
-      }, "[Quotation Convert] Notification failed");
-    }
+    // No pending-approval notification here: the converted contract is a draft, so the
+    // dispatcher refused every attempt (409). It is sent when the contract is submitted
+    // for approval (PATCH /api/contracts/[id] -> pending_admin).
 
     // Best-effort Meta CRM "Won" feedback once the lead is committed as won.
     await enqueueMetaCrmWonForQuotation(supabaseAdmin, quotationId);

@@ -56,7 +56,8 @@ test("contract notifications describe the committed lifecycle state", () => {
   const createRoute = fs.readFileSync(path.join(root, "src/app/api/contracts/route.ts"), "utf8");
   const statusRoute = fs.readFileSync(path.join(root, "src/app/api/contracts/[id]/route.ts"), "utf8");
 
-  assert.match(createRoute, /type: "contract_created"/);
+  // contract_created is withheld until the database accepts it (fixes/NEXT-DB-BATCH.md).
+  assert.doesNotMatch(createRoute, /type: "contract_created"/);
   assert.doesNotMatch(createRoute, /type: "contract_pending_approval"/);
   const successfulTransition = statusRoute.indexOf("if (status.trim() === \"pending_admin\")");
   const rpcRefusal = statusRoute.indexOf("if (rpcErr)");
@@ -157,10 +158,37 @@ test("lead_created derives copy and recipients from the database, not legacy cli
     },
   });
 
-  assert.deepEqual(drafts.map((row) => row.userId).sort(), [IDs.admin, IDs.assignee].sort());
+  // S3 #8: an assigned lead notifies its assignee only (management is no longer copied).
+  assert.deepEqual(drafts.map((row) => row.userId).sort(), [IDs.assignee]);
   assert.equal(drafts.every((row) => row.title.includes("Database Customer")), true);
   assert.equal(drafts.some((row) => JSON.stringify(row).includes("FORGED")), false);
   assert.equal(drafts.every((row) => row.eventKey === `lead_created:${IDs.lead}`), true);
+});
+
+test("S3 #8: an unassigned new lead goes to the admin/operator queue only, never boss/finance or the actor", async () => {
+  const tables = fixtures();
+  tables.profiles.push(
+    { id: IDs.unrelated + "-op", role: "operator", is_active: true },
+    { id: IDs.approval, role: "boss", is_active: true },
+    { id: IDs.installment, role: "finance", is_active: true },
+    { id: IDs.quote, role: "operator", is_active: false },
+  );
+  const drafts = await events.leadCreatedDrafts(
+    new FakeDb(tables),
+    { id: IDs.lead, customer_name: "Queue Customer", assigned_to: null },
+    IDs.admin,
+  );
+  assert.deepEqual(drafts.map((row) => row.userId).sort(), [IDs.unrelated + "-op"]);
+  assert.equal(drafts[0].body, 'Lead "Queue Customer" is waiting for assignment');
+});
+
+test("S3 #4: a sales-created possible duplicate is sent to the admin/operator review queue", async () => {
+  const tables = fixtures();
+  tables.profiles.push({ id: IDs.approval, role: "operator", is_active: true }, { id: IDs.installment, role: "boss", is_active: true });
+  const drafts = await events.duplicateReviewDrafts(new FakeDb(tables), { id: IDs.lead, customer_name: "Dup" }, IDs.actor);
+  assert.deepEqual(drafts.map((row) => row.userId).sort(), [IDs.admin, IDs.approval].sort());
+  assert.equal(drafts[0].title, "Possible duplicate lead to review: Dup");
+  assert.equal(drafts[0].eventKey, `lead_duplicate_review:${IDs.lead}`);
 });
 
 test("presentation and direct recipient fields fail closed before database access", async () => {
@@ -378,7 +406,7 @@ test("/api/notify persists only database-derived lead notifications", async () =
     }),
   }));
   assert.equal(response.status, 200);
-  assert.deepEqual(writes.map((row) => row.userId).sort(), [IDs.admin, IDs.assignee].sort());
+  assert.deepEqual(writes.map((row) => row.userId).sort(), [IDs.assignee]);
   assert.equal(writes.every((row) => row.title === "New lead: Database Customer"), true);
 });
 

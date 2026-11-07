@@ -4,6 +4,7 @@ import { execFile } from "child_process";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { getAuthProfile, canAccessLead, isAdminOrBoss } from "@/lib/lead-auth";
 import { resolveReleaseScript } from "@/lib/release-script";
+import { clampCosExpires, cosKeyError } from "@/lib/cos-key.mjs";
 
 /** Service-role client used only to map a COS key back to its owning lead. */
 function getSupabaseAdmin(): SupabaseClient | null {
@@ -22,7 +23,7 @@ function getSupabaseAdmin(): SupabaseClient | null {
  *   leads/{leadId}/...          → leadId is the lead id directly
  *   contracts/{contractId}/...  → contracts.lead_id
  *   quotations/{quoteId}/...    → quotations.lead_id (falls back to quote_no stem)
- *   attachments/{file}          → lead_documents.lead_id (by file_url/file_name)
+ *   attachments/{file}          → lead_documents.lead_id (by file_url only)
  *   media/{file}                → chat_messages.lead_id (by media_url)
  */
 async function resolveLeadIdFromKey(
@@ -68,19 +69,15 @@ async function resolveLeadIdFromKey(
   }
 
   if (prefix === "attachments") {
-    const filename = segments[segments.length - 1];
     const { data } = await admin
       .from("lead_documents")
       .select("lead_id")
       .eq("file_url", key)
       .maybeSingle();
     if (data?.lead_id) return data.lead_id as string;
-    const { data: byName } = await admin
-      .from("lead_documents")
-      .select("lead_id")
-      .eq("file_name", filename)
-      .maybeSingle();
-    return (byName?.lead_id as string) ?? null;
+    // No fallback by bare file name: two leads can own a file of the same
+    // name, and a name match would hand one lead's file to the other's owner.
+    return null;
   }
 
   if (prefix === "media") {
@@ -115,10 +112,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "key is required" }, { status: 400 });
     }
 
-    // Validate key: must match known prefixes or safe pattern
-    const safePattern = /^[a-zA-Z0-9_\/\-.]+$/;
-    if (!safePattern.test(key)) {
-      return NextResponse.json({ error: "Invalid key: contains unsafe characters" }, { status: 400 });
+    // Validate key: safe characters, no `..` (it would pass the ownership check
+    // below as one object and be signed as another), known prefix.
+    const keyProblem = cosKeyError(key);
+    if (keyProblem) {
+      return NextResponse.json({ error: keyProblem }, { status: 400 });
     }
     const knownPrefixes = ["quotations/", "attachments/", "leads/", "media/", "contracts/"];
     const hasKnownPrefix = knownPrefixes.some(p => key.startsWith(p));
@@ -139,7 +137,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const expireSec = typeof expires === "number" && expires > 0 ? expires : 3600;
+    // The caller may ask for a shorter link, never a longer one than an hour.
+    const expireSec = clampCosExpires(expires);
 
     // The presigner ships inside the running release; see resolveReleaseScript
     // for why an absolute /home/ubuntu path was wrong.

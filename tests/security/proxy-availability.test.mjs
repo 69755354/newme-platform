@@ -17,6 +17,10 @@ function loadProxy(mocks) {
     compilerOptions: { esModuleInterop: true, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   });
   const loaded = new Module(filename);
+  // Give the module a real filename so its relative imports (e.g. the shared
+  // ./lib/auth-retryable.mjs) resolve the way they do in the application.
+  loaded.filename = filename;
+  loaded.paths = Module._nodeModulePaths(path.dirname(filename));
   const previousLoad = Module._load;
   Module._load = (request, parent, isMain) => {
     if (Object.hasOwn(mocks, request)) return mocks[request];
@@ -147,4 +151,80 @@ test("Bearer authentication reads the caller profile through RLS without a servi
   assert.equal(requestHeaders.apikey, "publishable-key");
   assert.equal(requestHeaders.Authorization, "Bearer user-token");
   assert.notEqual(requestHeaders.apikey, process.env.SUPABASE_SERVICE_ROLE_KEY);
+});
+
+// ---------------------------------------------------------------------------
+// OS fix S1 (review 1-architecture M1, 3-code-quality F11): a slow auth
+// dependency must not log a valid user out. A page navigation whose edge check
+// cannot complete is rendered and re-proves its session through
+// GET /api/auth/me and the route handlers it reads from; nothing that carries
+// data, and no write, is softened.
+// ---------------------------------------------------------------------------
+
+function stalledAuth(stage) {
+  const pending = () => new Promise(() => {});
+  return {
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": {
+      createMiddlewareClient: stage === "create" ? pending : async () => ({
+        supabase: {
+          auth: { getUser: stage === "getUser" ? pending : async () => ({ data: { user: { id: "user-1" } } }) },
+          from: () => ({ select: () => ({ eq: () => ({ single: stage === "profile" ? pending : async () => ({ data: null, error: new Error("profiles_rest_500") }) }) }) }),
+        },
+        getResponse: () => ({ status: 200 }),
+      }),
+    },
+    "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/auth-profile.mjs": { isActiveProfile: (profile) => profile?.is_active === true },
+  };
+}
+
+function withInstantTimers(t) {
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback) => {
+    queueMicrotask(callback);
+    return undefined;
+  };
+  t.after(() => {
+    globalThis.setTimeout = originalSetTimeout;
+  });
+}
+
+for (const stage of ["create", "getUser", "profile"]) {
+  test(`a page navigation whose ${stage} auth stage stalls is rendered, not redirected to /login`, async (t) => {
+    withInstantTimers(t);
+    const proxy = loadProxy(stalledAuth(stage));
+    for (const pathname of ["/settings", "/leads/abc", "/dashboard"]) {
+      const response = await proxy.proxy(request(pathname, "GET"));
+      assert.equal(response.status, 200, `${pathname} (${stage})`);
+      assert.equal(response.location, undefined, `${pathname} (${stage}) must not redirect`);
+    }
+  });
+}
+
+test("a stalled auth dependency still fails closed for API reads, API writes and server-action posts", async (t) => {
+  withInstantTimers(t);
+  const proxy = loadProxy(stalledAuth("create"));
+  assert.deepEqual(await proxy.proxy(request("/api/leads", "GET")), { body: { error: "auth_unavailable" }, status: 503 });
+  assert.deepEqual(await proxy.proxy(request("/api/leads/a/stage", "POST")), { body: { error: "auth_unavailable" }, status: 503 });
+  const action = await proxy.proxy(request("/settings", "POST"));
+  assert.equal(action.status, 307);
+  assert.match(action.location, /\/login\?reason=auth_unavailable$/);
+});
+
+test("a real missing session on a role-protected page still goes to /login", async () => {
+  const proxy = loadProxy({
+    "next/server": nextServer(),
+    "@/lib/supabase-middleware": {
+      createMiddlewareClient: async () => ({
+        supabase: { auth: { getUser: async () => ({ data: { user: null } }) } },
+        getResponse: () => ({ status: 200 }),
+      }),
+    },
+    "@/lib/report-server-error": { reportServerError: async () => {} },
+    "@/lib/auth-profile.mjs": { isActiveProfile: () => false },
+  });
+  const response = await proxy.proxy(request("/settings", "GET"));
+  assert.equal(response.status, 307);
+  assert.match(response.location, /\/login\?redirect=%2Fsettings$/);
 });

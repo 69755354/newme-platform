@@ -43,7 +43,16 @@ const SOURCE = readFileSync(path.join(ROOT, "src/lib/i18n/translations.ts"), "ut
  * components define locally (WeeklyReview.tsx line 226,
  * `const t = (zh, en) => ...`, called as t("新增", "New")).
  */
-const LITERAL_CALL = /\bt\(\s*"([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)"(\s*\+)?/g;
+const LITERAL_CALL = /\bt\(\s*["'`]([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)["'`](\s*\+)?/g;
+
+/**
+ * A template-literal call with a runtime part, `t(`products.categories.${key}`)`.
+ * The literal prefix (up to and including the last dot) must be a real group in
+ * both languages, and the finite value sets we can read from the source (see the
+ * products test below) must all resolve. Added S6b: /products printed
+ * "products.categories.other" in Chinese because no test looked inside these.
+ */
+const TEMPLATE_CALL = /\bt\(\s*`([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*\.)\$\{/g;
 
 /** The dictionary, imported by rewriting TS-only syntax out of the module. */
 async function loadTranslations() {
@@ -182,4 +191,48 @@ test("en and zh hold the same key set", async () => {
   assert.ok(en.size > 1500, `en dictionary has only ${en.size} keys`);
   assert.deepEqual([...en].filter((key) => !zh.has(key)), [], "keys missing from zh");
   assert.deepEqual([...zh].filter((key) => !en.has(key)), [], "keys missing from en");
+});
+
+function isGroup(dictionary, keyPath) {
+  let value = dictionary;
+  for (const key of keyPath.split(".")) {
+    if (!value || typeof value !== "object") return false;
+    value = value[key];
+  }
+  return Boolean(value) && typeof value === "object";
+}
+
+test("every runtime-built t(`prefix.${x}`) call has its prefix group in both languages", async () => {
+  const translations = await loadTranslations();
+  const prefixes = new Map();
+  for (const file of sourceFiles()) {
+    for (const [, prefix] of readFileSync(file, "utf8").matchAll(TEMPLATE_CALL)) {
+      if (!prefixes.has(prefix)) prefixes.set(prefix, path.relative(ROOT, file));
+    }
+  }
+  assert.ok(prefixes.size >= 5, `template scan found only ${prefixes.size} prefixes -- the pattern changed`);
+  const missing = [...prefixes]
+    .flatMap(([prefix, site]) => ["en", "zh"]
+      .filter((lang) => !isGroup(translations[lang], prefix.slice(0, -1)))
+      .map((lang) => `${prefix}* [${lang}] ${site}`));
+  assert.deepEqual(missing, []);
+});
+
+test("/products can label every category it can show, including the 'other' fallback", async () => {
+  const translations = await loadTranslations();
+  const page = readFileSync(path.join(ROOT, "src/app/(dashboard)/products/page.tsx"), "utf8");
+  const map = page.match(/CATEGORY_I18N_MAP[^=]*=\s*\{([\s\S]*?)\};/)?.[1] ?? "";
+  const colors = page.match(/CATEGORY_COLORS[^=]*=\s*\{([\s\S]*?)\};/)?.[1] ?? "";
+  const labels = new Set([...map.matchAll(/:\s*"([a-z_]+)"/g)].map((m) => m[1]));
+  // a category the map does not know falls back to the "other" colour -- and must fall back to its label
+  if (/^\s*other:/m.test(colors)) labels.add("other");
+  assert.ok(labels.size >= 10, `read only ${labels.size} category labels from the page`);
+  assert.ok(labels.has("other"), "the page colours an 'other' category, so it must be labelled too");
+  const missing = [...labels].flatMap((label) => ["en", "zh"]
+    .filter((lang) => resolve(translations[lang], `products.categories.${label}`) === undefined)
+    .map((lang) => `products.categories.${label} [${lang}]`));
+  assert.deepEqual(missing, []);
+  // unknown database categories must fall back to "other" rather than print a raw key
+  assert.match(page, /CATEGORY_LABEL_KEYS\.has\(key\) \? key : "other"/);
+  assert.doesNotMatch(page, /t\(`products\.categories\.\$\{/);
 });

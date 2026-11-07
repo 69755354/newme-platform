@@ -184,6 +184,44 @@ prepare_db() {
   note "$db: floor applied"
 }
 
+# The minimal replay floor omits a few production objects that the S2 role
+# migration (20261104110000, in the contract phase) guards on: it creates its
+# lead_files / customers / quotations / projects / lead_workflow_stages policies
+# and the discount constraint only where the table and columns exist, so that one
+# file applies to both this floor and production. The manifest posture predicate
+# for it is unconditional (it states what production must look like), so on the
+# bare floor it reads false and the phase is refused after it has run. Production
+# has all of these objects (supabase/replay/production-schema-baseline.sql); add
+# them here, with the baseline's column types, before the contract phase runs.
+# Idempotent, and nothing here weakens the migration or the predicate.
+add_production_objects_for_s2() {
+  local db="$1"
+  "${PSQL[@]}" -d "$db" >/dev/null <<'SQL' || fail "the production objects the S2 migration guards on did not apply to $db"
+create table if not exists public.lead_files (
+  id uuid default gen_random_uuid() primary key,
+  lead_id uuid not null,
+  uploaded_by uuid
+);
+create table if not exists public.lead_workflow_stages (
+  id uuid default gen_random_uuid() primary key,
+  lead_id uuid not null
+);
+-- The statement boundary migration 20260814000000 puts on every public base table
+-- exists by now, and the rollback companion refuses a table without it.
+drop trigger if exists trg_require_current_session on public.lead_files;
+create trigger trg_require_current_session before insert or update or delete on public.lead_files
+  for each statement execute function public.require_current_session();
+drop trigger if exists trg_require_current_session on public.lead_workflow_stages;
+create trigger trg_require_current_session before insert or update or delete on public.lead_workflow_stages
+  for each statement execute function public.require_current_session();
+alter table public.projects add column if not exists project_manager uuid;
+alter table public.projects add column if not exists assigned_to uuid;
+alter table public.customers add column if not exists assigned_sales_id uuid;
+alter table public.quotations add column if not exists discount_rate numeric(5,2) default 0;
+SQL
+  note "$db: production objects for the S2 migration added"
+}
+
 # The connection URL reaches the tool only through a 0600 file, because the tool
 # refuses a URL on the command line and this drill must exercise it the way an
 # operator runs it. Trust auth in the harness means the file holds no secret.
@@ -290,6 +328,7 @@ recorded="$("${PSQL[@]}" -c "select count(*) from supabase_migrations.schema_mig
 [ "$recorded" = "$EXPAND_COUNT" ] || fail "--plan changed the recorded history ($recorded rows)"
 
 # 6 · the contract phase.
+add_production_objects_for_s2 "$PGDATABASE"
 run_phase ok "$PGDATABASE" deferred_contract --apply
 count_log "^applied             : " "$CONTRACT_COUNT"
 expect_log "posture OK          : release-mode-row-is-strict"
@@ -395,6 +434,7 @@ note "re-entry: $REENTRY_COUNT applied on the second attempt, $EXPAND_COUNT reco
 # 11 · and the resumed database is an ordinary one: the contract phase applies to
 #      it and reaches the strict posture, so an interrupted expand phase is a delay
 #      and not a database that has to be rebuilt to be deployable.
+add_production_objects_for_s2 "$INTERRUPT_DB"
 run_phase ok "$INTERRUPT_DB" deferred_contract --apply
 count_log "^applied             : " "$CONTRACT_COUNT"
 count_log "^posture OK          : " "$STRICT_POSTURE_COUNT"

@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase";
-import { createFollowUpTask } from "@/lib/tasks";
+import { LEAD_FIELD_LIMITS } from "@/lib/lead-contact.mjs";
+import {
+  LeadDuplicateNotice,
+  leadFieldErrorKey,
+  submitNewLead,
+  type CreateLeadErrorState,
+} from "@/components/leads/LeadDuplicateNotice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,10 +39,10 @@ const SOURCE_OPTIONS = [
 ];
 
 export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }: Props) {
-  const supabase = createClient();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<CreateLeadErrorState | null>(null);
   const [form, setForm] = useState({
     customer_name: "",
     phone: "",
@@ -49,85 +54,55 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
   function resetForm() {
     setForm({ customer_name: "", phone: "", source: "whatsapp", location: "", notes: "" });
     setError(null);
+    setErrorState(null);
+  }
+
+  async function create(overrideReason?: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      // S3 #4/#5/#8: one server route validates, normalises the phone, checks
+      // duplicates, creates the follow-up task and sends the notification.
+      const result = await submitNewLead({
+        customer_name: form.customer_name,
+        phone: form.phone,
+        location: form.location,
+        source: form.source,
+        notes: form.notes,
+      }, overrideReason);
+      if (!result.ok) {
+        setErrorState(result.state);
+        if (!result.state) setError(t("leads.createFailed"));
+        return;
+      }
+      // Meta Pixel tracking
+      if (typeof window !== "undefined" && (window as any).fbq) {
+        (window as any).fbq("track", "Lead", {
+          content_name: form.customer_name || "unknown",
+          content_category: "smart_home_lead",
+          source: form.source,
+          location: form.location || undefined,
+        });
+      }
+      resetForm();
+      onOpenChange(false);
+      onCreated();
+    } catch {
+      setError(t("leads.createFailed"));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.customer_name.trim() && !form.phone.trim()) {
-      setError(t("leads.nameOrPhoneRequired"));
-      return;
-    }
-    setSaving(true);
-    setError(null);
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const { data, error: insertErr } = await supabase
-      .from("leads")
-      .insert({
-        source: form.source,
-        customer_name: form.customer_name.trim() || null,
-        phone: form.phone.trim() || null,
-        location: form.location.trim() || null,
-        quality: "pending",
-        assigned_to: user?.id || null,
-        next_action: "call",
-        next_followup_date: followupDate,
-      })
-      .select("id")
-      .single();
-
-    if (insertErr) {
-      console.error("QuickCreate failed:", insertErr);
-      setError(t("leads.createFailed"));
-      setSaving(false);
-      return;
-    }
-
-    // Save note as activity
-    if (data && form.notes.trim()) {
-      const { error: noteErr } = await supabase.from("activities").insert({
-        lead_id: data.id,
-        type: "note",
-        content: form.notes.trim(),
-        user_id: user?.id,
-      });
-      if (noteErr) console.error("Note save failed:", noteErr);
-    }
-
-    // P0-7: 建 lead 时同步写一条跟进 task，确保 Workbench 今日待办立即可见
-    if (data) {
-      const { error: taskErr } = await createFollowUpTask(supabase, {
-        leadId: data.id,
-        dueAt: followupDate,
-        title: "Follow up",
-        assigneeId: user?.id ?? null,
-        source: "follow_up",
-      });
-      if (taskErr) import("sonner").then(({ toast }) => toast.warning("Lead created but follow-up task creation failed"));
-    }
-
-    // Notify admins about new lead
-    void import("@/lib/notify")
-      .then(({ notify }) => notify({ type: "lead_created", lead_id: data!.id, customer_name: form.customer_name || "Unknown" }))
-      .catch((error) => console.error("lead_notification_failed", error));
-
-    // Meta Pixel tracking
-    if (typeof window !== "undefined" && (window as any).fbq) {
-      (window as any).fbq("track", "Lead", {
-        content_name: form.customer_name || "unknown",
-        content_category: "smart_home_lead",
-        source: form.source,
-        location: form.location || undefined,
-      });
-    }
-
-    setSaving(false);
-    resetForm();
-    onOpenChange(false);
-    onCreated();
+    await create();
   }
+
+  const fieldError = (field: string) => {
+    const code = errorState?.fieldErrors?.[field];
+    return code ? <p className="text-red-400 text-xs">{t(leadFieldErrorKey(field, code))}</p> : null;
+  };
 
   function handleOpenChange(open: boolean) {
     if (!open) resetForm();
@@ -151,15 +126,17 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
                 placeholder={t("leads.customerNamePlaceholder")}
                 value={form.customer_name}
                 onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.customer_name}
                 className="bg-gray-950 border-gray-700 text-white h-9"
               />
             </div>
             <div className="space-y-1.5">
               <Label className="text-gray-400 text-xs">{t("leads.phone2")}</Label>
               <Input
-                placeholder="+971 50..."
+                placeholder="050 123 4567"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.phone}
                 className="bg-gray-950 border-gray-700 text-white h-9"
               />
             </div>
@@ -181,9 +158,10 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
             <div className="space-y-1.5">
               <Label className="text-gray-400 text-xs">{t("leads.region")}</Label>
               <Input
-                placeholder="Dubai / Abu Dhabi..."
+                placeholder={t("leads.locationPlaceholder")}
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.location}
                 className="bg-gray-950 border-gray-700 text-white h-9"
               />
             </div>
@@ -195,10 +173,25 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
               placeholder={t("leads.notesPlaceholder")}
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.notes}
               className="bg-gray-950 border-gray-700 text-white h-9"
             />
           </div>
 
+          {fieldError("customer_name")}
+          {fieldError("phone")}
+          {fieldError("contact")}
+          {fieldError("location")}
+          {fieldError("notes")}
+          {errorState?.duplicates && errorState.duplicates.length > 0 && (
+            <LeadDuplicateNotice
+              duplicates={errorState.duplicates}
+              canOverride={errorState.canOverride}
+              reviewRequired={errorState.reviewRequired === true}
+              submitting={saving}
+              onOverride={(reason) => { void create(reason); }}
+            />
+          )}
           {error && (
             <p className="text-red-400 text-xs">{error}</p>
           )}

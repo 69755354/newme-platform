@@ -27,6 +27,9 @@ TODO → IN_PROGRESS → REVIEW → DONE
 
 | TASK_ID | STATUS | OWNER | UPDATED_AT |
 |---------|--------|-------|------------|
+| task_os_fix_s1_release_stability_code | DONE | Claude | 2026-11-03 |
+| task_os_fix_s7_monitoring_backup_code | DONE | Claude | 2026-11-04 |
+| task_os_fix_s2_permissions_code | DONE | Claude | 2026-11-03 |
 | task_meta_lead_ads_intake_code | DONE | Claude | 2026-10-26 |
 | task_meta_lead_ads_page_token_code | DONE | Claude | 2026-10-27 |
 | task_meta_crm_import_id_precision_code | DONE | Codex | 2026-10-26 |
@@ -891,6 +894,40 @@ closure `2043436` was refused by the defect this release fixes. Meta callback
 end-to-end acceptance is still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:795002d4e76187cb7dc26912ed35a1839f52b7c001bdd0ef0ce713b6de90d236 -->
+
+## OS fix S3 · lead flow (2026-11-04)
+
+IN PROGRESS, not deployed (draft PR #501, review round 2). Code-only, no
+migration. Fixes from the 2026-11 OS review (0-总报告 §二#2/§三, 4a, 4b, 4d,
+3-code-quality F3/F5): (1) completing a milestone moves the lead stage forward
+through the existing transition_lead_stage() routine (one audited step per
+call, first-contact gate and missing next follow-up skip with a hint, never
+fails the milestone save, no extra Meta CRM event); (2) the follow-up/notes
+audit event no longer answers "Lead not found"; (3) a second reassignment
+carries the routine's updated_at; (4) phones stored as E.164, duplicate
+phone/email warned — admin/boss/operator override with a reason and a link,
+sales get a detail-free warning, may create with a reason, and the lead is
+flagged (sales_manager_review) for the admin/operator review queue;
+(5) creation validation and length limits; (6) removing a member requires a
+receiver or the unassigned queue, audited per lead, deactivation only after a
+complete hand-over; (7) lead list and pipeline read every visible lead with an
+exact total; (8) new-lead notifications go to the assignee or the
+admin/operator queue only. Behaviour tests for each item fail on main and pass
+on the branch. Outstanding: review, merge, gated release, logged-in UAT.
+
+## OS fix S6 — front-end and translations (2026-11-03)
+
+Review 2026-11-03 (0-总报告 一.4/一.5, 三, 四; 4d; 4a; 4b; 4c). Forced
+password change gives feedback for every outcome and refuses new = old; mobile
+notification panel fits 320 px+; touch controls ≥40 px; lead header no longer
+pinned on phones; 1280/1366 timeline crop and long-text overflow fixed;
+confirmations for member deactivation and quotation line removal; one shared
+save-failure pattern (localized, "Saving…", sign-in redirect) on lead detail,
+new lead, contact quality and quote save; single Toaster; Chinese leaks in
+analytics / dashboard / workbench / pipeline translated; language cookie removes
+the English first render; lockout message states the wait and successful
+sign-ins no longer count. New gate: scripts/check-i18n-hardcoded.mjs with a
+per-file baseline. Status: REVIEW (draft PR, not deployed).
 
 ## S2 role-provisioning switch technical acceptance (2026-11-07)
 

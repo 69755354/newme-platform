@@ -1,4 +1,5 @@
 "use client";
+import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
@@ -47,7 +48,7 @@ interface PeriodL3Row {
 interface FinanceStats {
   totalContractValue: number; received: number; outstanding: number;
   overdue: number; dueNextWeek: number; contractCount?: number;
-  contractAmount?: number; paymentAmount?: number; wonCount?: number;
+  signedAmount?: number; paymentAmount?: number; wonCount?: number;
 }
 interface TopAction { customerName?: string; reason?: string; leadId?: string; }
 interface Lead { id?: string; customer_name?: string | null; }
@@ -118,13 +119,13 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
       bossTitle: { zh: "L1 老板 30 秒结论", en: "L1 Boss 30-Second Verdict" },
       execTitle: { zh: "L2 销售执行问题", en: "L2 Sales Execution Issues" },
       actionTitle: { zh: "L3 跟进风险/动作", en: "L3 Action Items & Risks" },
-      contractAmount: { zh: "本月合同", en: "MTD Contracts" }, paymentAmount: { zh: "本月回款", en: "MTD Collections" },
-      wonCount: { zh: "Won 数", en: "Won Count" }, overdue: { zh: "逾期", en: "Overdue" },
-      red: { zh: "红 leads", en: "Red leads" }, yellow: { zh: "黄 leads", en: "Yellow leads" },
+      signedAmount: { zh: "本月签约金额", en: "MTD Signed" }, paymentAmount: { zh: "本月回款", en: "MTD Collections" },
+      wonCount: { zh: "成交数", en: "Won Count" }, overdue: { zh: "逾期", en: "Overdue" },
+      red: { zh: "红色预警线索", en: "Red leads" }, yellow: { zh: "黄色预警线索", en: "Yellow leads" },
       highProbStale: { zh: "高概率停滞", en: "High-prob stale" }, pendingStale: { zh: "长期挂起", en: "Long-pending" },
       noData: { zh: "暂无数据", en: "No data yet" }, loading: { zh: "加载中…", en: "Loading…" },
-      riskPool: { zh: "Risk Pool 待办", en: "Risk pool tasks" }, todayFollowups: { zh: "今日跟进", en: "Today's follow-ups" },
-      topActions: { zh: "优先动作", en: "Top actions" }, leadQuality: { zh: "本月新 lead 质量", en: "MTD lead quality" },
+      riskPool: { zh: "风险池待办", en: "Risk pool tasks" }, todayFollowups: { zh: "今日跟进", en: "Today's follow-ups" },
+      topActions: { zh: "优先动作", en: "Top actions" }, leadQuality: { zh: "本月新线索质量", en: "MTD lead quality" }, qGood: { zh: "优质", en: "good" }, qNormal: { zh: "一般", en: "normal" }, qPending: { zh: "待评估", en: "pending" },
       noTarget: { zh: "暂无月度目标，无法判定", en: "No monthly target set" }, leading: { zh: "进度领先", en: "On track" },
       oneSideLeading: { zh: "单边领先", en: "One-sided lead" }, lagging: { zh: "进度滞后", en: "Lagging" },
       recovery: { zh: "待回收", en: "To recover" }, transfer: { zh: "待转移", en: "To transfer" }, review: { zh: "待审", en: "To review" },
@@ -133,7 +134,7 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
   };
   const now = new Date();
   const expectedPct = Math.round((now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()) * 100);
-  const allEmpty = signingTarget === 0 && collectionTarget === 0 && (finance.contractAmount ?? 0) === 0
+  const allEmpty = signingTarget === 0 && collectionTarget === 0 && (finance.signedAmount ?? 0) === 0
     && (finance.paymentAmount ?? 0) === 0 && (finance.wonCount ?? 0) === 0 && (finance.overdue ?? 0) === 0
     && (periodLeads?.count ?? 0) === 0 && topActions.length === 0 && todayFollowups.length === 0
     && overdueFollowups.length === 0 && (riskPoolCount ?? 0) === 0 && redCount + yellowCount + highProbStale
@@ -165,7 +166,7 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
       {isLoading ? bars : <>
         <p className="mb-4 text-sm font-medium">{allEmpty ? (locale === "zh" ? "暂无足够数据生成周复盘" : "Not enough data for a weekly review") : verdict}</p>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {metric(i18n("contractAmount"), money(finance.contractAmount))}
+          {metric(i18n("signedAmount"), money(finance.signedAmount))}
           {metric(i18n("paymentAmount"), money(finance.paymentAmount))}
           {metric(i18n("wonCount"), finance.wonCount ?? 0)}
           {metric(i18n("overdue"), money(finance.overdue))}
@@ -176,7 +177,7 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
     <div className="rounded-xl border border-border/50 bg-card/50 p-4">
       {title(i18n("execTitle"))}
       {isLoading ? bars : <>
-        {periodLeads && (periodLeads.count ?? 0) > 0 ? <p className="mb-3 text-sm">{i18n("leadQuality")}: {periodLeads.count ?? 0}, good: {periodLeads?.byQuality?.good ?? 0}, normal: {periodLeads?.byQuality?.normal ?? 0}, pending: {periodLeads?.byQuality?.pending ?? 0}</p>
+        {periodLeads && (periodLeads.count ?? 0) > 0 ? <p className="mb-3 text-sm">{i18n("leadQuality")}: {periodLeads.count ?? 0}, {i18n("qGood")}: {periodLeads?.byQuality?.good ?? 0}, {i18n("qNormal")}: {periodLeads?.byQuality?.normal ?? 0}, {i18n("qPending")}: {periodLeads?.byQuality?.pending ?? 0}</p>
           : <p className="mb-3 text-sm text-muted-foreground">{i18n("noData")}</p>}
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {risk(i18n("red"), redCount, "bg-red-500/10 text-red-400")}
@@ -196,7 +197,7 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
           {todayFollowups.length > 0 ? <ul className="space-y-1 text-muted-foreground">{todayFollowups.slice(0, 3).map((lead, index) => <li key={lead?.id ?? index}>{lead?.customer_name || (locale === "zh" ? "未命名客户" : "Unnamed customer")}</li>)}</ul>
             : <p className="text-muted-foreground">{locale === "zh" ? "今天无跟进" : "No follow-ups today"}</p>}</div>
         <div><p className="mb-1 font-medium">{i18n("topActions")}</p>
-          {actions.length > 0 ? <ul className="space-y-1">{actions.map((action, index) => <li key={action?.leadId ?? index}><Link className="text-copper-400 hover:underline" href={action?.leadId ? `/leads/${action.leadId}` : "/leads"}>{action?.customerName || (locale === "zh" ? "未命名客户" : "Unnamed customer")}</Link><span className="text-muted-foreground"> · {action?.reason || i18n("noData")}</span></li>)}</ul>
+          {actions.length > 0 ? <ul className="space-y-1">{actions.map((action, index) => <li key={action?.leadId ?? index}><Link className="text-copper-400 hover:underline" href={action?.leadId ? `/leads/${action.leadId}` : "/leads"}>{action?.customerName || (locale === "zh" ? "未命名客户" : "Unnamed customer")}</Link><span className="text-muted-foreground"> · {localizeServerText(action?.reason, locale) || i18n("noData")}</span></li>)}</ul>
             : <p className="text-muted-foreground">{i18n("noData")}</p>}</div>
         {allEmpty && <p className="text-muted-foreground">{i18n("noData")}</p>}
       </div>}
@@ -237,7 +238,10 @@ function WeeklyReviewApi({ language }: { language: string }) {
       const json = (await res.json()) as WeeklyReviewApiResponse;
       setData(json);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "fetch failed");
+      // The status code / browser message is English; show a localized sentence.
+      const forbidden = e instanceof Error && e.message === (locale === "zh" ? "无权限" : "Forbidden");
+      if (!forbidden) console.error("[weekly-review] fetch failed:", e);
+      setError(forbidden ? (locale === "zh" ? "无权限" : "Forbidden") : (locale === "zh" ? "请稍后重试" : "please retry"));
       setData(null);
     } finally {
       setLoading(false);

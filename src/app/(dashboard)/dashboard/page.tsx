@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
+import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
@@ -14,6 +16,8 @@ import {
 import AlertPanel from "./_components/AlertPanel";
 import WeeklyReview from "./_components/WeeklyReview";
 import { ErrorState } from "@/components/ui/error-state";
+import { dubaiMonthElapsedPct, dubaiMonthKey, recentDubaiMonthKeys } from "@/lib/dubai-time.mjs";
+import { summarizeLeads, type LeadSummary } from "@/lib/lead-metrics.mjs";
 
 /* ─── Types ─── */
 interface Lead {
@@ -46,14 +50,6 @@ interface FollowupTask {
   leads: Lead | Lead[] | null;
 }
 
-interface TeamOwnership {
-  user_id: string;
-  imported_leads: number;
-  active_leads: number;
-  won_leads: number;
-  lost_leads: number;
-}
-
 type ReviewRange = "today" | "this_week" | "last_week" | "this_month" | "custom";
 
 /* ─── 9-stage funnel ─── */
@@ -70,11 +66,6 @@ function fmtAED(v: number): string {
   return `AED ${v}`;
 }
 
-function daysSince(d: string | null): number | null {
-  if (!d) return null;
-  return Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000);
-}
-
 /* ─── Real financial data types ─── */
 interface FinanceStats {
   totalContractValue: number;
@@ -83,7 +74,7 @@ interface FinanceStats {
   overdue: number;
   dueNextWeek: number;
   contractCount?: number;
-  contractAmount?: number;
+  signedAmount?: number;
   paymentAmount?: number;
   wonCount?: number;
 }
@@ -93,19 +84,18 @@ export default function DashboardPage() {
   const router = useRouter();
   const { t, lang: language } = useLanguage();
 
-  const [leads, setLeads] = useState<Lead[]>([]);
+  // Every lead figure on this page is computed on the server by
+  // src/lib/lead-metrics.mjs (archived leads excluded, Dubai calendar months).
+  const [leadStats, setLeadStats] = useState<LeadSummary>(() => summarizeLeads([]));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [salesUsers, setSalesUsers] = useState<any[]>([]);
-  const [teamOwnership, setTeamOwnership] = useState<TeamOwnership[]>([]);
   const [showActivityFeed, setShowActivityFeed] = useState(false);
   
   // Period & KPI targets
-  const now = new Date();
-  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const [month, setMonth] = useState(currentPeriod);
+  const [month, setMonth] = useState(() => dubaiMonthKey() as string);
   const [kpiTargets, setKpiTargets] = useState<any[]>([]);
   const lastMonth = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -174,17 +164,6 @@ export default function DashboardPage() {
     window.history.replaceState(null, "", window.location.pathname + "?" + params.toString());
   }, [weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
 
-  // Fetch team ownership
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/dashboard/team-ownership", { signal: controller.signal }).then(r => r.json()).then(d => {
-      if (!controller.signal.aborted && d.users) setTeamOwnership(d.users);
-    }).catch((e) => {
-      if (!controller.signal.aborted) console.warn("team-ownership fetch failed", e);
-    });
-    return () => controller.abort();
-  }, []);
-
   useEffect(() => {
     if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart > weeklyReviewEnd))) {
       return;
@@ -225,7 +204,7 @@ export default function DashboardPage() {
         setUserId(json.profile.userId);
         setUserRole(json.profile.role);
         setSalesUsers(json.salesUsers);
-        setLeads(json.leads);
+        setLeadStats(json.leadStats);
         setFinanceStats(json.finance);
         setFinanceLoading(false);
         setContractCount(json.finance.contractCount);
@@ -240,84 +219,40 @@ export default function DashboardPage() {
       })
       .catch(err => {
         if (err.name === "AbortError") return;
-        setError(err.message);
+        // Never show the raw "HTTP 500" / "Failed to fetch": say it in the user's language.
+        console.error("[dashboard] summary fetch failed:", err);
+        setError(t("common.loadFailed"));
         setLoading(false);
       });
     return () => controller.abort();
   }, [month, language]);
 
-  /* ─── Computed ─── */
+  /* ─── Computed (from the server's single lead summary) ─── */
   const stats = useMemo(() => {
-    const active = leads;
-    const now = new Date();
-
-    const stageCounts: Record<string, number> = {};
-    const stageValues: Record<string, number> = {};
-    for (const key of STAGE_KEYS) {
-      // won/lost now live in final_status; process stages in stage. The
-      // `final_status || stage` fallback buckets each lead exactly once
-      // (won/lost leads short-circuit on final_status, never a process key).
-      const items = active.filter(l => (l.final_status || l.stage) === key);
-      stageCounts[key] = items.length;
-      stageValues[key] = items.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-    }
-
-    const pipeline = active.filter(l => !l.final_status);
-    const totalPipeline = pipeline.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-    const weightedPipeline = pipeline.reduce((sum, l) => sum + (l.quotation_value || 0) * (l.win_probability || 0) / 100, 0);
-
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    // P0 schema-alias fix: bind "monthly revenue" to leads.won_at (the
-    // moment a lead is marked final_status='won') rather than the generic
-    // leads.updated_at. updated_at changes on ANY field edit, so a record
-    // closed in June could otherwise re-appear under July simply because a
-    // sales rep edited a non-stage field on the 1st of the next month.
-    const wonThisMonth = active.filter(l => l.final_status === "won" && l.won_at && new Date(l.won_at) >= monthStart);
-    const monthlyRevenue = wonThisMonth.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-
-    const yellowLeads = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return d !== null && d >= 7 && d < 14; });
-    const redLeads = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return d !== null && d >= 14; });
-
-    const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7);
-    const newThisWeek = active.filter(l => l.created_at && new Date(l.created_at) >= weekStart).length;
-
-    const contactedTotal = stageCounts.contacted + stageCounts.requirement_confirmed + stageCounts.solution_submitted + stageCounts.quotation_submitted + stageCounts.negotiation + stageCounts.pending_decision + stageCounts.won;
-    const conversionRate = contactedTotal > 0 ? Math.round((stageCounts.won / contactedTotal) * 100) : 0;
-
-    const recoveryCount = pipeline.filter(l => l.recovery_candidate).length;
-    const transferCount = pipeline.filter(l => l.transfer_candidate).length;
-    const reviewCount = pipeline.filter(l => l.sales_manager_review).length;
-    const highProbStale = pipeline.filter(l => { const d = daysSince(l.last_contact_date || l.updated_at); return (l.win_probability || 0) >= 70 && d !== null && d >= 14; }).length;
-    const pendingStale = active.filter(l => { if (l.stage !== "pending_decision") return false; const d = daysSince(l.hold_since || l.updated_at); return d !== null && d >= 30; }).length;
-
-    const statusCounts: Record<string, number> = {};
-    for (const l of active) { const s = l.lead_status || "unknown"; statusCounts[s] = (statusCounts[s] || 0) + 1; }
-
-    const sourceCounts: Record<string, number> = {};
-    const sourceWon: Record<string, number> = {};
-    for (const l of active) {
-      const src = l.source_platform || l.source || "other";
-      sourceCounts[src] = (sourceCounts[src] || 0) + 1;
-      if (l.final_status === "won") sourceWon[src] = (sourceWon[src] || 0) + 1;
-    }
-
-    const wonCount = stageCounts.won || 0;
-    const contactRate = active.length > 0 ? Math.round(((stageCounts.contacted || 0) + (stageCounts.requirement_confirmed || 0)) / active.length * 100) : 0;
-
+    const { stageCounts, stageValues } = leadStats;
     return {
-      totalActive: active.length,
+      totalActive: leadStats.total,
       stageCounts, stageValues,
-      pipelineSize: pipeline.length,
-      totalPipeline, weightedPipeline,
-      monthlyRevenue, wonCount,
-      newThisWeek, conversionRate,
-      yellowCount: yellowLeads.length,
-      redCount: redLeads.length,
-      recoveryCount, transferCount, reviewCount, highProbStale, pendingStale,
-      statusCounts, sourceCounts, sourceWon,
-      contactRate,
+      pipelineSize: leadStats.active,
+      totalPipeline: leadStats.pipelineValue,
+      weightedPipeline: leadStats.weightedPipelineValue,
+      // "Won" is what was won in the selected Dubai month (by won_at), the same
+      // basis as the monthly signing target it is compared with.
+      monthlyRevenue: leadStats.periodWonValue,
+      wonCount: leadStats.periodWonCount,
+      newThisWeek: leadStats.newLast7Days,
+      conversionRate: leadStats.conversionRate,
+      yellowCount: leadStats.yellowCount,
+      redCount: leadStats.redCount,
+      recoveryCount: leadStats.recoveryCount,
+      transferCount: leadStats.transferCount,
+      reviewCount: leadStats.reviewCount,
+      highProbStale: leadStats.highProbStale,
+      pendingStale: leadStats.pendingStale,
+      statusCounts: leadStats.statusCounts,
+      contactRate: leadStats.contactRate,
     };
-  }, [leads]);
+  }, [leadStats]);
 
   // ─── KPI-driven finance cards — completion % FIRST ───
   // Company-level targets (for boss/admin view)
@@ -331,20 +266,23 @@ export default function DashboardPage() {
   const collectionTarget = userRole === "sales" ? myCollectionTarget : companyCollectionTarget;
 
   // Actuals: sales only counts their own, management counts all
-  const myWonLeads = leads.filter(l => l.assigned_to === userId && l.final_status === "won");
-  const mySigningActual = myWonLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-  const signingActual = userRole === "sales" ? mySigningActual : financeStats.totalContractValue;
-  const myCollectionActual = financeStats.received; // TODO: filter by sales_id when finance supports it
-  const collectionActual = financeStats.received;
+  // Both sides of "actual vs target" are for the selected Dubai month: the target
+  // is a monthly figure, so the actual must not be the all-time total (it used to
+  // be the sum of every lead ever won / every contract / every payment).
+  // Signing = won in the month (won_at). The same definition for a rep (own leads)
+  // and for management (all leads); contracts created, drafted, rejected or
+  // terminated in the month never count as signed.
+  const mySigningActual = leadStats.byAssignee[userId ?? ""]?.periodWonValue ?? 0;
+  const signingActual = userRole === "sales" ? mySigningActual : leadStats.periodWonValue;
+  const collectionActual = financeStats.paymentAmount ?? 0; // server scopes this to the caller's contracts for sales
+  // "N won orders this month": the count that matches the signing amount beside it.
+  const signingCount = userRole === "sales" ? (leadStats.byAssignee[userId ?? ""]?.periodWonCount ?? 0) : leadStats.periodWonCount;
   const signingPct = signingTarget > 0 ? Math.round((signingActual / signingTarget) * 100) : null;
   const collectionPct = collectionTarget > 0 ? Math.round((collectionActual / collectionTarget) * 100) : null;
 
   // Time-proportional expected progress (monthly)
-  const expectedPct = useMemo(() => {
-    const now = new Date();
-    const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    return Math.round((now.getDate() / totalDays) * 100);
-  }, []);
+  // Dubai days elapsed in the selected month (100 for past months).
+  const expectedPct = useMemo(() => dubaiMonthElapsedPct(month), [month]);
 
   const pctColor = (v: number | null) => {
     if (v === null || v === 0) return "text-muted-foreground";
@@ -359,14 +297,6 @@ export default function DashboardPage() {
 
   // Market: source breakdown
   const sourceBreakdown = useMemo(() => {
-    const sources: Record<string, { total: number; won: number; value: number }> = {};
-    leads.forEach(l => {
-      const s = l.source || "unknown";
-      if (!sources[s]) sources[s] = { total: 0, won: 0, value: 0 };
-      sources[s].total++;
-      if (l.final_status === "won") sources[s].won++;
-      if (l.quotation_value) sources[s].value += l.quotation_value;
-    });
     const sourceLabels: Record<string, string> = {
       ins: t("sourceLabels.ins"),
       fb: t("sourceLabels.fb"),
@@ -377,49 +307,41 @@ export default function DashboardPage() {
       other: t("sourceLabels.other"),
       unknown: t("sourceLabels.unknown"),
     };
-    return Object.entries(sources)
-      .map(([k, v]) => ({ source: k, label: sourceLabels[k] || k, ...v }))
+    return Object.entries(leadStats.bySource)
+      .map(([k, v]) => ({ source: k, label: sourceLabels[k] || k, total: v.total, won: v.won, value: v.value }))
       .sort((a, b) => b.total - a.total);
-  }, [leads]);
+  }, [leadStats, t]);
   const maxSourceTotal = Math.max(...sourceBreakdown.map(s => s.total), 1);
   
   // Per-salesperson breakdown
   const salesLeaderboard = useMemo(() => {
     const sales = salesUsers.filter((u: any) => u.role === "sales");
-    const ownershipByUser = new Map(teamOwnership.map((u) => [u.user_id, u]));
     return sales.map((s: any) => {
-      const ownership = ownershipByUser.get(s.id);
+      const mine = leadStats.byAssignee[s.id];
       const target = kpiTargets.find((t: any) => t.target_type === "signing" && t.assigned_to === s.id);
-      const salesLeads = leads.filter(l => l.assigned_to === s.id);
-      const activeLeads = salesLeads.filter(l => !l.final_status);
-      const wonLeads = salesLeads.filter(l => l.final_status === "won");
-      const wonValue = wonLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-      const pipelineValue = activeLeads.reduce((sum, l) => sum + (l.quotation_value || 0), 0);
-      const contacted = salesLeads.filter(l =>
-        !l.final_status && ["contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision"].includes(l.stage)
-      ).length;
-      const conversionRate = salesLeads.length > 0 ? Math.round((wonLeads.length / salesLeads.length) * 100) : 0;
+      // This month's won value against this month's target.
+      const wonValue = mine?.periodWonValue ?? 0;
       const targetAmount = target?.target_amount || 0;
       const completionRate = targetAmount > 0 ? Math.round((wonValue / targetAmount) * 100) : 0;
       return {
         id: s.id,
         name: s.full_name || s.email || t("common.unnamed"),
         wonValue,
-        wonCount: wonLeads.length,
-        pipelineValue,
-        activeCount: activeLeads.length,
-        totalLeads: salesLeads.length,
-        contacted,
-        conversionRate,
+        wonCount: mine?.periodWonCount ?? 0,
+        pipelineValue: mine?.pipelineValue ?? 0,
+        activeCount: mine?.active ?? 0,
+        totalLeads: mine?.total ?? 0,
+        contacted: mine?.contacted ?? 0,
+        conversionRate: mine && mine.total > 0 ? Math.round((mine.won / mine.total) * 100) : 0,
         targetAmount,
         completionRate,
-        imported: ownership?.imported_leads ?? 0,
-        active: ownership?.active_leads ?? activeLeads.length,
-        won: ownership?.won_leads ?? wonLeads.length,
-        lost: ownership?.lost_leads ?? salesLeads.filter(l => l.final_status === "lost").length,
+        imported: mine?.imported ?? 0,
+        active: mine?.active ?? 0,
+        won: mine?.won ?? 0,
+        lost: mine?.lost ?? 0,
       };
     }).sort((a, b) => b.wonValue - a.wonValue);
-  }, [salesUsers, leads, kpiTargets, teamOwnership]);
+  }, [salesUsers, leadStats, kpiTargets, t]);
 
   // KPI-driven finance cards — replaces old kpiCards + financeCards
   const getKpiSub = (actual: number, target: number) => {
@@ -431,7 +353,7 @@ export default function DashboardPage() {
   // No more financeCards array — render L1 cards inline
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">{t("common.loading")}</div>;
-  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  if (error) return <ErrorState message={error} retryText={t("common.retry")} onRetry={() => window.location.reload()} />;
 
   const overdueCount = (stats.redCount || 0) + (stats.yellowCount || 0);
   const isManagement = userRole !== "sales";
@@ -479,19 +401,7 @@ export default function DashboardPage() {
           onChange={(e) => setMonth(e.target.value)}
           className="h-9 px-3 text-sm rounded-lg border border-border/50 bg-background text-foreground"
         >
-          {(() => {
-            const opts: string[] = [];
-            const now = new Date();
-            for (let i = 0; i < 12; i++) {
-              const y = now.getFullYear();
-              const m = now.getMonth() - i; // 0-indexed, can be negative
-              const d = new Date(y, m, 1);
-              // Format as YYYY-MM in local timezone (avoid toISOString UTC shift)
-              const mm = String(d.getMonth() + 1).padStart(2, "0");
-              opts.push(`${d.getFullYear()}-${mm}`);
-            }
-            return opts.map(m => <option key={m} value={m}>{m}</option>);
-          })()}
+          {recentDubaiMonthKeys(12).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
         <button
           onClick={() => { window.location.href = "/leads/new"; }}
@@ -511,7 +421,7 @@ export default function DashboardPage() {
         { label: t("dashboard.kpiActive"), value: String(contractCount), sub: t("dashboard.nPipeline").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=negotiation" },
         { label: t("dashboard.kpiQuotes"), value: String(stats.stageCounts.quotation_submitted + stats.stageCounts.negotiation + stats.stageCounts.pending_decision), sub: t("dashboard.nPending").replace("{n}", String(stats.stageCounts.quotation_submitted)), href: "/quotes" },
         { label: t("dashboard.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: t("dashboard.nDeals").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=quotation_submitted" },
-        { label: t("dashboard.won"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
+        { label: t("dashboard.wonThisMonth"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
         { label: t("dashboard.kpiConv"), value: `${stats.conversionRate}%`, sub: t("dashboard.nPctContacted").replace("{n}", String(stats.contactRate)), href: "/leads" },
       ].map(card => (
         <button key={card.label}
@@ -529,8 +439,8 @@ export default function DashboardPage() {
   /* ─── quick action handlers ─── */
   const handleWhatsApp = (phone: string, customerName: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const clean = phone.replace(/[^0-9+]/g, "");
-    window.open(`https://wa.me/${clean}`, "_blank");
+    const href = whatsappLink(phone);
+    if (href) window.open(href, "_blank");
   };
   const handleCall = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -581,7 +491,7 @@ export default function DashboardPage() {
                   {action.value > 0 && (
                     <span className="text-xs font-medium text-copper-400">{fmtAED(action.value)}</span>
                   )}
-                  <span className="text-xs text-muted-foreground">{action.reason}</span>
+                  <span className="text-xs text-muted-foreground">{localizeServerText(action.reason, language)}</span>
                 </div>
               </div>
               {/* Action buttons */}
@@ -648,7 +558,7 @@ export default function DashboardPage() {
         {/* L1: KPI completion — BIG numbers with progress bars */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.contracts").replace("{n}", String(contractCount)) },
+            { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.wonOrders").replace("{n}", String(signingCount)) },
             { label: t("kpi.collection"), pct: collectionPct, actual: collectionActual, target: collectionTarget, sub: t("dashboard.ratePct").replace("{n}", String(financeStats.totalContractValue > 0 ? Math.round((financeStats.received / financeStats.totalContractValue) * 100) : 0)) },
             { label: t("payment.overdue"), pct: null, actual: financeStats.overdue, target: 0, sub: financeStats.overdue > 0 ? `⚠ ${t("dashboard.needsFollowup")}` : t("dashboard.noTargetSet"), alert: financeStats.overdue > 0 },
             { label: t("dashboard.dueNextWeek"), pct: null, actual: financeStats.dueNextWeek, target: 0, sub: financeStats.dueNextWeek > 0 ? t("dashboard.nPending").replace("{n}", String(financeStats.dueNextWeek)) : t("dashboard.noTargetSet") },
@@ -720,7 +630,7 @@ export default function DashboardPage() {
                     <div className="flex-1 space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">
-                          {t("dashboard.won")} {fmtAED(s.wonValue)} · {language === "zh" ? "总计" : "Total"} {s.totalLeads} · {language === "zh" ? "导入" : "Imported"} {s.imported} · {language === "zh" ? "活跃" : "Active"} {s.active} · {language === "zh" ? "成交" : "Won"} {s.won} · {language === "zh" ? "流失" : "Lost"} {s.lost}
+                          {t("dashboard.wonThisMonth")} {fmtAED(s.wonValue)} ({s.wonCount}) · {language === "zh" ? "总计" : "Total"} {s.totalLeads} · {language === "zh" ? "导入" : "Imported"} {s.imported} · {language === "zh" ? "活跃" : "Active"} {s.active} · {language === "zh" ? "累计成交" : "Won to date"} {s.won} · {language === "zh" ? "流失" : "Lost"} {s.lost}
                         </span>
                         {s.targetAmount > 0 ? (
                           <span className={cn("font-medium", s.completionRate <= 0 ? "text-muted-foreground" : s.completionRate >= expectedPct ? "text-emerald-400" : "text-amber-400")}>
@@ -823,7 +733,7 @@ export default function DashboardPage() {
               <div className={cn("h-full rounded-full transition-all", barColor(signingPct))}
                 style={{ width: `${Math.min(signingPct ?? 0, 100)}%` }} />
             </div>
-            <p className="text-xs text-muted-foreground">{fmtAED(signingActual)} / {fmtAED(signingTarget)} · {t("kpi.contracts").replace("{n}", String(contractCount))}</p>
+            <p className="text-xs text-muted-foreground">{fmtAED(signingActual)} / {fmtAED(signingTarget)} · {t("kpi.wonOrders").replace("{n}", String(signingCount))}</p>
           </div>
           <div className="p-4 rounded-xl border border-border/50 bg-card/50">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">{t("kpi.collection")}</p>
@@ -855,7 +765,7 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-medium">{s.label}</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {s.total} leads · {s.won} won · {convRate}%
+                      {t("dashboard.sourceLine").replace("{n}", String(s.total)).replace("{won}", String(s.won)).replace("{pct}", String(convRate))}
                     </span>
                   </div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden">

@@ -2,9 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { AUDIT_ACTIONS, writeAuditLog } from "@/lib/audit-log";
 
 // ─── Auth check ───
-async function checkRole(request: NextRequest): Promise<NextResponse | string> {
+async function checkRole(request: NextRequest): Promise<NextResponse | { role: string; userId: string }> {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
   const supabase = await createServerSupabase(bearerToken, cookieHeader);
@@ -35,7 +36,7 @@ async function checkRole(request: NextRequest): Promise<NextResponse | string> {
     );
   }
 
-  return profile.role; // allowed — role for downstream enforcement
+  return { role: profile.role, userId: user.id }; // allowed — role for downstream enforcement
 }
 
 // ─── GET /api/users — list all users ───
@@ -161,6 +162,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Application-layer audit: who created which account with which role.
+    void writeAuditLog({
+      actorId: callerRole.userId,
+      action: AUDIT_ACTIONS.USER_CREATED,
+      targetType: "user",
+      targetId: authData.user.id,
+      details: { role },
+    });
+    void writeAuditLog({
+      actorId: callerRole.userId,
+      action: AUDIT_ACTIONS.ROLE_ASSIGNED,
+      targetType: "user",
+      targetId: authData.user.id,
+      details: { new_role: role, previous_role: "none" },
+    });
+
     // Notify admins about new team member
     try {
       const { getAdminUserIds, createNotificationsBulk } = await import("@/lib/notifications");
@@ -173,7 +190,7 @@ export async function POST(request: NextRequest) {
             title: `New team member: ${full_name}`,
             body: `${full_name} added as ${role}`,
             relatedId: authData.user.id,
-            relatedType: "user",
+            // notifications_related_type_check does not allow "user"; the bell links by type.
             eventKey: `team_member_added:${authData.user.id}`,
           }))
         );

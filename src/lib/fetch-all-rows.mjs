@@ -1,0 +1,137 @@
+// Read every row of a PostgREST query in pages.
+//
+// Supabase silently caps an unranged select at the project's max-rows (1000), and
+// several report routes added their own `.limit(500)`; past either number the
+// totals on the dashboard and attribution pages quietly stopped growing. Report
+// routes read the narrow metric columns through this helper instead.
+//
+// `buildPage(from, to, withCount)` must return a fresh query for rows
+// [from, to] with a stable order (e.g. `.order("id")`) and, when `withCount` is
+// true, a `{ count: "exact" }` select. The first page reports the total; the
+// remaining pages are requested in parallel.
+//
+// The result is `{ data, error, truncated, total }`: `total` is the exact count
+// from the database (or the number of rows read when the server gave none), and
+// `truncated` is true only when the safety ceiling stopped the read short. On
+// any page error the result has no rows and carries the error.
+//
+// This is the single paged reader for report routes AND the lead / pipeline
+// lists (S3 and S5 used to carry one each). The lists pass LIST_MAX_ROWS.
+
+import { EXCLUDE_SYNTHETIC_QA_FILTER } from "./lead-metrics.mjs";
+
+export const DEFAULT_PAGE_SIZE = 1000;
+export const DEFAULT_MAX_ROWS = 50000;
+export const LIST_MAX_ROWS = 20000;
+
+// Pages are read at different moments; a row updated in between (when the order is
+// not by id) can appear on two pages. Rows that have an `id` are returned once.
+function dedupeById(rows) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const id = row && typeof row === "object" ? row.id : undefined;
+    if (id === undefined || id === null) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+export async function fetchAllRows(buildPage, options = {}) {
+  const result = await readAllRows(buildPage, options);
+  if (!result.error && result.data.length > 1) {
+    const data = dedupeById(result.data);
+    return { ...result, data, total: Math.max(result.total, data.length) };
+  }
+  return result;
+}
+
+async function readAllRows(buildPage, { pageSize = DEFAULT_PAGE_SIZE, maxRows = DEFAULT_MAX_ROWS } = {}) {
+  const first = await buildPage(0, pageSize - 1, true);
+  if (first.error) return { data: [], error: first.error, truncated: false, total: 0 };
+  const rows = [...(first.data ?? [])];
+  const total = typeof first.count === "number" ? first.count : null;
+  if (rows.length === 0 || (total !== null && total <= rows.length)) {
+    return { data: rows, error: null, truncated: false, total: Math.max(total ?? 0, rows.length) };
+  }
+  if (total === null && rows.length < pageSize) {
+    return { data: rows, error: null, truncated: false, total: rows.length };
+  }
+
+  const target = Math.min(total ?? maxRows, maxRows);
+  if (rows.length === pageSize && total !== null) {
+    // Normal case: the server honoured the page size, so the remaining pages are
+    // independent and are requested in parallel.
+    const pages = [];
+    for (let from = pageSize; from < target; from += pageSize) {
+      pages.push(buildPage(from, Math.min(from + pageSize, target) - 1, false));
+    }
+    for (const page of await Promise.all(pages)) {
+      if (page.error) return { data: [], error: page.error, truncated: false, total: 0 };
+      rows.push(...(page.data ?? []));
+    }
+    return { data: rows, error: null, truncated: total > maxRows, total: Math.max(total, rows.length) };
+  }
+
+  // The server returned fewer rows than asked (a project-level row cap smaller
+  // than the page size) or gave no count: advance by what actually came back so
+  // no row range is skipped.
+  while (rows.length < target) {
+    const from = rows.length;
+    const page = await buildPage(from, Math.min(from + pageSize, target) - 1, false);
+    if (page.error) return { data: [], error: page.error, truncated: false, total: 0 };
+    const got = page.data ?? [];
+    if (got.length === 0) break;
+    rows.push(...got);
+    if (total === null && got.length < pageSize) break;
+  }
+  return {
+    data: rows,
+    error: null,
+    truncated: (total ?? rows.length) > rows.length,
+    total: Math.max(total ?? rows.length, rows.length),
+  };
+}
+
+/**
+ * Every counted (non-archived) lead with the narrow metric columns, optionally
+ * for one assignee. `columns` defaults to the lead-metrics column list.
+ */
+export function fetchCountedLeads(supabase, columns, { assignedTo = null } = {}) {
+  return fetchAllRows((from, to, withCount) => {
+    let q = supabase
+      .from("leads")
+      .select(columns, withCount ? { count: "exact" } : undefined)
+      .eq("archived", false)
+      .or(EXCLUDE_SYNTHETIC_QA_FILTER);
+    if (assignedTo) q = q.eq("assigned_to", assignedTo);
+    return q.order("id", { ascending: true }).range(from, to);
+  });
+}
+
+/**
+ * The stage_change events that moved the given leads to "lost" (both the
+ * `{from,to}` and the older `{from_stage,to_stage}` spelling), newest first.
+ * Leads are queried in chunks so the `in` list stays short.
+ */
+export async function fetchLostEvents(supabase, leadIds, { chunkSize = 100 } = {}) {
+  const ids = [...leadIds];
+  const events = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const result = await fetchAllRows((from, to, withCount) =>
+      supabase
+        .from("business_events")
+        .select("lead_id,event_data,created_at", withCount ? { count: "exact" } : undefined)
+        .eq("event_type", "stage_change")
+        .in("lead_id", chunk)
+        .or("event_data->>to.eq.lost,event_data->>to_stage.eq.lost")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    if (result.error) return { data: [], error: result.error };
+    events.push(...result.data);
+  }
+  return { data: events, error: null };
+}

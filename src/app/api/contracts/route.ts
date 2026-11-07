@@ -6,7 +6,6 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
-import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import type { Database, Json } from "@/types/database";
 
 // R5: the GET below embeds installment_plans, whose paid_amount and
@@ -180,8 +179,10 @@ export async function POST(request: NextRequest) {
 
     if (rpcErr) {
       const failure = moneyRpcFailure(rpcErr, "Failed to create contract");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,
@@ -203,29 +204,10 @@ export async function POST(request: NextRequest) {
       installments_count: number;
     };
 
-    // Creation leaves the contract in draft. Notify that persisted fact now;
-    // the pending-approval event is emitted only by the later transition that
-    // actually moves the row to pending_admin.
-    try {
-      await dispatchPersistedNotification({
-        actorId: user.id,
-        input: {
-          type: "contract_created",
-          contract_id: contract.id,
-        },
-      });
-    } catch (notifyErr) {
-      logger.warn(
-        {
-          err: notifyErr,
-          request_id,
-          operation: "contract_create",
-          user_id: user.id,
-          contract_id: contract.id,
-        },
-        "[API Contracts] Notification failed",
-      );
-    }
+    // The contract_created notification is withheld on purpose: notifications_type_check
+    // does not list that type yet (every attempt fails with 23514). Restore the sender
+    // after the next database batch adds the type to the constraint (fixes/NEXT-DB-BATCH.md).
+    // The pending-approval event is emitted by the later transition to pending_admin.
 
     revalidatePath("/contracts");
     revalidatePath("/leads");
@@ -301,7 +283,8 @@ export async function GET(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: "Failed to fetch contracts" }, { status: 500 });
     }
-    return applyPrivateNoStore(NextResponse.json({ data }));
+    // role: the lead detail contracts panel shows "New contract" to admin/boss/operator on any lead and to sales on their own (S2 option A).
+    return applyPrivateNoStore(NextResponse.json({ data, role: userRole }));
   } catch (err: any) {
     logger.error(
       {

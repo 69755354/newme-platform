@@ -61,3 +61,7 @@ supabase/.temp/
 .audit/
 scripts/.ed25519.key.bootstrap
 .next.bak.*
+
+# Regression suite local state (sessions, run output)
+e2e/regression/.auth-cache/
+e2e/regression/.runs/

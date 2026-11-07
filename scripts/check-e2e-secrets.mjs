@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const repoRoot = process.cwd();
 const normalized = (value) => value.replaceAll(path.sep, '/');
-const artifactPath = /(^|\/)(e2e\/\.auth\/|playwright-report\/|test-results\/|blob-report\/|e2e-results\.json$|e2e\/.*(?:storage[-_]?state|auth[-_]?state|session).*(?:\.json|\.zip)$)/i;
+const artifactPath = /(^|\/)(e2e\/\.auth\/|e2e\/regression\/\.auth-cache\/|e2e\/regression\/\.runs\/|playwright-report\/|test-results\/|blob-report\/|e2e-results\.json$|e2e\/.*(?:storage[-_]?state|auth[-_]?state|session).*(?:\.json|\.zip)$)/i;
 const e2eSourcePath = /(^|\/)(e2e\/|playwright(?:\.[A-Za-z0-9_-]+)*\.config\.[cm]?[jt]s$)/i;
 const textSourcePath = /\.(?:[cm]?[jt]sx?|json|ya?ml|env)$/i;
 const passwordLiteral = /\b(?:password|passwd|pwd)\b\s*[:=]\s*(['"`])(?=.{6,}\1)/i;

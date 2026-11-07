@@ -108,7 +108,8 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
         const json = await res.json();
         setData(json);
       } catch (err: any) {
-        setError(err.message || t("common.failedToLoad"));
+        console.error("[analytics] weekly trends fetch failed:", err);
+        setError(t("common.loadFailed"));
       } finally {
         setLoading(false);
       }
@@ -126,7 +127,7 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
   if (error) {
     return (
       <div className="py-8 text-center text-sm text-rose-400">
-        {t("common.loadFailed")}: {error}
+        {error}
       </div>
     );
   }

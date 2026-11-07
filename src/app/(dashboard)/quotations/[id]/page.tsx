@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn, fmtDubai } from "@/lib/utils";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   FileText,
@@ -38,7 +38,9 @@ import {
   Loader2,
 } from "lucide-react";
 import { fmtAED } from "@/shared/utils/format";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Database, Json } from "@/types/database";
+import { clampDiscountRate, normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
 
 /* ─── Types ─── */
 interface QuotationLineItem extends Record<string, Json> {
@@ -93,19 +95,17 @@ interface Product {
   description: string | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function parseLineItems(value: unknown): QuotationLineItem[] {
-  if (value === null || value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error("Quotation line items must be a JSON array");
-  return value.map((item, index) => {
-    if (!isRecord(item) || typeof item.product_id !== "string" || typeof item.product_name !== "string" || typeof item.description !== "string" || typeof item.quantity !== "number" || !Number.isFinite(item.quantity) || typeof item.unit_price !== "number" || !Number.isFinite(item.unit_price) || typeof item.total_price !== "number" || !Number.isFinite(item.total_price)) {
-      throw new Error(`Invalid quotation line item at index ${index}`);
-    }
-    return { product_id: item.product_id, product_name: item.product_name, description: item.description, quantity: item.quantity, unit_price: item.unit_price, total_price: item.total_price };
-  });
+  // Calculator, wizard, engine and add-product rows are all readable here; the
+  // strict single-shape parser used to refuse every calculator quotation.
+  return normalizeQuotationLineItems(value).map((item) => ({
+    product_id: item.id,
+    product_name: item.name,
+    description: item.description,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    total_price: item.line_total,
+  }));
 }
 
 function getErrorMessage(error: unknown): string {
@@ -130,19 +130,19 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 /* ─── Helpers ─── */
-function fmtDate(d: string | null | undefined): string {
+function fmtDate(d: string | null | undefined, locale: string): string {
   if (!d) return "—";
   try {
-    return fmtDubai(d, { locale: "en-US", year: "numeric", month: "long", day: "numeric" });
+    return fmtDubai(d, { locale, year: "numeric", month: "long", day: "numeric" });
   } catch {
     return "—";
   }
 }
 
-function fmtDateTime(d: string | null | undefined): string {
+function fmtDateTime(d: string | null | undefined, locale: string): string {
   if (!d) return "—";
   try {
-    return fmtDubai(d, { locale: "en-US", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return fmtDubai(d, { locale, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return "—";
   }
@@ -169,6 +169,8 @@ export default function QuotationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // S6 (review 4d/4a): removing a saved line item asks first.
+  const [removeIndex, setRemoveIndex] = useState<number | null>(null);
 
   // Line items
   const [lineItems, setLineItems] = useState<QuotationLineItem[]>([]);
@@ -238,6 +240,7 @@ export default function QuotationDetailPage() {
     if (!product) return;
 
     setAddingItem(true);
+    let previousItems: QuotationLineItem[] | null = null;
 
     try {
       const newItem: QuotationLineItem = {
@@ -251,17 +254,18 @@ export default function QuotationDetailPage() {
 
       const updatedItems = [...lineItems, newItem];
       setLineItems(updatedItems);
+      previousItems = lineItems;
 
       // Recalculate totals
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
-      const discountRate = quotation.discount_rate || 0;
+      const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
       const taxRate = quotation.tax_rate || 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
       // Update quotation
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update({
           devices_json: updatedItems,
@@ -271,9 +275,12 @@ export default function QuotationDetailPage() {
           total_amount: totalAmount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,
@@ -288,6 +295,8 @@ export default function QuotationDetailPage() {
       setSelectedProduct("");
     } catch (err: unknown) {
       console.error("Failed to add item:", err);
+      // The row was not saved; do not keep showing it.
+      if (previousItems) setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     } finally {
       setAddingItem(false);
@@ -298,19 +307,20 @@ export default function QuotationDetailPage() {
   const handleRemoveLineItem = async (index: number) => {
     if (!quotation) return;
 
+    const previousItems = lineItems;
     const updatedItems = lineItems.filter((_, i) => i !== index);
     setLineItems(updatedItems);
 
     try {
       // Recalculate totals
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
-      const discountRate = quotation.discount_rate || 0;
+      const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
       const taxRate = quotation.tax_rate || 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update({
           devices_json: updatedItems,
@@ -320,9 +330,12 @@ export default function QuotationDetailPage() {
           total_amount: totalAmount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,
@@ -336,6 +349,7 @@ export default function QuotationDetailPage() {
       toast.success(t("quotations.itemRemoved") || "Item removed");
     } catch (err: unknown) {
       console.error("Failed to remove item:", err);
+      setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
   };
@@ -344,22 +358,24 @@ export default function QuotationDetailPage() {
   const handleUpdateQuantity = async (index: number, newQuantity: number) => {
     if (!quotation || newQuantity < 1) return;
 
-    const updatedItems = [...lineItems];
-    updatedItems[index].quantity = newQuantity;
-    updatedItems[index].total_price =
-      updatedItems[index].unit_price * newQuantity;
+    const previousItems = lineItems;
+    const updatedItems = lineItems.map((item, i) =>
+      i === index
+        ? { ...item, quantity: newQuantity, total_price: item.unit_price * newQuantity }
+        : item,
+    );
     setLineItems(updatedItems);
 
     try {
       // Recalculate totals
       const subtotal = updatedItems.reduce((sum, item) => sum + item.total_price, 0);
-      const discountRate = quotation.discount_rate || 0;
+      const discountRate = clampDiscountRate(quotation.discount_rate || 0);
       const discountAmount = subtotal * (discountRate / 100);
       const taxRate = quotation.tax_rate || 5;
       const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
       const totalAmount = subtotal - discountAmount + taxAmount;
 
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update({
           devices_json: updatedItems,
@@ -369,9 +385,12 @@ export default function QuotationDetailPage() {
           total_amount: totalAmount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,
@@ -383,6 +402,7 @@ export default function QuotationDetailPage() {
       });
     } catch (err: unknown) {
       console.error("Failed to update quantity:", err);
+      setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
   };
@@ -408,12 +428,15 @@ export default function QuotationDetailPage() {
         updateData.rejected_at = new Date().toISOString();
       }
 
-      const { error: updateErr } = await supabase
+      const { data: updatedRows, error: updateErr } = await supabase
         .from("quotations")
         .update(updateData)
-        .eq("id", quotation.id);
+        .eq("id", quotation.id)
+        .select("id");
 
       if (updateErr) throw updateErr;
+      // Row security answers a refused update with success and no rows.
+      if (!updatedRows || updatedRows.length === 0) throw new Error(t("common.saveFailedRetry"));
 
       setQuotation({
         ...quotation,
@@ -464,6 +487,18 @@ export default function QuotationDetailPage() {
 
   return (
     <DashboardScrollContainer className="space-y-6">
+      <ConfirmDialog
+        open={removeIndex !== null}
+        onOpenChange={(open) => { if (!open) setRemoveIndex(null); }}
+        title={t("quotations.removeItemTitle")}
+        description={t("quotations.removeItemConfirm")}
+        confirmLabel={t("quotations.removeItem")}
+        cancelLabel={t("common.cancel")}
+        onConfirm={async () => {
+          if (removeIndex !== null) await handleRemoveLineItem(removeIndex);
+          return true;
+        }}
+      />
       {/* Back button */}
       <div className="flex items-center gap-4">
         <Button
@@ -487,7 +522,7 @@ export default function QuotationDetailPage() {
                 statusStyle.border
               )}
             >
-              {STATUS_LABELS[quotation.status] || quotation.status}
+              {STATUS_LABELS[quotation.status] ? t(`quotes.${quotation.status}`) : quotation.status}
             </Badge>
             {quotation.version && quotation.version > 1 && (
               <Badge variant="outline" className="text-xs">
@@ -496,7 +531,7 @@ export default function QuotationDetailPage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {t("quotations.created") || "Created"} {fmtDateTime(quotation.created_at)}
+            {t("quotations.created") || "Created"} {fmtDateTime(quotation.created_at, t("locale.dateLocale"))}
           </p>
         </div>
       </div>
@@ -563,7 +598,7 @@ export default function QuotationDetailPage() {
               </p>
               <p className="text-sm font-medium flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {fmtDate(quotation.valid_until)}
+                {fmtDate(quotation.valid_until, t("locale.dateLocale"))}
               </p>
             </div>
             <div>
@@ -684,7 +719,9 @@ export default function QuotationDetailPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRemoveLineItem(index)}
+                      onClick={() => setRemoveIndex(index)}
+                      aria-label={t("quotations.removeItem")}
+                      title={t("quotations.removeItem")}
                       className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -725,7 +762,7 @@ export default function QuotationDetailPage() {
               <p className="text-xs text-muted-foreground mb-1">
                 {t("quotations.createdAt") || "Created At"}
               </p>
-              <p className="text-sm">{fmtDateTime(quotation.created_at)}</p>
+              <p className="text-sm">{fmtDateTime(quotation.created_at, t("locale.dateLocale"))}</p>
             </div>
             {quotation.sent_at && (
               <div>
@@ -733,7 +770,7 @@ export default function QuotationDetailPage() {
                   {t("quotations.sentAt") || "Sent At"}
                 </p>
                 <p className="text-sm text-blue-400">
-                  {fmtDateTime(quotation.sent_at)}
+                  {fmtDateTime(quotation.sent_at, t("locale.dateLocale"))}
                 </p>
               </div>
             )}
@@ -743,7 +780,7 @@ export default function QuotationDetailPage() {
                   {t("quotations.acceptedAt") || "Accepted At"}
                 </p>
                 <p className="text-sm text-emerald-400">
-                  {fmtDateTime(quotation.accepted_at)}
+                  {fmtDateTime(quotation.accepted_at, t("locale.dateLocale"))}
                 </p>
               </div>
             )}
@@ -753,7 +790,7 @@ export default function QuotationDetailPage() {
                   {t("quotations.rejectedAt") || "Rejected At"}
                 </p>
                 <p className="text-sm text-rose-400">
-                  {fmtDateTime(quotation.rejected_at)}
+                  {fmtDateTime(quotation.rejected_at, t("locale.dateLocale"))}
                 </p>
               </div>
             )}
@@ -761,7 +798,7 @@ export default function QuotationDetailPage() {
               <p className="text-xs text-muted-foreground mb-1">
                 {t("quotations.lastUpdated") || "Last Updated"}
               </p>
-              <p className="text-sm">{fmtDateTime(quotation.updated_at)}</p>
+              <p className="text-sm">{fmtDateTime(quotation.updated_at, t("locale.dateLocale"))}</p>
             </div>
           </div>
         </CardContent>
@@ -852,7 +889,7 @@ export default function QuotationDetailPage() {
         </CardContent>
       </Card>
 
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

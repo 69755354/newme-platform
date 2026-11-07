@@ -1,6 +1,8 @@
 // RBAC: user (authenticated)
 import { createServerSupabase } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { ADS_ATTRIBUTION_COLUMNS } from "@/lib/lead-metrics.mjs";
 
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
@@ -22,15 +24,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ role, leads: [] });
   }
 
-  const { data: leads, error } = await supabase
-    .from("leads")
-    .select("*")
-    .eq("archived", false)
-    .order("created_at", { ascending: false })
-    .limit(500);
+  // Every counted (non-archived) lead, paged - this used to stop at the 500 most
+  // recent rows without saying so - and only the columns the attribution tables
+  // group and count by. /settings/ads reads the same rows the same way.
+  const { data: leads, error } = await fetchCountedLeads(supabase, ADS_ATTRIBUTION_COLUMNS);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("ads leads fetch failed:", error);
+    return NextResponse.json({ error: "Failed to load leads" }, { status: 500 });
   }
 
   return NextResponse.json({ role, leads });

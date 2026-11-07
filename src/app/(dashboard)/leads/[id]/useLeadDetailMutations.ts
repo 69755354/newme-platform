@@ -27,10 +27,22 @@ import { useCallback, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import { createFollowUpTask } from "@/lib/tasks";
+import { applyReassignResult, reassignFailureKey, reassignNeedsReload } from "@/lib/lead-reassign-feedback.mjs";
+import { validateLeadFieldEdit } from "@/lib/lead-contact.mjs";
+import { checkSupabase, MutationFailure, reportMutationFailure, requestJson, runMutation } from "@/lib/mutation-feedback";
+import { classifyMutationFailure, mutationFailureMessage } from "@/lib/mutation-feedback-core.mjs";
 import { projectDraftFromLead } from "./utils";
 import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
 import type { Database, Json } from "@/types/database";
+
+const STAGE_HINT_REASONS = new Set([
+  "next_followup_required",
+  "first_contact_gate",
+  "not_permitted",
+  "changed_concurrently",
+  "stage_update_failed",
+]);
 
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 type EventData = Record<string, Json | undefined>;
@@ -168,18 +180,31 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
             reason: "manual_reassign",
           }),
         });
+        const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          toast.error(payload.error || t("common.saveFailed"));
+          // S3 #3: show a localised message, never the raw database code, and
+          // reload after a real conflict so the next attempt uses fresh data.
+          toast.error(t(reassignFailureKey(response.status, payload.code ?? payload.error)));
+          if (reassignNeedsReload(response.status, payload.code ?? payload.error)) {
+            setShowSalesDropdown(false);
+            await fetchData();
+          }
           return;
         }
-        setLead({ ...oldLead, assigned_to: newUserId, rep_name: newUserName });
+        // Carry the updated_at the routine left behind; without it a second
+        // reassignment from this page always failed with CONCURRENT_LEAD_UPDATE.
+        setLead((current) => applyReassignResult(current ?? oldLead, {
+          assignedTo: newUserId,
+          repName: newUserName,
+          result: payload.result,
+        }));
         setShowSalesDropdown(false);
+        void fetchData();
       } finally {
         setReassigning(false);
       }
     },
-    [leadId, lead, salesUsers, setLead, t] // eslint-disable-line react-hooks/exhaustive-deps
+    [leadId, lead, salesUsers, setLead, fetchData, t] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // ─── Delete lead ───
@@ -261,15 +286,9 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     });
     if (!res.ok) {
       const json: { error?: string; eventError?: string } = await res.json().catch(() => ({}));
-      const msg =
-        json.error ||
-        (res.status === 401
-          ? t("common.unauthorized") || "Unauthorized"
-          : res.status === 403
-            ? t("common.forbidden") || "Forbidden"
-            : res.status === 400
-              ? json.error || t("common.saveFailed") || "Invalid event"
-              : t("common.saveFailed") || "Failed to write event");
+      // S6: localized via the shared failure mapping, never raw API English.
+      const kind = classifyMutationFailure({ status: res.status, body: json });
+      const msg = mutationFailureMessage({ kind, body: json }, t, "common.saveFailed");
       toast.error(msg);
       console.warn("[LeadDetail] business_events writeEvent failed", res.status, msg);
     }
@@ -277,29 +296,50 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
 
   // ─── Update a single editable field with optimistic saveStatus + audit ───
   const updateField = useCallback(async <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string): Promise<boolean> => {
+    // S3 #5: the same contact rules as lead creation — phone stored as E.164,
+    // email lower-cased, name required, length limits on free text.
+    const checked = validateLeadFieldEdit(String(field), value);
+    if (!checked.ok) {
+      const key = field === "phone" ? "leadFlow.validation.phoneInvalid"
+        : field === "email" ? "leadFlow.validation.emailInvalid"
+        : field === "customer_name"
+          ? (checked.code === "too_long" ? "leadFlow.validation.nameTooLong" : "leadFlow.validation.nameRequired")
+          : field === "location" ? "leadFlow.validation.locationTooLong"
+          : "leadFlow.validation.fieldInvalid";
+      toast.error(t(key));
+      setSaveStatus("error");
+      return false;
+    }
     setUpdating(true);
     setSaveStatus("saving");
     const updates: LeadUpdate = { updated_at: new Date().toISOString() };
-    updates[field] = value;
-    const { data: updated, error: err } = await supabase
-      .from("leads")
-      .update(updates)
-      .eq("id", leadId)
-      .select("id, project_type, emirate, area, ac_brand, customer_budget")
-      .single();
+    updates[field] = checked.value as LeadUpdate[K];
+    // S6 (review 4d #4/#5/#7): shared mutation feedback — "Saving…" on slow
+    // networks, one localized outcome toast (no raw "TypeError: Failed to
+    // fetch"), and a sign-in redirect when the session ended elsewhere. The
+    // caller keeps the inline editor open with the typed value on failure.
     // Fix B: RLS can reject with HTTP 200 + error=null but 0 rows updated.
     // Require the row back so a blocked update never shows a false "Saved".
-    if (err || !updated) {
-      const detail = err?.message || t("common.saveFailed") || "Save failed";
-      console.error("[LeadDetail] field update failed", err);
-      setError(detail);
+    const result = await runMutation(
+      async () => checkSupabase(
+        await supabase
+          .from("leads")
+          .update(updates)
+          .eq("id", leadId)
+          .select("id, project_type, emirate, area, ac_brand, customer_budget")
+          .maybeSingle(),
+        { requireData: true },
+      ),
+      { t, successMessage: t("mutation.saved"), fallbackErrorKey: "common.saveFailedRetry" },
+    );
+    if (!result.ok) {
+      console.error("[LeadDetail] field update failed", result.kind);
+      setError(result.message);
       setSaveStatus("error");
       setUpdating(false);
-      toast.error(detail);
       return false;
     }
     setSaveStatus("saved");
-    toast.success(lang === "zh" ? "已保存" : "Saved");
     if (eventType && eventDesc) {
       await supabase.from("activities").insert({ lead_id: leadId, type: eventType, content: eventDesc, user_id: (await supabase.auth.getUser()).data.user?.id });
       await writeEvent(eventType, eventDesc, { [field]: value });
@@ -331,10 +371,11 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       .select("id, project_type, emirate, area, ac_brand, customer_budget")
       .single();
     if (err || !updated) {
-      const detail = err?.message || t("common.saveFailed") || "Save failed";
+      // S6: localized message (never raw supabase/network text) + sign-in
+      // redirect when the session ended; the draft stays in the form.
       console.error("[LeadDetail] project info save failed", err);
       setProjectInfoStatus("error");
-      toast.error(detail);
+      reportMutationFailure(err ?? { code: "42501" }, t, "common.saveFailedRetry");
       return;
     }
     params.setProjectInfoDraft(projectDraftFromLead(updated));
@@ -498,32 +539,31 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }): Promise<{ success: boolean; error?: string }> => {
     if (updating) return { success: false };
     if (!params.contact_result?.trim()) {
-      const error = t("leadDetail.contactResultRequired") || "Contact result is required";
-      toast.error(error);
-      return { success: false, error };
+      // The toast is the one message; the caller must not repeat it inline.
+      toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
+      return { success: false };
     }
 
     setUpdating(true);
     try {
-      const response = await fetch("/api/leads/" + leadId + "/contacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-      });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok || !json?.contact) {
-        const error = json?.error || t("common.saveFailed") || "Contact record save failed";
-        toast.error(error);
-        return { success: false, error };
-      }
-
-      toast.success(lang === "zh" ? "联系记录已保存" : "Contact record saved");
+      // S6b (4d-6): one shared pattern -> exactly one localized outcome toast
+      // (the old code toasted here AND the caller showed its own message, and a
+      // dropped connection read "Contact record save failed" twice).
+      const result = await runMutation(
+        async () => {
+          const json = await requestJson<{ contact?: unknown }>("/api/leads/" + leadId + "/contacts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(params),
+          });
+          if (!json?.contact) throw new MutationFailure({ status: 500 });
+          return json;
+        },
+        { t, successMessage: lang === "zh" ? "联系记录已保存" : "Contact record saved", fallbackErrorKey: "common.saveFailed" },
+      );
+      if (!result.ok) return { success: false }; // runMutation already showed the one toast
       await fetchData();
       return { success: true };
-    } catch {
-      const error = t("common.saveFailed") || "Contact record save failed";
-      toast.error(error);
-      return { success: false, error };
     } finally {
       setUpdating(false);
     }
@@ -559,6 +599,12 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
         return false;
       }
       toast.success(lang === "zh" ? "里程碑已完成" : "Milestone completed");
+      // S3 #1: the stage moves with the milestone; when a rule says "not yet"
+      // (e.g. next follow-up missing) the save stands and the page says why.
+      const stageReason = json?.stageAdvance?.reason;
+      if (typeof stageReason === "string" && STAGE_HINT_REASONS.has(stageReason)) {
+        toast.info(t(`leadFlow.stageHint.${stageReason}`));
+      }
       await fetchData();
       return true;
     } catch {

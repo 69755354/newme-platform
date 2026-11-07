@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { CONTRACT_APPROVER_ROLES } from "@/lib/contract-action-permissions.mjs";
 import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 
 /**
@@ -11,7 +12,7 @@ import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
  *
  * Steps, decided by approve_contract() from the contract's status:
  *   pending_admin → admin_review — only admin / operator
- *   pending_ceo   → ceo_review   — only boss
+ *   pending_ceo   → ceo_review   — admin or boss (equal shareholders)
  *
  * The routine settles the pending row for that step, opens the next one, and
  * moves the contract, all in one transaction with the row held FOR UPDATE.
@@ -34,6 +35,33 @@ export async function POST(
 
     if (authErr || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // ── Role gate (S10) ────────────────────────────────────────────────
+    // approve_contract() reads the contract's status before the caller's role, so
+    // a role that approves at no step (finance, designer, sales) was told 400
+    // "not awaiting approval" rather than 403. Which of admin/operator (step 1) or
+    // admin/boss (step 2) may act is still decided by the routine; this only turns
+    // away roles with no approval authority at all.
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    if (profileErr) {
+      // A failed read is not "no permission": do not tell a legitimate approver 403.
+      logger.error({ err: profileErr, request_id, operation: "contract_approve", user_id: user.id }, "[API Approve] profile read failed");
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    }
+    if (!profile?.role || !CONTRACT_APPROVER_ROLES.includes(profile.role)) {
+      return NextResponse.json(
+        {
+          error: "Your role cannot approve contracts / 你的角色不能审批合同",
+          error_en: "Your role cannot approve contracts",
+          error_zh: "你的角色不能审批合同",
+        },
+        { status: 403 },
+      );
     }
 
     // ── Parse & validate body ──────────────────────────────────────────
@@ -69,8 +97,10 @@ export async function POST(
 
     if (rpcErr) {
       const failure = moneyRpcFailure(rpcErr, "Approval failed");
-      const log = failure.status >= 500 ? logger.error : logger.warn;
-      log(
+      // pino methods read `this`; a detached reference threw and turned every
+      // refusal (42501/22023/P0002) into a 500 from the catch block (S2 fix).
+      const level = failure.status >= 500 ? "error" : "warn";
+      logger[level](
         {
           err: rpcErr,
           request_id,

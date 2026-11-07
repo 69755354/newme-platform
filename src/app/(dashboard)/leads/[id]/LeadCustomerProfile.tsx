@@ -6,6 +6,7 @@
 // call onUpdateField directly, matching the previous Details tab.
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -58,9 +59,9 @@ export default function LeadCustomerProfile({
   reassigning,
   transferHistory,
 }: Props) {
-  // WhatsApp deep link from the phone digits (strip everything non-numeric).
-  const phoneDigits = (lead.phone || "").replace(/[^\d]/g, "");
-  const whatsappHref = phoneDigits ? `https://wa.me/${phoneDigits}` : null;
+  // WhatsApp deep link from the E.164 form, so local spellings (0500…,
+  // 00971…) get the country code instead of producing a dead wa.me link.
+  const whatsappHref = whatsappLink(lead.phone);
 
   return (
     <Card className="overflow-visible border-border bg-card shadow-sm">
@@ -71,7 +72,7 @@ export default function LeadCustomerProfile({
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="grid grid-cols-1 gap-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("leadDetail.sectionCustomer")}</p>
           <Field label={t("leadDetail.customerName")}>
             {renderInlineEdit("customer_name", t("leadDetail.customerName"))}
           </Field>
@@ -107,7 +108,7 @@ export default function LeadCustomerProfile({
           </Field>
 
           {/* Source — editable dropdown */}
-          <p className="border-t border-border/70 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Project facts</p>
+          <p className="border-t border-border/70 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("leadDetail.sectionProjectFacts")}</p>
           <Field label={t("leadDetail.source")}>
             <Select
               value={lead.source || ""}
@@ -196,7 +197,7 @@ export default function LeadCustomerProfile({
             {lead.created_at && (
               <Field label={t("leadDetail.createdAt") || "Created"}>
                 <span className="text-xs text-muted-foreground">
-                  {fmtDubai(lead.created_at ?? undefined, { locale: "zh-CN", hour: "2-digit", minute: "2-digit" })}
+                  {fmtDubai(lead.created_at ?? undefined, { locale: t("locale.dateLocale"), hour: "2-digit", minute: "2-digit" })}
                 </span>
               </Field>
             )}
@@ -213,7 +214,7 @@ export default function LeadCustomerProfile({
                 <div>
                   <span data-newme-uat-sensitive="true">{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
                   <span className="block text-[10px] opacity-60">
-                    {fmtDubai(tr.created_at, { locale: "zh-CN", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {fmtDubai(tr.created_at, { locale: t("locale.dateLocale"), month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
               </div>

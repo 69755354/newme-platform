@@ -65,6 +65,8 @@ interface Props {
   onLost: (note?: string) => Promise<boolean>;
   onOpenQuoteCalculator: () => void;
   onCreateContract: () => void;
+  /** /contracts/new admits admin and boss only; others get no button that bounces. */
+  canCreateContract?: boolean;
   onGenerateKnx: () => void;
   renderInlineEdit: RenderInlineEdit;
   renderDateEdit: RenderDateEdit;
@@ -99,6 +101,7 @@ export default function LeadSalesProcess({
   onLost,
   onOpenQuoteCalculator,
   onCreateContract,
+  canCreateContract = false,
   onGenerateKnx,
   renderInlineEdit,
   renderDateEdit: _renderDateEdit,
@@ -157,6 +160,15 @@ export default function LeadSalesProcess({
       ["quotation_submitted", "negotiation", "pending_decision"].includes(lead.stage),
     isOverdue: nextTaskOverdue,
   });
+  // A won or lost lead is closed: the stage route refuses any further change
+  // ("Terminal Lead stage cannot be changed"), so offering Won/Lost again was a
+  // button that could only error (review 4c #13).
+  const isClosed =
+    lead.final_status === "won" ||
+    lead.final_status === "lost" ||
+    lead.stage === "won" ||
+    lead.stage === "lost";
+  const closedAsWon = lead.final_status === "won" || lead.stage === "won";
   const healthLevelLabel =
     health.level === "healthy"
       ? t("leadDetail.health_healthy")
@@ -327,7 +339,7 @@ export default function LeadSalesProcess({
                           {milestone.notes?.trim() || "—"}
                         </p>
                         <p className="text-[10px] text-muted-foreground">
-                          {milestone.completed_at ? fmtDubai(milestone.completed_at) : "—"}
+                          {milestone.completed_at ? fmtDubai(milestone.completed_at, { locale: t("locale.dateLocale") }) : "—"}
                           {milestone.completer?.full_name ? ` · ${milestone.completer.full_name}` : ""}
                         </p>
                         {reopenMilestoneKey === key ? (
@@ -444,7 +456,8 @@ export default function LeadSalesProcess({
                             summary: contactNotes.trim() || undefined,
                           });
                           if (!result.success) {
-                            setContactSaveError(result.error || (lang === "zh" ? "联系记录保存失败" : "Contact record save failed"));
+                            // The hook already showed the one failure toast; keep the form as it is.
+                            if (result.error) setContactSaveError(result.error);
                             return;
                           }
                           // Reset form
@@ -722,7 +735,7 @@ export default function LeadSalesProcess({
                                       {log.contact_result || log.summary || "(no summary)"}
                                     </div>
                                     <div className="text-[9px] text-muted-foreground">
-                                      {fmtDubai(log.contact_time || log.created_at)}
+                                      {fmtDubai(log.contact_time || log.created_at, { locale: t("locale.dateLocale") })}
                                     </div>
                                   </div>
                                 </li>
@@ -836,14 +849,14 @@ export default function LeadSalesProcess({
                 <div className="flex-1 min-w-0">
                   <p className="text-rose-400 text-xs">{f.label}</p>
                   {f.kind === "contract" ? (
-                    <Button
+                    canCreateContract ? <Button
                       size="sm"
                       variant="outline"
                       className="mt-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-7 text-xs"
                       onClick={onCreateContract}
                     >
                       <FileText className="w-3.5 h-3.5 mr-1" />{t("leadDetail.createContract")}
-                    </Button>
+                    </Button> : null
                   ) : f.kind === "json" ? (
                     renderJsonEdit(f.key, f.label)
                   ) : (
@@ -877,9 +890,16 @@ export default function LeadSalesProcess({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {isClosed ? (
+            <p className="rounded-md border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+              {closedAsWon
+                ? t("leadDetail.leadClosedWon")
+                : t("leadDetail.leadClosedLost")}
+            </p>
+          ) : (<>
           <div>
             <label htmlFor="stage-note" className="text-xs text-muted-foreground">
-              {lang === "zh" ? "阶段备注（可选）" : "Stage note (optional)"}
+              {t("leadDetail.stageNoteRequired")}
             </label>
             <textarea
               id="stage-note"
@@ -903,7 +923,7 @@ export default function LeadSalesProcess({
                 const changed = await onWon(stageNote);
                 if (changed) setStageNote("");
               }}
-              disabled={updating || !firstContactGate.allowed}
+              disabled={updating || !firstContactGate.allowed || !stageNote.trim()}
               title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <CheckCircle className="w-4 h-4 mr-1" />{t("stageLabels.won")}
@@ -916,12 +936,13 @@ export default function LeadSalesProcess({
                 const changed = await onLost(stageNote);
                 if (changed) setStageNote("");
               }}
-              disabled={updating || !firstContactGate.allowed}
+              disabled={updating || !firstContactGate.allowed || !stageNote.trim()}
               title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <AlertTriangle className="w-4 h-4 mr-1" />{t("stageLabels.lost")}
             </Button>
           </div>
+          </>)}
           <Separator className="bg-border" />
           <Button
             variant="outline"
@@ -980,7 +1001,7 @@ export default function LeadSalesProcess({
                     <p className="text-gray-600 text-xs">{t("leadDetail.contractNotCreated")}</p>
                   )}
                 </div>
-                {!hasContract && (
+                {!hasContract && canCreateContract && (
                   <Button size="sm" variant="outline" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-7 text-xs" onClick={onCreateContract}>
                     <FileText className="w-3.5 h-3.5 mr-1" />{t("leadDetail.createContract")}
                   </Button>
@@ -998,7 +1019,7 @@ export default function LeadSalesProcess({
                   <p className="text-muted-foreground text-xs">{t("leadDetail.paymentLink")}</p>
                   <p className="text-foreground">
                     {fmtAED(trace?.payment_amount ?? null)}
-                    {trace?.payment_date ? ` · ${fmtDubai(trace.payment_date)}` : ""}
+                    {trace?.payment_date ? ` · ${fmtDubai(trace.payment_date, { locale: t("locale.dateLocale") })}` : ""}
                   </p>
                 </div>
                 {/* R5. This badge used to read "Confirmed" or "Pending confirm" off

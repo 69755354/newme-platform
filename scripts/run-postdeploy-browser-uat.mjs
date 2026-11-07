@@ -650,6 +650,8 @@ export const CANONICAL_NAV_BY_ROLE = Object.freeze({
   // No /team: src/app/actions/team.ts refuses operator, so the sidebar does not
   // offer the link. Keyed per role rather than "sales vs everyone else" because
   // that assumption is what let /team stay in operator's sidebar unnoticed.
+  // /quotes is shown: the page admits operator, who converts quotes to
+  // contracts (OS fix S2, option A).
   operator: Object.freeze([
     "/dashboard", "/leads", "/quotes", "/cable-costing", "/contracts",
     "/pipeline", "/analytics", "/ads", "/products", "/projects", "/settings",

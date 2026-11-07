@@ -4,6 +4,8 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
+import { logger } from "@/lib/logger";
+import { leadgenFailureReason } from "@/lib/meta-leadgen-failure.mjs";
 import {
   MAX_LEADGEN_WEBHOOK_BYTES, extractLeadgenNotifications, fetchMetaLead, isCrmEventDeliverable, mapMetaLeadToRow,
   resolvePageAccessToken, storeMetaLead, verifyMetaSignature,
@@ -42,6 +44,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const cfg = config();
   if (!cfg.enabled || !cfg.appSecret || !cfg.accessToken || cfg.pageIds.length === 0) {
+    logger.warn({ operation: "meta_leadgen_webhook", code: "leadgen_disabled" }, "meta leadgen webhook disabled or misconfigured");
     return reply({ error: "leadgen_disabled" }, 503);
   }
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
@@ -58,12 +61,16 @@ export async function POST(request: Request) {
   }
   if (bytes.byteLength > MAX_LEADGEN_WEBHOOK_BYTES) return reply({ error: "payload_too_large" }, 413);
   if (!verifyMetaSignature(bytes, request.headers.get("x-hub-signature-256"), cfg.appSecret)) {
+    // Error level on purpose: a rotated or wrong app secret rejects every real
+    // delivery. Sentry groups all of these into one issue per reason.
+    logger.error({ operation: "meta_leadgen_webhook", code: "invalid_signature" }, "meta leadgen failure: invalid_signature");
     return reply({ error: "invalid_signature" }, 403);
   }
   let notifications;
   try {
     notifications = extractLeadgenNotifications(JSON.parse(bytes.toString("utf8")), cfg.pageIds);
   } catch {
+    logger.error({ operation: "meta_leadgen_webhook", code: "invalid_payload" }, "meta leadgen failure: invalid_payload");
     return reply({ error: "invalid_payload" }, 400);
   }
 
@@ -87,12 +94,15 @@ export async function POST(request: Request) {
         if (queued !== "queued") throw new Error("lead_event_not_queued");
       }
       counts[stored.outcome as keyof typeof counts] += 1;
-    } catch {
-      // No customer data, tokens or Graph bodies are logged. Meta retries on non-2xx;
-      // storage is idempotent by leadgen id, and the pull script reconciles any gap.
+    } catch (error) {
+      // Only a reason code is logged (no customer data, tokens or Graph bodies).
+      // Meta retries on non-2xx; storage is idempotent by leadgen id, and the
+      // daily reconciliation (infra/observability/meta-reconcile.*) alerts on gaps.
+      const code = leadgenFailureReason(error);
+      logger.error({ operation: "meta_leadgen_webhook", code }, `meta leadgen failure: ${code}`);
       counts.failed += 1;
     }
   }
-  console.info("[meta-leadgen] processed", counts);
+  logger.info({ operation: "meta_leadgen_webhook", ...counts }, "meta leadgen processed");
   return reply({ received: true, ...counts }, counts.failed ? 503 : 200);
 }

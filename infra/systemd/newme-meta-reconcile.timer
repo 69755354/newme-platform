@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Meta lead reconciliation (02:40 UTC = 06:40 Dubai, before the sales day)
+
+[Timer]
+OnCalendar=*-*-* 02:40:00 UTC
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

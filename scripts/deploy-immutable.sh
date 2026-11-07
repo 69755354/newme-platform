@@ -583,7 +583,7 @@ cd "$STAGE"
 node scripts/check-toolchain.mjs
 npm ci --registry=https://registry.npmjs.org --strict-allow-scripts=true --include=optional --no-audit --no-fund
 [ -x node_modules/.bin/next ] || { fail "next missing"; exit 1; }
-NEXT_PUBLIC_APP_VERSION="$SHA" SENTRY_RELEASE="$SHA" \
+NEXT_PUBLIC_APP_VERSION="$SHA" SENTRY_RELEASE="$SHA" NEXT_DEPLOYMENT_ID="$SHA" \
   NODE_OPTIONS="${NODE_OPTIONS:---max_old_space_size=2048}" npm run build
 BUILD="$(tr -d '\r\n' < .next/BUILD_ID)"
 [ -n "$BUILD" ] || { fail "BUILD_ID missing"; exit 1; }

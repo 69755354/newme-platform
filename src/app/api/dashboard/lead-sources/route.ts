@@ -1,5 +1,8 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
+import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
+import { isWonLead, leadSourceKey, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
+
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 
@@ -39,27 +42,13 @@ export async function GET(request: NextRequest) {
 
   try {
     // ── Base lead query ──
-    let leadQuery = supabase
-      .from("leads")
-      .select("id, source, stage, lead_status, final_status, assigned_to")
-      .eq("archived", false);
-    if (!isCEO) leadQuery = leadQuery.eq("assigned_to", user.id);
-    const { data: leads } = await leadQuery;
-    const leadRows = (leads ?? []) as any[];
-
-    // ── Revenue per lead (from contracts, non-terminated) ──
-    const leadIds = leadRows.map((l) => l.id);
-    const revenueByLead: Record<string, number> = {};
-    if (leadIds.length > 0) {
-      const { data: contracts } = await supabase
-        .from("contracts")
-        .select("lead_id, contract_amount, status")
-        .in("lead_id", leadIds);
-      (contracts ?? []).forEach((c: any) => {
-        if (c.status === "terminated" || !c.lead_id) return;
-        revenueByLead[c.lead_id] = (revenueByLead[c.lead_id] ?? 0) + Number(c.contract_amount ?? 0);
-      });
-    }
+    const leadsResult = await fetchCountedLeads(
+      supabase,
+      "id,archived,source,source_platform,stage,lead_status,final_status,assigned_to,quotation_value",
+      { assignedTo: isCEO ? null : user.id },
+    );
+    if (leadsResult.error) throw leadsResult.error;
+    const leadRows = leadsResult.data as Array<MetricLead & { id: string }>;
 
     // ── Rep name lookup (for sales assignment) ──
     const repIds = [...new Set(leadRows.map((l) => l.assigned_to).filter(Boolean))] as string[];
@@ -91,10 +80,11 @@ export async function GET(request: NextRequest) {
     };
 
     leadRows.forEach((l) => {
-      const a = bump(l.source);
+      const a = bump(leadSourceKey(l));
       a.count += 1;
-      if (l.final_status === "won") a.won += 1;
-      const rev = revenueByLead[l.id] ?? 0;
+      if (isWonLead(l)) a.won += 1;
+      // Won amount: the shared definition (quotation value of won leads, to date).
+      const rev = wonLeadValue(l);
       if (rev > 0) a.revenue += rev;
 
       const q = l.lead_status || "unknown";

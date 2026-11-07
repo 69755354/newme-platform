@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { isActiveProfile } from "@/lib/auth-profile.mjs";
 import { logger } from "@/lib/logger";
+import { AUDIT_ACTIONS, accountKey, writeAuditLog } from "@/lib/audit-log";
 import { clientIdentifier, consumeRateLimit } from "@/lib/rate-limit";
 import {
   applySessionCookies,
@@ -59,6 +60,19 @@ async function revokeIssuedToken(
   }
 }
 
+function auditLoginFailure(email: string, reason: string, actorId?: string) {
+  // Account is recorded as a short keyed (HMAC) key, never the address; with no
+  // AUDIT_ACCOUNT_KEY_SECRET configured no identifier is written at all. Fire and
+  // forget: auditing must not add latency to, or be able to fail, a login.
+  const key = accountKey(email);
+  void writeAuditLog({
+    actorId: actorId ?? null,
+    action: AUDIT_ACTIONS.LOGIN_FAILURE,
+    targetType: "auth",
+    details: key ? { reason, account_key: key } : { reason },
+  });
+}
+
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
 
@@ -109,6 +123,8 @@ export async function POST(request: Request) {
     });
     const response = respond({ error: "rate_limited" }, { status: 429 });
     response.headers.set("Retry-After", String(ipLimit.retryAfterSeconds));
+    // S6: lets the sign-in page say which bound was hit (no account data).
+    response.headers.set("X-RateLimit-Scope", "address");
     return response;
   }
 
@@ -128,6 +144,8 @@ export async function POST(request: Request) {
     });
     const response = respond({ error: "rate_limited" }, { status: 429 });
     response.headers.set("Retry-After", String(accountLimit.retryAfterSeconds));
+    // S6: lets the sign-in page say which bound was hit (no account data).
+    response.headers.set("X-RateLimit-Scope", "account");
     return response;
   }
 
@@ -157,6 +175,7 @@ export async function POST(request: Request) {
         });
         return respond({ error: "auth_unavailable" }, { status: 503 });
       }
+      auditLoginFailure(email, "invalid_credentials");
       return respond({ error: "invalid_credentials" }, { status: 401 });
     }
     grant = await grantRes.json();
@@ -174,6 +193,7 @@ export async function POST(request: Request) {
   const refreshToken = grant.refresh_token;
   const userId = grant.user?.id;
   if (!accessToken || !refreshToken || !userId) {
+    auditLoginFailure(email, "invalid_credentials");
     return respond({ error: "invalid_credentials" }, { status: 401 });
   }
 
@@ -218,11 +238,24 @@ export async function POST(request: Request) {
   }
 
   if (!isActiveProfile(profile)) {
+    auditLoginFailure(email, "inactive_account", userId);
     await revokeIssuedToken(supabaseUrl, anonKey, accessToken);
     return respond({ error: "inactive_account" }, { status: 403 });
   }
 
+  // S6 (review 4d #17): the budgets bound guessing, so a correct credential
+  // for an active account gives its attempt back. Before this, 4 successful
+  // sign-ins in 15 minutes made the 5th wrong password lock the account.
+  ipLimit.release?.();
+  accountLimit.release?.();
+
   // 3. Only now does a session exist. Cookies come from the shared contract.
+  void writeAuditLog({
+    actorId: userId,
+    action: AUDIT_ACTIONS.LOGIN_SUCCESS,
+    targetType: "auth",
+    details: { role: profile?.role ?? "sales" },
+  });
   return applySessionCookies(
     respond({
       ok: true,

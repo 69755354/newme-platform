@@ -7,17 +7,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase";
-import { createFollowUpTask } from "@/lib/tasks";
+import { LEAD_FIELD_LIMITS } from "@/lib/lead-contact.mjs";
+import {
+  LeadDuplicateNotice,
+  leadFieldErrorKey,
+  submitNewLead,
+  type CreateLeadErrorState,
+} from "@/components/leads/LeadDuplicateNotice";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { toast } from "sonner";
-import { isLeadTransferCandidate } from "@/lib/lead-transfer-candidates.mjs";
+import { MutationFailure, runMutation } from "@/lib/mutation-feedback";
 
 export default function NewLeadPage() {
   const router = useRouter();
-  const supabase = createClient();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -25,67 +29,34 @@ export default function NewLeadPage() {
     location: "", source: "offline", notes: "",
   });
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const [errorState, setErrorState] = useState<CreateLeadErrorState | null>(null);
+
+  async function create(overrideReason?: string) {
     setSaving(true);
-    const authResponse = await fetch("/api/auth/me", { cache: "no-store" });
-    const authContext: { userId?: string; role?: string; isActive?: boolean } | null = authResponse.ok
-      ? await authResponse.json()
-      : null;
-    const userId = typeof authContext?.userId === "string" ? authContext.userId : null;
-    const assigneeId = userId && isLeadTransferCandidate({
-      role: authContext?.role,
-      is_active: authContext?.isActive === true,
-    })
-      ? userId
-      : null;
-    const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const { data, error } = await supabase.from("leads").insert({
-      source: form.source,
-      customer_name: form.customer_name || null,
-      phone: form.phone || null,
-      email: form.email || null,
-      location: form.location || null,
-      quality: "pending",
-      assigned_to: assigneeId,
-      created_by: userId,
-      next_action: "call",
-      next_followup_date: followupDate,
-    }).select("id").single();
-
-    if (error) {
-      toast.error(t("leads.createFailed") || "Failed to create lead");
-      setSaving(false);
-      return;
-    }
-
-    if (data) {
-      if (form.notes && userId) {
-        const { error: newLeadNoteErr } = await supabase.from("follow_up_logs").insert({
-          lead_id: data.id, contact_type: "note", summary: form.notes,
-          contact_time: new Date().toISOString(),
-          user_id: userId,
-          no_answer: false,
-        });
-        if (newLeadNoteErr) {
-          toast.error("Note save failed");
-        }
-      } else if (form.notes) {
-        toast.warning("Lead created but note requires a signed-in user");
+    try {
+      // S6: shared save pattern ("Saving…" on slow networks, localized failure
+      // message, sign-in redirect when the session ended). The S3 server route
+      // does the actual create; field/duplicate answers are shown inline.
+      const outcome = await runMutation(async () => {
+        const r = await submitNewLead({
+          customer_name: form.customer_name,
+          phone: form.phone,
+          email: form.email,
+          location: form.location,
+          source: form.source,
+          notes: form.notes,
+        }, overrideReason);
+        if (!r.ok && !r.state) throw new MutationFailure({ status: r.status ?? 500 });
+        return r;
+      }, { t, successMessage: null, fallbackErrorKey: "leads.createFailed" });
+      if (!outcome.ok) return;
+      const result = outcome.value;
+      if (!result.ok) {
+        setErrorState(result.state);
+        return;
       }
-      // P0-7: 建 lead 时同步写一条跟进 task，确保 Workbench 今日待办立即可见
-      const { error: taskErr } = await createFollowUpTask(supabase, {
-        leadId: data.id,
-        dueAt: followupDate,
-        title: "Follow up",
-        assigneeId,
-        source: "follow_up",
-      });
-      if (taskErr) toast.warning("Lead created but follow-up task creation failed");
-      // Notify admins about new lead
-      void import("@/lib/notify")
-        .then(({ notify }) => notify({ type: "lead_created", lead_id: data.id, customer_name: form.customer_name || "Unknown" }))
-        .catch((error) => console.error("lead_notification_failed", error));
+      setErrorState(null);
+      if (result.warnings.length > 0) toast.warning(t("common.saveFailed"));
       // Meta Pixel: track Lead conversion
       if (typeof window !== "undefined" && (window as any).fbq) {
         (window as any).fbq("track", "Lead", {
@@ -95,11 +66,24 @@ export default function NewLeadPage() {
           location: form.location || undefined,
         });
       }
-      toast.success(t("leads.created") || "Lead created successfully");
-      setTimeout(() => { window.location.href = "/leads"; }, 500);
+      toast.success(t("leadFlow.created"));
+      router.push(`/leads/${result.id}`);
+    } catch {
+      toast.error(t("leads.createFailed") || "Failed to create lead");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await create();
+  }
+
+  const fieldError = (field: string) => {
+    const code = errorState?.fieldErrors?.[field];
+    return code ? <p className="text-xs text-red-400 mt-1">{t(leadFieldErrorKey(field, code))}</p> : null;
+  };
 
   return (
     <DashboardScrollContainer className="max-w-lg space-y-6">
@@ -121,36 +105,45 @@ export default function NewLeadPage() {
               <Input
                 value={form.customer_name}
                 onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.customer_name}
                 className="bg-muted border-border text-foreground mt-1"
                 placeholder={t("leads.name")}
               />
+              {fieldError("customer_name")}
             </div>
             <div>
               <Label className="text-foreground">{t("leads.phone")}</Label>
               <Input
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.phone}
                 className="bg-muted border-border text-foreground mt-1"
-                placeholder="+971..."
+                placeholder="050 123 4567 / +971..."
               />
+              {fieldError("phone")}
             </div>
             <div>
               <Label className="text-foreground">{t("leads.email")}</Label>
               <Input
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.email}
                 className="bg-muted border-border text-foreground mt-1"
-                placeholder="email@example.com"
+                placeholder={t("leads.emailPlaceholder")}
               />
+              {fieldError("email")}
+              {fieldError("contact")}
             </div>
             <div>
               <Label className="text-foreground">{t("leads.location")}</Label>
               <Input
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.location}
                 className="bg-muted border-border text-foreground mt-1"
-                placeholder="Dubai, Palm Jumeirah..."
+                placeholder={t("leads.locationPlaceholder")}
               />
+              {fieldError("location")}
             </div>
             <div>
               <Label className="text-foreground">{t("leads.source")}</Label>
@@ -174,11 +167,22 @@ export default function NewLeadPage() {
               <Textarea
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                maxLength={LEAD_FIELD_LIMITS.notes}
                 className="bg-muted border-border text-foreground mt-1"
                 placeholder={t("leads.notes")}
                 rows={3}
               />
+              {fieldError("notes")}
             </div>
+            {errorState?.duplicates && errorState.duplicates.length > 0 && (
+              <LeadDuplicateNotice
+                duplicates={errorState.duplicates}
+                canOverride={errorState.canOverride}
+                reviewRequired={errorState.reviewRequired === true}
+                submitting={saving}
+                onOverride={(reason) => { void create(reason); }}
+              />
+            )}
             <Button
               type="submit"
               disabled={saving}

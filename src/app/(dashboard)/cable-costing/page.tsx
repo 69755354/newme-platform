@@ -17,8 +17,8 @@
 // /api/cable-costing/*, which loads the rate card from the server-only
 // `CABLE_COSTING_CONFIG`.
 
-import { redirect } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { authorizeServerPage } from "@/lib/server-page-auth";
+import { ConnectionFailed } from "@/components/ConnectionFailed";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import CableCostingClient from "./cable-costing-client";
 
@@ -27,12 +27,11 @@ import CableCostingClient from "./cable-costing-client";
 export const dynamic = "force-dynamic";
 
 export default async function CableCostingPage() {
-  const supabase = await createServerSupabase();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) redirect("/login");
+  // Every active role may open the page; no `roles` filter.
+  const session = await authorizeServerPage();
+  if (session.status === "unavailable") {
+    return <DashboardScrollContainer><ConnectionFailed /></DashboardScrollContainer>;
+  }
 
   return (
     <DashboardScrollContainer>

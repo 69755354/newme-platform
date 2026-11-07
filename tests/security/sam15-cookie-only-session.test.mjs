@@ -257,6 +257,7 @@ test("URI-encoded Set-Cookie wire format reaches auth/me and refresh survives au
       getRefreshFailure: () => undefined,
     },
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => names },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, accountKey: () => "", writeAuditLog: async () => {} },
     "@/lib/logger": { logger: { error: () => {}, info: () => {}, warn: () => {} } },
     "next/server": createCookieResponseMock(),
   });
@@ -356,12 +357,10 @@ test("cookie-only browser session does not use localStorage or client persistenc
     .filter(([, source]) => /fetch\(\s*["'`]\/api\/auth\/me/.test(source))
     .map(([file]) => file)
     .sort();
-  // The new-lead form is the one caller outside the shared reader: it needs the
-  // acting user id at submit time. Any further caller has to be reviewed here,
-  // because a private copy of the session is how client-side analytics ended up
-  // holding the user's email and role.
+  // The shared reader is the only caller. Any further caller has to be reviewed
+  // here, because a private copy of the session is how client-side analytics
+  // ended up holding the user's email and role.
   assert.deepEqual(meCallers, [
-    "src/app/(dashboard)/leads/new/page.tsx",
     "src/lib/session-identity.ts",
   ]);
 
@@ -489,6 +488,7 @@ function loadLogout({ user = { id: USER_ID }, getUserError = null, rpc } = {}) {
       },
     },
     "@/lib/supabase-cookie-names": { getSupabaseCookieNames: () => LOGOUT_COOKIE_NAMES },
+    "@/lib/audit-log": { AUDIT_ACTIONS: {}, accountKey: () => "", writeAuditLog: async () => {} },
     "@/lib/logger": { logger: { error: () => {}, warn: () => {}, info: () => {} } },
     "next/server": createCookieResponseMock(),
   });

@@ -239,7 +239,7 @@ UUID 冗余: assigned_to(Text)/assigned_to_uuid(UUID), owner(Text)/owner_uuid(UU
 
 ### 4.4 环境变量泄露
 
-- `.env.local` 包含 `SUPABASE_PAT=sbp_bbaf7ebe1a9a262efc5e52d3ad74341b17f1267e`
+- `.env.local` 包含 `SUPABASE_PAT=[REDACTED — token revoked 2026-08-20]`
 - `SUPABASE_SERVICE_ROLE_KEY=eyJhbG...` 有权限绕过所有 RLS
 - 这些文件被 git 跟踪的可能性 (需检查 .gitignore)
 

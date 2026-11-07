@@ -64,7 +64,7 @@ export function SalesKpiDashboard({ currentUserId, kpiData }: { currentUserId: s
               <TrendingUp className="w-5 h-5 text-copper-400" />
               <span className="text-sm font-semibold text-foreground">{t("kpi.signing")}</span>
             </div>
-            <span className="text-xs text-muted-foreground">{contractCount} {t("kpi.contracts")}</span>
+            <span className="text-xs text-muted-foreground">{t("kpi.wonOrders").replace("{n}", String(contractCount))}</span>
           </div>
           <div className="text-center">
             <p className={cn("text-4xl font-bold leading-none", kpiPctColor(signingPct))}>

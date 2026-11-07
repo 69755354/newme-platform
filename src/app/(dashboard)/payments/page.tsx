@@ -70,7 +70,6 @@ import {
   Ban,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Toaster } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
 import { fmtAED } from "@/shared/utils/format";
@@ -1061,7 +1060,7 @@ export default function PaymentsPage() {
       {/* T2-4: toast 层级约定 — z-toast z-50
           sonner Toaster 已固定高 z-index (默认 999999)，作为最高优先级反馈层，
           覆盖 page-title / modal / dropdown。 */}
-      <Toaster position="top-center" richColors />
+
     </DashboardScrollContainer>
   );
 }

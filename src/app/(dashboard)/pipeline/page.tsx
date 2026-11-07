@@ -14,6 +14,7 @@ import type { Lead } from "./_components/LeadCard";
 // T3-3 step 3 HOTFIX: re-import useSupabaseQuery (project convention).
 // KPI data fetching is delegated to ./useSalesKpiData which uses the hook internally.
 import { useSupabaseQuery } from "@/lib/supabaseQuery";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 // Lead interface is exported from ./_components/LeadCard (T3-3 step 1)
@@ -55,8 +56,8 @@ export default function PipelinePage() {
         setKpiApiData(data.kpiData ?? null);
         setLeads((data.leads ?? []) as Lead[]);
         setTruncatedTotal(data.truncated === true && typeof data.total === "number" ? data.total : null);
-      } catch {
-        setError(t("kpi.loadFailed"));
+      } catch (err) {
+        onFetchFailure(err, () => setError(t("kpi.loadFailed")));
       }
       setLoading(false);
     })();

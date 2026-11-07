@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 export interface Lead {
@@ -103,8 +104,10 @@ export function useLeadsData(): UseLeadsDataReturn {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err.message || "Failed to load leads");
-        setLoading(false);
+        onFetchFailure(err, () => {
+          setError(err.message || "Failed to load leads");
+          setLoading(false);
+        }, { isActive: () => !cancelled });
       });
 
     return () => {

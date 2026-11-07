@@ -64,6 +64,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 // ─── Types ───
 interface UserProfile {
@@ -181,7 +182,7 @@ export default function TeamPage() {
       const data = await res.json();
       setUsers(data.users ?? []);
     } catch (e: any) {
-      setError(e.message);
+      onFetchFailure(e, () => setError(e.message));
     }
     setLoading(false);
   }, []);
@@ -230,7 +231,7 @@ export default function TeamPage() {
       // expand all users by default
       setExpandedUsers(new Set(data.users.map((u) => u.user_id)));
     } catch (e: any) {
-      setActivityError(e.message);
+      onFetchFailure(e, () => setActivityError(e.message));
     }
     setActivityLoading(false);
   }, [t]);

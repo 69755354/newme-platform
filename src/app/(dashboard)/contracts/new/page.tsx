@@ -20,6 +20,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { logFetchFailure } from "@/lib/fetch-interruption";
 
 const DEFAULT_PCTS = [50, 30, 20];
 const DEFAULT_DAYS = [0, 30, 60];
@@ -50,6 +51,7 @@ function NewContractPageInner() {
   const [dueDays, setDueDays] = useState(DEFAULT_DAYS.join(", "));
 
   useEffect(() => {
+    let active = true;
     const supabase = createClient();
     // Fetch eligible leads (not won/lost, or those with quotation_value)
     const fetchLeads = async () => {
@@ -61,7 +63,7 @@ function NewContractPageInner() {
           .or("final_status.eq.won,current_milestone.in.(quotation_submitted,negotiation,pending_decision)")
           .order("customer_name", { ascending: true })
           .limit(100);
-        if (error) console.error("Failed to fetch leads:", error);
+        if (error) logFetchFailure("Failed to fetch leads:", error, { isActive: () => active });
         if (data) setLeads(data as LeadOption[]);
 
         // Pre-select a lead passed via ?lead_id= (e.g. navigated from a won lead)
@@ -92,10 +94,11 @@ function NewContractPageInner() {
           }
         }
       } catch (err) {
-        console.error("Network error fetching leads:", err);
+        logFetchFailure("Network error fetching leads:", err, { isActive: () => active });
       }
     };
     fetchLeads();
+    return () => { active = false; };
   }, [presetLeadId]);
 
   if (roleLoading || blocked) return null;

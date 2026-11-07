@@ -7,6 +7,7 @@ import { Target, TrendingUp, Wallet, Save, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { fmtAED } from "@/shared/utils/format";
+import { logFetchFailure } from "@/lib/fetch-interruption";
 
 interface Profile { id: string; full_name: string | null; email: string | null; role: string; }
 interface KpiTarget { id: string; period: string; target_type: string; target_amount: number; assigned_to: string | null; notes: string | null; profiles?: { full_name: string | null } | null; }
@@ -114,7 +115,7 @@ export default function KpiManagement({ canWriteKpi }: { canWriteKpi: boolean })
           }
         }
         await Promise.all(notifications);
-      }).catch((notifyError) => console.error("kpi_notification_failed", notifyError));
+      }).catch((notifyError) => logFetchFailure("kpi_notification_failed", notifyError));
     } else {
       const err = await res.json();
       toast.error(t("kpi.saveFailed") + ": " + err.error);

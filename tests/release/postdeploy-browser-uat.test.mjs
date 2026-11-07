@@ -667,3 +667,47 @@ test("unclassified browser failures retain bounded role, locale, and step diagno
   assert.match(SOURCE, /context\.close\(\)[\s\S]*runtimeFailureCode\(error, \{ role: credential\.role, locale, step: "context_close" \}\)/);
   assert.match(SOURCE, /browserType\.launch\(\{ headless: true \}\)[\s\S]*runtimeFailureCode\(error, \{ role: "all", locale: "all", step: "browser_launch" \}\)/);
 });
+
+// S14 -- the login form must be interactive before the runner types into it.
+import { LOGIN_HYDRATED, waitForLoginHydration } from "../../scripts/run-postdeploy-browser-uat.mjs";
+
+test("login waits for React hydration before typing, and only for hydration", async () => {
+  const calls = [];
+  const page = {
+    waitForFunction: async (predicate, arg, options) => {
+      calls.push({ predicate, arg, options });
+    },
+  };
+  await waitForLoginHydration(page);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].predicate, LOGIN_HYDRATED);
+  assert.equal(calls[0].arg, undefined);
+  // Bounded by the same step timeout as every other wait: it can never hang a release.
+  assert.deepEqual(calls[0].options, { timeout: STEP_TIMEOUT_MS });
+
+  // The predicate: false before React attaches, true after; false without a submit button.
+  const withButton = (button) => {
+    globalThis.document = { querySelector: (selector) => (selector === 'button[type="submit"]' ? button : null) };
+  };
+  try {
+    withButton(null);
+    assert.equal(LOGIN_HYDRATED(), false);
+    withButton({ className: "x", "__reactFiber$abc": {} });
+    assert.equal(LOGIN_HYDRATED(), false, "React's fiber key alone is not an interactive form");
+    withButton({ "__reactProps$abc": {} });
+    assert.equal(LOGIN_HYDRATED(), true);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the login step waits for hydration before the first fill and judges nothing differently", () => {
+  const step = SOURCE.slice(SOURCE.indexOf('recordStep("login_submitted"'), SOURCE.indexOf('recordStep("landing_visible"'));
+  const wait = step.indexOf("await waitForLoginHydration(page)");
+  assert.ok(wait >= 0, "login_submitted must wait for hydration");
+  assert.ok(wait < step.indexOf('page.locator("#email").fill('), "the wait must come before the first fill");
+  assert.ok(wait < step.indexOf('page.locator("#password").fill('));
+  // Same verdicts as before: the success criteria after the click are unchanged.
+  assert.match(step, /check\.http_status !== 200\) fail\("login_failed"\)/);
+  assert.match(step, /waitForURL\(\(url\) => url\.pathname !== "\/login"/);
+});

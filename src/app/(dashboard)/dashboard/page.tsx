@@ -18,6 +18,7 @@ import WeeklyReview from "./_components/WeeklyReview";
 import { ErrorState } from "@/components/ui/error-state";
 import { dubaiMonthElapsedPct, dubaiMonthKey, recentDubaiMonthKeys } from "@/lib/dubai-time.mjs";
 import { summarizeLeads, type LeadSummary } from "@/lib/lead-metrics.mjs";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface Lead {
@@ -218,11 +219,14 @@ export default function DashboardPage() {
         setLoading(false);
       })
       .catch(err => {
-        if (err.name === "AbortError") return;
-        // Never show the raw "HTTP 500" / "Failed to fetch": say it in the user's language.
-        console.error("[dashboard] summary fetch failed:", err);
-        setError(t("common.loadFailed"));
-        setLoading(false);
+        // An aborted request (effect cleanup, or the page navigating away) is not a
+        // failure: nothing is logged and no error is shown. A real failure is.
+        onFetchFailure(err, () => {
+          // Never show the raw "HTTP 500" / "Failed to fetch": say it in the user's language.
+          console.error("[dashboard] summary fetch failed:", err);
+          setError(t("common.loadFailed"));
+          setLoading(false);
+        }, { signal: controller.signal });
       });
     return () => controller.abort();
   }, [month, language]);

@@ -692,6 +692,26 @@ export async function visible(locator, code) {
   return first;
 }
 
+/**
+ * True once React has attached to the login form (the submit button carries React's
+ * internal props). Evaluated in the page.
+ *
+ * `visible()` only proves the controls are in the DOM: /login is server-rendered and
+ * becomes interactive a moment later. Text typed into a control before hydration is in
+ * the DOM but not in React's state, so the submit posts an empty email and the step
+ * fails as `login_failed` -- a race in the checker, not a defect of the page. The
+ * staging fixtures hit it 150-190 ms after filling.
+ */
+export const LOGIN_HYDRATED = () => {
+  const button = document.querySelector('button[type="submit"]');
+  return !!button && Object.keys(button).some((key) => key.startsWith("__reactProps"));
+};
+
+/** Wait (bounded by the step timeout) for the login form to be interactive before typing. */
+export async function waitForLoginHydration(page) {
+  await page.waitForFunction(LOGIN_HYDRATED, undefined, { timeout: STEP_TIMEOUT_MS });
+}
+
 async function runSession({ browser, input, credential, locale, runnerSourceSha256 }) {
   const sessionRoot = path.join(input.artifact_directory, credential.role, locale);
   const screenshotsRoot = path.join(sessionRoot, "screenshots");
@@ -863,6 +883,7 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
     });
 
     await recordStep("login_submitted", async () => {
+      await waitForLoginHydration(page);
       await page.locator("#email").fill(credential.email);
       await page.locator("#password").fill(credential.password);
       const [loginResponse] = await Promise.all([

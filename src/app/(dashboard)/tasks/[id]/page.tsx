@@ -25,6 +25,7 @@ import {
   type TaskMutationExpectation,
 } from "@/lib/task-followup-conflict";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface Task {
@@ -166,8 +167,10 @@ export default function TaskDetailPage() {
       setEditAssignedTo(t.assignee_id || "");
       setEditDueAt(formatDateForInput(t.due_at));
     } catch (err) {
-      console.error("Failed to fetch task:", err);
-      setError("Failed to load task. Please retry.");
+      onFetchFailure(err, () => {
+        console.error("Failed to fetch task:", err);
+        setError("Failed to load task. Please retry.");
+      });
     }
     setLoading(false);
   }, [taskId]);
@@ -216,9 +219,11 @@ export default function TaskDetailPage() {
       setSaveState("saved");
       toast.success("Task saved successfully");
     } catch (err: unknown) {
-      console.error("Failed to save task:", err);
       setSaveState("error");
-      toast.error(errorMessage(err, "Failed to save task"));
+      onFetchFailure(err, () => {
+        console.error("Failed to save task:", err);
+        toast.error(errorMessage(err, "Failed to save task"));
+      });
       return;
     }
 
@@ -253,9 +258,11 @@ export default function TaskDetailPage() {
       setSaveState("saved");
       toast.success(`Status changed to ${newStatus.replace("_", " ")}`);
     } catch (err: unknown) {
-      console.error("Failed to update status:", err);
       setSaveState("error");
-      toast.error(errorMessage(err, "Failed to update status"));
+      onFetchFailure(err, () => {
+        console.error("Failed to update status:", err);
+        toast.error(errorMessage(err, "Failed to update status"));
+      });
       return;
     }
 
@@ -306,9 +313,11 @@ export default function TaskDetailPage() {
       toast.success("Follow-up created and task updated");
       setTimeout(() => setSaveState("idle"), 2000);
     } catch (err: unknown) {
-      console.error("Failed to create successor task:", err);
       setSaveState("error");
-      toast.error(errorMessage(err, "Failed to create follow-up task"));
+      onFetchFailure(err, () => {
+        console.error("Failed to create successor task:", err);
+        toast.error(errorMessage(err, "Failed to create follow-up task"));
+      });
     }
   };
 

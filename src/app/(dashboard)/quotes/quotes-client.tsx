@@ -28,6 +28,7 @@ import QuoteWizard from "./quote-wizard";
 import QuoteDetailDialog from "./quote-detail-dialog";
 import { fmtAED } from "@/shared/utils/format";
 import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
+import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface Lead {
@@ -175,8 +176,10 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       .limit(500);
     const { data, error: err } = await q;
     if (err) {
-      console.error("Failed to fetch quotes:", err);
-      setError(t("common.loadFailedRetry"));
+      onFetchFailure(err, () => {
+        console.error("Failed to fetch quotes:", err);
+        setError(t("common.loadFailedRetry"));
+      });
       setLoading(false);
       return;
     }
@@ -254,11 +257,11 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).select("id, quote_no").single();
-      if (err || !quote?.quote_no) { console.error("Create quote error:", err); toast.error(t("quotes.createFailed")); return; }
+      if (err || !quote?.quote_no) { logFetchFailure("Create quote error:", err); toast.error(t("quotes.createFailed")); return; }
       // Notify about new quotation
       void import("@/lib/notify")
         .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: createForm.leadId, quote_no: quote.quote_no }))
-        .catch((notifyError) => console.error("quote_notification_failed", notifyError));
+        .catch((notifyError) => logFetchFailure("quote_notification_failed", notifyError));
       setCreateOpen(false);
       resetCreateForm();
       fetchQuotes();
@@ -283,7 +286,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       .eq("id", id)
       .select("id");
     if (err || !updatedRows || updatedRows.length === 0) {
-      console.error("Failed to update quote status:", err);
+      logFetchFailure("Failed to update quote status:", err);
       toast.error(err?.message ? `${t("quotes.statusUpdateFailed")}: ${err.message}` : t("quotes.statusUpdateFailed"));
       return false;
     }
@@ -304,7 +307,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
         // The quote itself is accepted; only the lead's milestone could not be
         // recorded (for example it is already recorded). Say so, do not hide it.
         if (milestoneErr && milestoneErr.code !== "23505") {
-          console.error("Failed to record quotation milestone:", milestoneErr);
+          logFetchFailure("Failed to record quotation milestone:", milestoneErr);
           toast.warning(t("quotes.milestoneNotRecorded"));
         }
       }
@@ -380,7 +383,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       setQuotations(prev => prev.filter(q => q.id !== quote.id));
       toast.success(t("quotes.deletedSuccess"));
     } catch (err) {
-      console.error("Failed to delete quote:", err);
+      logFetchFailure("Failed to delete quote:", err);
       toast.error(t("quotes.deleteFailed"));
     } finally {
       setDeletingQuoteId(null);

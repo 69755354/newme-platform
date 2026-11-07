@@ -38,6 +38,7 @@ import {
   buildTransferProfileNameMap,
   describeLeadTransferEvent,
 } from "@/lib/lead-transfer-history.mjs";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 export interface ProjectInfoDraft {
@@ -209,20 +210,25 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       // for...of so TS narrows PromiseSettledResult properly.
       for (const [i, s] of settled.entries()) {
         if (s.status === "rejected") {
-          console.warn(`[LeadDetail] batch[${i}] promise rejected:`, s.reason);
+          onFetchFailure(s.reason, () => console.warn(`[LeadDetail] batch[${i}] promise rejected:`, s.reason));
         }
       }
 
       // ─── Lead main query — fatal on rejection OR fulfillment-with-error ─
       if (leadRes.status === "rejected") {
-        console.error("[LeadDetail] fetch lead failed (rejected):", leadRes.reason);
-        setError(t("common.loadFailedRetry"));
+        onFetchFailure(leadRes.reason, () => {
+          console.error("[LeadDetail] fetch lead failed (rejected):", leadRes.reason);
+          setError(t("common.loadFailedRetry"));
+        });
         return;
       }
       const leadPayload = leadRes.value;
       if (leadPayload.error) {
-        console.error("[LeadDetail] fetch lead failed:", leadPayload.error);
-        setError(t("common.loadFailedRetry"));
+        // supabase-js reports a request cut short by navigation as a result error.
+        onFetchFailure(leadPayload.error, () => {
+          console.error("[LeadDetail] fetch lead failed:", leadPayload.error);
+          setError(t("common.loadFailedRetry"));
+        });
         return;
       }
 
@@ -314,7 +320,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       if (activitiesRes.status === "fulfilled") {
         const payload = activitiesRes.value;
         if (payload.error) {
-          console.warn("[LeadDetail] non-fatal fetch (activities):", payload.error);
+          onFetchFailure(payload.error, () => console.warn("[LeadDetail] non-fatal fetch (activities):", payload.error));
         } else if (payload.data) {
           setActivities(payload.data.map((activity) => ({
             id: activity.id,
@@ -331,7 +337,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       if (chatRes.status === "fulfilled") {
         const payload = chatRes.value;
         if (payload.error) {
-          console.warn("[LeadDetail] non-fatal fetch (chat_messages):", payload.error);
+          onFetchFailure(payload.error, () => console.warn("[LeadDetail] non-fatal fetch (chat_messages):", payload.error));
         } else if (payload.data) {
           setChatMessages(payload.data.map((message) => ({
             id: message.id,
@@ -345,7 +351,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       if (traceRes.status === "fulfilled") {
         const payload = traceRes.value;
         if (payload.error) {
-          console.warn("[LeadDetail] non-fatal fetch (v_lead_trace):", payload.error);
+          onFetchFailure(payload.error, () => console.warn("[LeadDetail] non-fatal fetch (v_lead_trace):", payload.error));
         } else if (payload.data) {
           setLeadTrace(payload.data as LeadTrace[]);
         }
@@ -354,7 +360,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       if (nextTaskRes.status === "fulfilled") {
         const payload = nextTaskRes.value;
         if (payload.error) {
-          console.warn("[LeadDetail] non-fatal fetch (tasks):", payload.error);
+          onFetchFailure(payload.error, () => console.warn("[LeadDetail] non-fatal fetch (tasks):", payload.error));
         } else {
           setNextTask(payload.data ?? null);
         }
@@ -368,8 +374,10 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         );
       }
     } catch (err) {
-      console.warn("[LeadDetail] fetchData degraded:", err);
-      setError(t("common.loadFailedRetry"));
+      onFetchFailure(err, () => {
+        console.warn("[LeadDetail] fetchData degraded:", err);
+        setError(t("common.loadFailedRetry"));
+      });
     } finally {
       setLoading(false);
     }

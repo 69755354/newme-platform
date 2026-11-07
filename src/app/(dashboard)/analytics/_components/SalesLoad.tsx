@@ -14,6 +14,7 @@ import {
   acquireLeadRebalanceBatchKey,
   clearLeadRebalanceBatchKey,
 } from "@/lib/lead-rebalance-intent.mjs";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface RepStat {
@@ -367,7 +368,7 @@ export default function SalesLoad() {
         if (d.error) throw new Error(d.error);
         setData(d);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => onFetchFailure(e, () => setError(e.message)))
       .finally(() => setLoading(false));
   }, []);
 

@@ -41,6 +41,7 @@ import { fmtAED } from "@/shared/utils/format";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Database, Json } from "@/types/database";
 import { clampDiscountRate, normalizeQuotationLineItems, quotationLinesEditability } from "@/lib/quotation-rules.mjs";
+import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface QuotationLineItem extends Record<string, Json> {
@@ -218,8 +219,10 @@ export default function QuotationDetailPage() {
         setQuotation({ ...data, devices_json: parsedItems, leads: data.leads ?? null });
         setLineItems(parsedItems);
       } catch (err: unknown) {
-        console.error("Failed to fetch quotation:", err);
-        setError(getErrorMessage(err) || t("common.loadFailedRetry"));
+        onFetchFailure(err, () => {
+          console.error("Failed to fetch quotation:", err);
+          setError(getErrorMessage(err) || t("common.loadFailedRetry"));
+        });
       } finally {
         setLoading(false);
       }
@@ -311,7 +314,7 @@ export default function QuotationDetailPage() {
       toast.success(t("quotations.itemAdded") || "Item added");
       setSelectedProduct("");
     } catch (err: unknown) {
-      console.error("Failed to add item:", err);
+      logFetchFailure("Failed to add item:", err);
       // The row was not saved; do not keep showing it.
       if (previousItems) setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
@@ -365,7 +368,7 @@ export default function QuotationDetailPage() {
 
       toast.success(t("quotations.itemRemoved") || "Item removed");
     } catch (err: unknown) {
-      console.error("Failed to remove item:", err);
+      logFetchFailure("Failed to remove item:", err);
       setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
@@ -418,7 +421,7 @@ export default function QuotationDetailPage() {
         total_amount: totalAmount,
       });
     } catch (err: unknown) {
-      console.error("Failed to update quantity:", err);
+      logFetchFailure("Failed to update quantity:", err);
       setLineItems(previousItems);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     }
@@ -467,7 +470,7 @@ export default function QuotationDetailPage() {
         t("quotations.statusUpdated") || `Status updated to ${STATUS_LABELS[newStatus]}`
       );
     } catch (err: unknown) {
-      console.error("Failed to update status:", err);
+      logFetchFailure("Failed to update status:", err);
       toast.error(getErrorMessage(err) || t("common.saveFailedRetry"));
     } finally {
       setChangingStatus(false);

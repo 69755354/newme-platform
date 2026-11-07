@@ -73,6 +73,7 @@ import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
 import { fmtAED } from "@/shared/utils/format";
+import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
 
 // ─── Types ───────────────────────────────────────────────────────────
 //
@@ -175,8 +176,10 @@ export default function PaymentsPage() {
       setRole(json.role);
       setUserId(json.userId);
     } catch (err) {
-      console.error(t("payments.fetchFailed"), err);
-      setError(t("payments.fetchFailed"));
+      onFetchFailure(err, () => {
+        console.error(t("payments.fetchFailed"), err);
+        setError(t("payments.fetchFailed"));
+      });
     }
   }, [t]);
 
@@ -333,7 +336,7 @@ export default function PaymentsPage() {
       .order("seq", { ascending: true });
 
     if (err) {
-      console.error(t("payments.loadInstallmentsFailed"), err);
+      logFetchFailure(t("payments.loadInstallmentsFailed"), err);
       toast.error(t("payments.loadInstallmentsFailed"));
       return;
     }

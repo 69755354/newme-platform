@@ -9,6 +9,7 @@ import LeadHealth from "./_components/LeadHealth";
 import PipelineFunnel from "./_components/PipelineFunnel";
 import PaymentTracker from "./_components/PaymentTracker";
 import AdsROI from "./_components/AdsROI";
+import { logFetchFailure } from "@/lib/fetch-interruption";
 
 const SalesLoad = dynamic(() => import("./_components/SalesLoad"), {
   ssr: false,
@@ -56,8 +57,7 @@ export default function AnalyticsPage() {
       })
       .then((json) => setAnalyticsData(json))
       .catch((err) => {
-        if (err.name === "AbortError") return;
-        console.error("[analytics] summary fetch failed:", err);
+        logFetchFailure("[analytics] summary fetch failed:", err, { signal: controller.signal });
       });
     return () => controller.abort();
   }, [roleLoading, blocked]);

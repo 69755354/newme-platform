@@ -14,6 +14,7 @@ import { DashboardScrollContainer } from "@/components/DashboardScrollContainer"
 
 import { aggregateAttribution, type MetricLead } from "@/lib/lead-metrics.mjs";
 import { translatedOrRaw } from "@/lib/chart-labels.mjs";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 interface Lead {
   id: string; customer_name: string | null;
@@ -57,6 +58,7 @@ export default function AdsPage() {
 
   useEffect(() => {
     if (roleLoading) return;
+    let active = true;
     (async () => {
       try {
         const res = await fetch("/api/ads/leads");
@@ -70,11 +72,14 @@ export default function AdsPage() {
         }
         if (json.leads) setLeads(json.leads as Lead[]);
       } catch (err) {
-        console.error("Failed to fetch leads:", err);
-        setError(t("common.loadFailedRetry"));
+        onFetchFailure(err, () => {
+          console.error("Failed to fetch leads:", err);
+          setError(t("common.loadFailedRetry"));
+        }, { isActive: () => active });
       }
       setLoading(false);
     })();
+    return () => { active = false; };
   }, [roleLoading, userRole]);
 
   const grouped = useMemo(() => {

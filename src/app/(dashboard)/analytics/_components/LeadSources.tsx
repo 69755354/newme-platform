@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Users, Gauge } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
 interface SourceRow {
@@ -76,6 +77,7 @@ export default function LeadSources() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         setLoading(true);
@@ -83,12 +85,15 @@ export default function LeadSources() {
         if (!res.ok) throw new Error("Failed to fetch");
         setData(await res.json());
       } catch (err) {
-        setError(t("common.loadFailed"));
-        console.error(err);
+        onFetchFailure(err, () => {
+          setError(t("common.loadFailed"));
+          console.error(err);
+        }, { isActive: () => active });
       } finally {
         setLoading(false);
       }
     })();
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -16,6 +16,7 @@ import {
 import Link from "next/link";
 import ProductImportDialog from "@/components/ProductImportDialog";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Category config ─── */
 const CATEGORIES = [
@@ -81,7 +82,7 @@ export default function ProductsPage() {
       setRawProducts(json.products);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      onFetchFailure(err, () => setError(err instanceof Error ? err.message : "Unknown error"));
     }
     setLoading(false);
   }, []);

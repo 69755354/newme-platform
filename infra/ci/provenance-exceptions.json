@@ -1,28 +1,28 @@
 {
   "schema_version": 1,
-  "policy_version": "2026-10-25.1",
+  "policy_version": "2026-11-03.1",
   "exceptions": [
     {
       "id": "github-hosted-ubuntu-24-04-v1",
-      "version": 2,
+      "version": 3,
       "kind": "github-hosted-runner",
       "subject": "ubuntu-24.04",
       "risk_reason": "GitHub-hosted runner images are not exposed as digest-addressable artifacts; the fixed OS label still receives image updates.",
-      "mitigation": "The OS family is fixed, every external action and OCI image is digest-bound, Node is exact, and release jobs fail closed on their required tool versions. Re-reviewed the actual CI image 20261012.334.1 on 2026-10-25 against official immutable runner documentation (OS 24.04.5 LTS, kernel 6.17.0-1022-azure, PostgreSQL client 16.15). Seven-day renewal only; see docs/ci-runner-review-20261025.md.",
+      "mitigation": "The OS family is fixed, every external action and OCI image is digest-bound, Node is exact, and release jobs fail closed on their required tool versions. Re-reviewed on 2026-11-03: the last green main CI (run 40453614341, 2026-10-27) still ran image 20261012.334.1; the current official immutable inventory 20261026.354.1 (OS 24.04.5 LTS, kernel 7.0.0-1017-azure) still ships PostgreSQL client 16.15, which the replay job's exact psql gate accepts. Renewal only (42 days, inside the 45-day cap); the underlying condition, a mutable hosted-runner label, is unchanged; see docs/ci-runner-review-20261103.md.",
       "owner": "release-engineering",
-      "expires": "2026-11-01",
-      "audit_ref": "https://github.com/actions/runner-images/blob/7e7dc1bcc0ef464e5e315a2b4c33609590c6cffe/images/ubuntu/Ubuntu2404-Readme.md"
+      "expires": "2026-12-15",
+      "audit_ref": "https://github.com/actions/runner-images/blob/799bcd0daf03c14c460e2662bcc9ca94a4a8aaa8/images/ubuntu/Ubuntu2404-Readme.md"
     },
     {
       "id": "github-hosted-windows-2025-v1",
-      "version": 2,
+      "version": 3,
       "kind": "github-hosted-runner",
       "subject": "windows-2025",
       "risk_reason": "GitHub-hosted runner images are not exposed as digest-addressable artifacts; the fixed Windows Server label still receives image updates.",
-      "mitigation": "The OS family is fixed, checkout and Node setup are commit-pinned, Node is exact, and this job has no remote package installation. Re-reviewed the actual CI image 20261021.278.1 on 2026-10-25 against official immutable runner documentation (OS 10.0.26100 Build 33650). Seven-day renewal only; see docs/ci-runner-review-20261025.md.",
+      "mitigation": "The OS family is fixed, checkout and Node setup are commit-pinned, Node is exact, and this job has no remote package installation. Re-reviewed on 2026-11-03: the last green main CI (run 40453614341, 2026-10-27) ran image 20261021.278.1 and the current official immutable inventory reports the same version (OS 10.0.26100 Build 33650). Renewal only (42 days, inside the 45-day cap); the underlying condition, a mutable hosted-runner label, is unchanged; see docs/ci-runner-review-20261103.md.",
       "owner": "release-engineering",
-      "expires": "2026-11-01",
-      "audit_ref": "https://github.com/actions/runner-images/blob/ca1c9228ba0cdb8ac41a6f2b2ef44dfd6fe56b2b/images/windows/Windows2025-VS2026-Readme.md"
+      "expires": "2026-12-15",
+      "audit_ref": "https://github.com/actions/runner-images/blob/1c4d727f58d448da7f0e975c5fdb16e0459e1d3c/images/windows/Windows2025-VS2026-Readme.md"
     }
   ]
 }

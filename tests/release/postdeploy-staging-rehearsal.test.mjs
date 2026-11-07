@@ -178,7 +178,7 @@ test("the fixture script refuses to run against anything but the staging project
 
 test("run summaries report the runner's own failure code and keep only diagnostics lines", () => {
   const pass = summarizeRun({ status: 0, stdout: `${JSON.stringify({ status: "pass", sessions: new Array(8).fill({}) })}\n`, stderr: "" });
-  assert.deepEqual({ passed: pass.passed, sessions: pass.sessions }, { passed: true, sessions: 8 });
+  assert.deepEqual({ passed: pass.passed, sessions: pass.sessions, cancelled: pass.cancelled_requests }, { passed: true, sessions: 8, cancelled: 0 });
   const fail = summarizeRun({
     status: 1,
     stdout: `${JSON.stringify({ status: "fail", failure_code: "quality_console_error_admin_en_collection_card_visible" })}\n`,

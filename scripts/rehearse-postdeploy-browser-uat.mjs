@@ -178,6 +178,9 @@ export function summarizeRun({ status, stdout, stderr }) {
     failure_code: passed ? null : (output?.failure_code ?? "no_runner_output"),
     sessions: passed ? (output.sessions?.length ?? 0) : null,
     diagnostics: diag,
+    // Requests the browser cancelled while moving between pages: the very thing that used
+    // to surface as a console error. Counted so a pass shows the race was actually exercised.
+    cancelled_requests: diag.filter((line) => / requestfailed .* net::ERR_ABORTED$/.test(line)).length,
   };
 }
 
@@ -238,8 +241,13 @@ export async function main(argv = process.argv.slice(2)) {
       cleanupFixture(fixture);
       removeTree(evidenceParent);
       if (result.passed) passes += 1;
-      say(`run ${run}/${options.runs}: ${result.passed ? `PASS (${result.sessions} sessions)` : `FAIL ${result.failure_code}`} in ${Math.round((Date.now() - started) / 1000)}s`);
-      for (const line of result.diagnostics) say(`  ${line}`);
+      say(`run ${run}/${options.runs}: ${result.passed ? `PASS (${result.sessions} sessions, ${result.cancelled_requests} requests cancelled by navigation, none reported)` : `FAIL ${result.failure_code}`} in ${Math.round((Date.now() - started) / 1000)}s`);
+      // A pass lists only console/page errors the browser saw (the runner's own rule ignores the
+      // signed-out identity 401); a failure lists everything.
+      const shown = result.passed
+        ? result.diagnostics.filter((line) => /console\.error|pageerror|api-request-error/.test(line) && !/\/api\/auth\/me$/.test(line))
+        : result.diagnostics;
+      for (const line of shown) say(`  ${line}`);
     }
   } finally {
     forwarder.server.close();

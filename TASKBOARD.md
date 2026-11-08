@@ -949,3 +949,33 @@ is applied by a later `db-transition … s2-roles-provision` at the integration
 release SHA. Meta callback end-to-end acceptance is still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:4d305b988210e5277d035b6164032c54e00a1efcfee0c60cf346c12e56ff6eed -->
+
+## OS fix integration (S1–S14) technical acceptance (2026-11-08)
+
+Release `2257dc4496ea415d83e3b8193b713155ad484960` (OS fix streams S1–S14: PRs
+#500–#512 via integration PR #514, S13 hydration fix #515, S14 interrupted-fetch
+silencing and staging rehearsal #516) passed candidate CI `42498999202` and was
+deployed through the protected coordinator at `2026-11-08T16:25:22Z`. The S2 role
+migration `20261104110000_role_least_privilege.sql` had already been applied
+through `db-transition s2-roles-provision` at `2026-11-07T04:08:46Z` (release
+`33266efb`, run `42336565892`), so the database phase stayed strict with 8 deferred
+migrations present and no migration applied by this deployment. Canonical production
+acceptance verified all four roles, eight browser sessions and 16 bound artifacts.
+All 48 fixture objects were cleaned, with zero residuals and exact KPI restoration.
+Performance measured p75 91 ms / p95 128 ms over 20 samples, within policy. The alert
+drill and the delayed verification passed at `2026-11-08T16:40:23Z`; canonical
+attestation sealed the bundle below at `2026-11-08T16:40:43.734Z`.
+
+Two earlier candidates for this integration were switched and then returned to the
+accepted switch release `e966985e` after the canonical browser acceptance refused
+them: `33266efb` on 2026-11-07 (React hydration error #418 on /login for a Chinese
+language preference without the language cookie, fixed by #515) and `ad526e6d` on
+2026-11-07 (a console error from the dashboard summary request cancelled by
+navigation, fixed by #516; a third attempt at `2257dc44` on 2026-11-07T17:04Z was
+refused before the switch by a transient alert-provider request failure and left
+production untouched). Each return used `newme-production-rollback execute` with the
+acceptance recovered and aborted first; evidence is kept under
+`/root/claude-ops-backups/release-20261107-evidence*`. Meta callback end-to-end
+acceptance is still NOT claimed.
+
+<!-- postdeploy-acceptance-sha256:fa090bcc1278dabf2ce329cfa20925405f2ddb1f16aeac8fb598893f1a53884c -->

@@ -14,6 +14,8 @@ import { logger, genReqId } from "@/lib/logger";
 import { discountRateError, discountRateErrorZh } from "@/lib/quotation-rules.mjs";
 import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
 import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
+import { advanceStageForMilestone } from "@/lib/milestone-stage-advance.mjs";
+import { isCompleteContact } from "@/lib/first-contact-gate.mjs";
 
 const VALID_DEVICE_IDS = new Set<string>(
   DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
@@ -245,25 +247,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Update lead stage
-    const { error: updateErr } = await supabaseAdmin
-      .from("leads")
-      .update({
-        stage: "quotation_submitted",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", lead_id);
-    if (updateErr) {
-      logger.error(
+    // 7. Move the lead towards quotation_submitted.
+    // A direct stage write hits the sequential-stage trigger whenever the lead is
+    // earlier than the previous step (or already later / finished), so it is never
+    // done here. The audited transition_lead_stage routine is used instead, one
+    // step per call, through the signed-in user's own client (the same path as
+    // completing the quotation milestone). Where a rule says "not yet" (first-contact
+    // gate, follow-up required, role not allowed) the stage stays and the response
+    // says so; the quotation itself is already saved.
+    let stageAdvance: { advanced: boolean; stage: string | null; reason: string | null } = {
+      advanced: false,
+      stage: null,
+      reason: "stage_read_failed",
+    };
+    try {
+      const { data: current } = await supabase
+        .from("leads")
+        .select("stage, final_status, quality, next_action, next_followup_date")
+        .eq("id", lead_id)
+        .single();
+      if (current) {
+        let hasCompleteContact = false;
+        if (current.stage === "new") {
+          const { data: logs } = await supabase
+            .from("follow_up_logs")
+            .select("contact_time, contact_result")
+            .eq("lead_id", lead_id);
+          hasCompleteContact = (logs ?? []).some(isCompleteContact);
+        }
+        stageAdvance = await advanceStageForMilestone(supabase, {
+          leadId: lead_id,
+          milestoneKey: "quotation",
+          lead: current,
+          hasCompleteContact,
+        });
+      }
+    } catch {
+      stageAdvance = { advanced: false, stage: null, reason: "stage_update_failed" };
+    }
+    if (!stageAdvance.advanced && stageAdvance.reason) {
+      const log = stageAdvance.reason === "stage_update_failed" || stageAdvance.reason === "stage_read_failed" ? logger.warn : logger.info;
+      log.call(
+        logger,
         {
-          err: updateErr,
           request_id,
           operation: "quotation_generate",
           user_id: user.id,
           lead_id,
           quote_id: quote.id,
+          reason: stageAdvance.reason,
         },
-        "[Quotation Generate] Failed to update lead stage",
+        "[Quotation Generate] Lead stage not advanced automatically",
       );
     }
 
@@ -282,6 +316,11 @@ export async function POST(request: NextRequest) {
       // whether the bottom-up model actually applied.
       install_labor_basis: calculation.install_labor_basis,
       install_labor_fallback_reason: calculation.install_labor_fallback_reason,
+      // Whether the lead moved forward to quotation_submitted; when it did not,
+      // the reason says which rule held it back (the quotation is saved either way).
+      stage_advanced: stageAdvance.advanced,
+      lead_stage: stageAdvance.stage,
+      stage_advance_reason: stageAdvance.reason,
     });
   } catch (err: any) {
     if (err instanceof RequestAuthError) return requestAuthErrorResponse(err);

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { fetchCountedLeads, fetchLostEvents } from "@/lib/fetch-all-rows.mjs";
-import { lostFromStageCounts } from "@/lib/lead-metrics.mjs";
+import { leadOutcome, lostFromStageCounts } from "@/lib/lead-metrics.mjs";
 import type { Database } from "@/types/database";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
@@ -20,19 +20,6 @@ type PipelineLead = Pick<LeadRow, "id" | "stage" | "created_at" | "updated_at" |
  *   stuckLeads: { id, customer_name, stage, days_in_stage }[]
  * }
  */
-
-// won/lost live in final_status; process stages in current_milestone (the funnel
-// and the daily funnel snapshot both bucket by completed milestone).
-function normalizeMilestone(milestone: string): string {
-  switch (milestone) {
-    case "first_contact":  return "contacted";
-    case "requirements":   return "requirement_confirmed";
-    case "drawings":       return "solution_submitted";
-    case "quotation":      return "quotation_submitted";
-    case "meeting":        return "negotiation"; // meeting done → in negotiation
-    default:               return milestone; // unknown → pass through as-is
-  }
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -94,7 +81,9 @@ export async function GET(request: NextRequest) {
     }
 
     for (const l of leads || []) {
-      const s = l.final_status || normalizeMilestone(l.current_milestone || "new");
+      // Same basis as the kanban board and the lead list: final_status first, then
+      // stage (so a lead won by stage only still counts as won). Not current_milestone.
+      const s = leadOutcome(l) ?? "";
       if (stageCountMap[s] !== undefined) {
         stageCountMap[s]++;
         stageLeads[s].push(l);

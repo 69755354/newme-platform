@@ -31,7 +31,10 @@ test("active Leads with no completed milestone remain in funnel facts as new", a
   const funnel = await read("src/app/api/dashboard/pipeline-funnel/route.ts");
   const snapshot = await read("src/app/api/cron/daily-funnel-snapshot/route.ts");
 
-  assert.match(funnel, /normalizeMilestone\(l\.current_milestone \|\| "new"\)/);
+  // S15: the live funnel now buckets by final_status || stage (same as the board); only the
+  // daily snapshot still buckets by completed milestone.
+  assert.match(funnel, /leadOutcome\(l\)/);
+  assert.doesNotMatch(funnel, /current_milestone \|\|/);
   assert.match(snapshot, /normalizeMilestone\(lead\.current_milestone \|\| 'new'\)/);
   assert.doesNotMatch(snapshot, /if \(!lead\.current_milestone\) continue/);
   assert.match(

@@ -378,6 +378,39 @@ test("management 'signed' this month = won this month by won_at; draft/pending/r
   assert.doesNotMatch(page, /financeStats\.contractAmount/);
 });
 
+test("S15 D-3/D-5: funnel stage counts use final_status first, then stage (not current_milestone), on both funnels", async () => {
+  // Lead rows whose milestone disagrees with their stage (as in production), and
+  // historical rows that are won by stage only (final_status empty).
+  const dirty = [
+    { stage: "contacted", current_milestone: "new" },
+    { stage: "contacted", current_milestone: "new" },
+    { stage: "negotiation", current_milestone: "first_contact" },
+    { stage: "won", current_milestone: "quotation", final_status: null },
+    { stage: "won", current_milestone: "new", final_status: null },
+    { stage: "lost", current_milestone: "requirements", final_status: null },
+    { stage: "new", current_milestone: "meeting", final_status: "won" }, // final_status wins over stage
+  ].map((o, i) => ({ ...db.leads[1], id: `s15-dirty-${i}`, archived: false, source: "fb", assigned_to: "s1", final_status: null, won_at: null, ...o }));
+  const archivedDirty = { ...dirty[0], id: "s15-archived", archived: true };
+  const syntheticDirty = { ...dirty[0], id: "s15-synthetic", source: "synthetic_qa" };
+  const db2 = { ...db, leads: [...db.leads, ...dirty, archivedDirty, syntheticDirty] };
+  const keys = ["new", "contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted", "negotiation", "pending_decision", "won", "lost"];
+  const rows = counted(db2);
+  const truth = Object.fromEntries(keys.map((k) => [k, rows.filter((l) => (l.final_status || l.stage) === k).length]));
+  assert.ok(truth.won > rows.filter((l) => l.final_status === "won").length, "stage-only won leads exist in the fixture");
+  currentSupabase = makeSupabase(db2, BOSS);
+  try {
+    const funnel = await run(routes.funnel);
+    const analytics = (await run(routes.analytics)).pipelineFunnel;
+    for (const [name, f] of [["pipeline-funnel", funnel], ["analytics", analytics]]) {
+      assert.equal(f.totalLeads, rows.length, `${name} total unchanged`);
+      for (const k of keys) assert.equal(f.stages.find((s) => s.key === k).count, truth[k], `${name} ${k}`);
+    }
+    assert.equal(funnel.stages.find((s) => s.key === "won").count, (await run(routes.summary, "https://app.newme.ae/api/dashboard/summary?month=2026-11")).leadStats.won, "won matches the dashboard");
+  } finally {
+    currentSupabase = makeSupabase(db, BOSS);
+  }
+});
+
 test("lost-from stage is read from the stage_change event (from -> lost), in the sales view, on the funnel and in analytics", async () => {
   const latest = new Map();
   for (const e of db.business_events) {

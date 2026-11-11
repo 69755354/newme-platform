@@ -58,17 +58,6 @@ function normalizeCampaign(name: string | null): string {
     .replace(/\s+/g, "-");
 }
 
-function normalizeMilestone(milestone: string): string {
-  switch (milestone) {
-    case "first_contact":  return "contacted";
-    case "requirements":   return "requirement_confirmed";
-    case "drawings":       return "solution_submitted";
-    case "quotation":      return "quotation_submitted";
-    case "meeting":        return "negotiation";
-    default:               return milestone;
-  }
-}
-
 const STAGE_DEFS = [
   { key: "new",                label: "New" },
   { key: "contacted",          label: "Contacted" },
@@ -244,7 +233,8 @@ export async function GET(request: Request) {
   const stageLeads: Record<string, any[]> = {};
   for (const def of STAGE_DEFS) { stageCountMap[def.key] = 0; stageLeads[def.key] = []; }
   for (const l of leadsData) {
-    const s = l.final_status || normalizeMilestone(l.current_milestone || "");
+    // Same basis as the kanban board and the lead list: final_status first, then stage.
+    const s = leadOutcome(l);
     if (!s) continue;
     if (stageCountMap[s] !== undefined) { stageCountMap[s]++; stageLeads[s].push(l); }
   }

@@ -8,10 +8,11 @@ import { seedLead } from "../lib/data";
 
 const DEVICES = { knx_ip_router: 1, bus_cable: 20 };
 
-interface NotificationRow { id: string; type: string; related_id: string | null; related_type: string | null; title: string }
+interface NotificationRow { id: string; user_id: string; type: string; related_id: string | null; related_type: string | null; title: string }
 
-async function notificationsFor(s: Session, contractId: string, type: string) {
-  const r = await rest<NotificationRow[]>(s, "GET", `notifications?related_id=eq.${contractId}&type=eq.${type}&select=id,type,related_id,related_type,title`);
+/** Notifications of one type about one contract that were written for `userId`. */
+async function notificationsFor(s: Session, contractId: string, type: string, userId: string) {
+  const r = await rest<NotificationRow[]>(s, "GET", `notifications?related_id=eq.${contractId}&type=eq.${type}&user_id=eq.${userId}&select=id,user_id,type,related_id,related_type,title`);
   expect(r.status, r.text.slice(0, 160)).toBe(200);
   return r.json ?? [];
 }
@@ -29,7 +30,7 @@ test.describe("S16 database batch", () => {
     expect(created.status, created.text.slice(0, 200)).toBeLessThan(300);
     const cid = created.json!.id!;
     registry.add({ kind: "contract", id: cid, label: "s16-created" });
-    const rows = await notificationsFor(boss, cid, "contract_created");
+    const rows = await notificationsFor(boss, cid, "contract_created", accounts.boss.id);
     expect(rows.length, "boss received contract_created").toBe(1);
     expect(rows[0].related_type).toBe("contract");
   });
@@ -76,10 +77,10 @@ test.describe("S16 database batch", () => {
     expect((await appApi(sales.page, "PATCH", `/api/contracts/${cid}`, { status: "pending_admin" })).status).toBe(200);
     const rejected = await appApi(admin.page, "POST", `/api/contracts/${cid}/approve`, { action: "reject", notes: "E2E reject" });
     expect(rejected.status, rejected.text.slice(0, 160)).toBe(200);
-    const first = await notificationsFor(operator, cid, "contract_pending_approval");
+    const first = await notificationsFor(operator, cid, "contract_pending_approval", accounts.operator.id);
     const again = await appApi(sales.page, "PATCH", `/api/contracts/${cid}`, { status: "pending_admin" });
     expect(again.status, `resubmit -> ${again.status} ${again.text.slice(0, 160)}`).toBe(200);
-    const after = await notificationsFor(operator, cid, "contract_pending_approval");
+    const after = await notificationsFor(operator, cid, "contract_pending_approval", accounts.operator.id);
     expect(after.length, "the resubmission produced its own pending-approval notification").toBe(first.length + 1);
     const approvals = await rest<Array<{ step: string; status: string }>>(admin, "GET", `contract_approvals?contract_id=eq.${cid}&select=step,status&order=created_at.asc`);
     expect(approvals.json?.filter((a) => a.step === "admin_review" && a.status === "pending").length, "one pending admin_review row").toBe(1);
@@ -90,10 +91,10 @@ test.describe("S16 database batch", () => {
     const boss = await as("boss", { path: "/api/health" });
     const cid = await convertedContract(admin, registry, target, ns, accounts.salesA.id, "s16-second-step");
     expect((await appApi(admin.page, "PATCH", `/api/contracts/${cid}`, { status: "pending_admin" })).status).toBe(200);
-    expect((await notificationsFor(boss, cid, "contract_pending_approval")).length, "the boss is not told before their step is open").toBe(0);
+    expect((await notificationsFor(boss, cid, "contract_pending_approval", accounts.boss.id)).length, "the boss is not told before their step is open").toBe(0);
     const step1 = await appApi<{ new_status?: string }>(admin.page, "POST", `/api/contracts/${cid}/approve`, { action: "approve", notes: "E2E step one" });
     expect(step1.status, step1.text.slice(0, 160)).toBe(200);
     expect(step1.json?.new_status).toBe("pending_ceo");
-    expect((await notificationsFor(boss, cid, "contract_pending_approval")).length, "the boss was told their step is open").toBe(1);
+    expect((await notificationsFor(boss, cid, "contract_pending_approval", accounts.boss.id)).length, "the boss was told their step is open").toBe(1);
   });
 });

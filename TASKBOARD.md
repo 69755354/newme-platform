@@ -979,3 +979,22 @@ acceptance recovered and aborted first; evidence is kept under
 acceptance is still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:fa090bcc1278dabf2ce329cfa20925405f2ddb1f16aeac8fb598893f1a53884c -->
+
+## OS fix S15 full-test follow-ups technical acceptance (2026-11-11)
+
+Release `e556a18f3d051fbb828db717372dbb3de5237f12` (OS fix stream S15, PR #518:
+production smoke browser lazy start, funnel stage basis from lead outcome, engine
+quotation stage advance through `advanceStageForMilestone`) passed candidate CI
+`43102449671` and was deployed through the protected coordinator at
+`2026-11-11T21:29:21Z`, replacing the finalized release `2257dc44`. No migration was
+applied by this deployment; the database phase stayed strict with 8 deferred
+migrations present (`contract_verified`). Before the merge the same tree was built
+and deployed to staging as `d714dc37` and the staging browser-acceptance rehearsal
+passed 5/5. Canonical production acceptance verified all four roles, eight browser
+sessions and 16 bound artifacts. All 48 fixture objects were cleaned, with zero
+residuals and exact KPI restoration. Performance measured p75 53 ms / p95 58 ms,
+within policy. The alert drill and the delayed verification passed at
+`2026-11-11T21:46:26Z`; canonical attestation sealed the bundle below at
+`2026-11-11T21:46:40.477Z`. Meta callback end-to-end acceptance is still NOT claimed.
+
+<!-- postdeploy-acceptance-sha256:99edac011c25e237bf7d4da2f7f62bac4ec0693c6c9f64347fa4941b089a6de2 -->

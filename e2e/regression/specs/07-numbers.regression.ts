@@ -29,6 +29,31 @@ test.describe("consistent totals", () => {
     expect(dashTotal, `dashboard ${dashTotal} vs database ${exact}`).toBe(exact);
     expect(anaTotal, `analytics ${anaTotal} vs database ${exact}`).toBe(exact);
     expect(funnelTotal, `analytics funnel ${funnelTotal} vs database ${exact}`).toBe(exact);
+    // Stage distribution (S15 D-3/D-5): the funnels bucket by final_status first, then stage -- the
+    // same basis as the board and the list -- so each stage must equal the database truth, and a
+    // lead won by stage only must count as won. Rows are read page by page (PostgREST caps a page).
+    const rows: Array<{ stage: string | null; final_status: string | null }> = [];
+    for (let offset = 0; offset < exact + 1000; offset += 1000) {
+      const page = await rest<Array<{ stage: string | null; final_status: string | null }>>(s, "GET", `leads?archived=eq.false&or=(source.is.null,source.neq.synthetic_qa)&select=stage,final_status&order=id&limit=1000&offset=${offset}`);
+      expect(page.status, `stage rows ${page.text.slice(0, 120)}`).toBeLessThan(300);
+      rows.push(...(page.json ?? []));
+      if ((page.json ?? []).length < 1000) break;
+    }
+    expect(rows.length, "stage rows read in full").toBe(exact);
+    const truthByStage: Record<string, number> = {};
+    for (const r of rows) {
+      const key = r.final_status || r.stage || "";
+      truthByStage[key] = (truthByStage[key] ?? 0) + 1;
+    }
+    const funnelRes = await appApi<{ stages?: Array<{ key: string; count: number }> }>(s.page, "GET", "/api/dashboard/pipeline-funnel");
+    expect(funnelRes.status).toBe(200);
+    const analyticsStages = (ana.json as { pipelineFunnel?: { stages?: Array<{ key: string; count: number }> } }).pipelineFunnel?.stages ?? [];
+    for (const [name, stages] of [["pipeline-funnel", funnelRes.json?.stages ?? []], ["analytics funnel", analyticsStages]] as const) {
+      expect(stages.length, `${name} has stages`).toBeGreaterThan(0);
+      for (const st of stages) {
+        expect(st.count, `${name} ${st.key}: ${st.count} vs database ${truthByStage[st.key] ?? 0}`).toBe(truthByStage[st.key] ?? 0);
+      }
+    }
     // The list endpoint returns live leads only; without the synthetic QA source it must match exactly.
     const listed = leads.filter((l) => l.source !== "synthetic_qa").length;
     expect(listed, `lead list ${listed} (without synthetic_qa) vs database ${exact}`).toBe(exact);

@@ -58,7 +58,8 @@ export default async function globalSetup(config: FullConfig) {
         reused.push(key);
         continue;
       }
-      const ctx = await browser!.newContext({ baseURL: target.baseURL, ignoreHTTPSErrors: true, viewport: { width: 1366, height: 900 } });
+      browser ??= await chromium.launch({ headless: true, ...(use.launchOptions ?? {}) }); // production path never reaches the lazy launch above
+      const ctx = await browser.newContext({ baseURL: target.baseURL, ignoreHTTPSErrors: true, viewport: { width: 1366, height: 900 } });
       await ctx.route((url) => isMetaTraffic(url.href), (route) => route.abort());
       const publicOrigin = publicOriginFor(target.baseURL);
       if (publicOrigin) {

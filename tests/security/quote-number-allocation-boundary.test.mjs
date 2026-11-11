@@ -110,6 +110,8 @@ const nextServer = {
   },
 };
 const quotationRules = await import("../../src/lib/quotation-rules.mjs");
+const stageAdvance = await import("../../src/lib/milestone-stage-advance.mjs");
+const firstContactGate = await import("../../src/lib/first-contact-gate.mjs");
 const quietLogger = { error() {}, warn() {}, info() {} };
 
 test("quotation generate executes the insert once and propagates the database quote number", async () => {
@@ -137,6 +139,8 @@ test("quotation generate executes the insert once and propagates the database qu
     "@/lib/quotation-labour-request": { buildBottomUpLabourRequest: () => undefined },
     "@/lib/quotation-rules.mjs": quotationRules,
     "@/lib/quotation-labour-basis.mjs": { formatInstallLabourNote: () => "" },
+    "@/lib/milestone-stage-advance.mjs": stageAdvance,
+    "@/lib/first-contact-gate.mjs": firstContactGate,
   });
 
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

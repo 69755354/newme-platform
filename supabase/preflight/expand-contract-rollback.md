@@ -91,7 +91,7 @@ phase):
 20260817230000_lead_rebalance_plan_idempotency.sql
 ```
 
-Contract phase — these eight files, in order, pushed only after §4 step 6 passes:
+Contract phase — these ten files, in order, pushed only after §4 step 6 passes:
 
 ```contract
 20260818000000_money_direct_write_contract_phase.sql
@@ -102,6 +102,8 @@ Contract phase — these eight files, in order, pushed only after §4 step 6 pas
 20261025151000_website_capi_delivery_event.sql
 20261025180000_meta_crm_lead_stage_events.sql
 20261104110000_role_least_privilege.sql
+20261112100000_notification_constraints_and_lead_owner_contracts.sql
+20261112100100_notification_warning_type.sql
 ```
 
 ### How the split is executed: a manifest, not a moved file
@@ -115,7 +117,7 @@ artifacts:
 
 * [`infra/release/release-manifest.json`](../../infra/release/release-manifest.json)
   names every pending migration in exactly one phase — `required_for_app` (the
-  twenty-five above) or `deferred_contract` (the eight above) — with the SHA-256 of each
+  twenty-five above) or `deferred_contract` (the ten above) — with the SHA-256 of each
   file and the runtime posture each phase must produce.
 * [`scripts/db-phase-push.mjs`](../../scripts/db-phase-push.mjs) applies one named
   phase and nothing else. In production it is reachable only through the canonical
@@ -1028,7 +1030,7 @@ select count(*) from supabase_migrations.schema_migrations
 -- which allows the CAPI delivery event without enabling automatic replay
 select version from supabase_migrations.schema_migrations
  order by version desc limit 1;
--- expect 20261104110000
+-- expect 20261112100100
 ```
 
 `sudo /usr/local/sbin/newme-deploy db-transition <release-sha>

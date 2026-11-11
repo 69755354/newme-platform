@@ -56,8 +56,9 @@ test("contract notifications describe the committed lifecycle state", () => {
   const createRoute = fs.readFileSync(path.join(root, "src/app/api/contracts/route.ts"), "utf8");
   const statusRoute = fs.readFileSync(path.join(root, "src/app/api/contracts/[id]/route.ts"), "utf8");
 
-  // contract_created is withheld until the database accepts it (fixes/NEXT-DB-BATCH.md).
-  assert.doesNotMatch(createRoute, /type: "contract_created"/);
+  // The create route sends contract_created once the contract is committed (S16 restored it
+  // after the constraint accepted the type). The pending-approval event stays with the submit path.
+  assert.match(createRoute, /type: "contract_created"/);
   assert.doesNotMatch(createRoute, /type: "contract_pending_approval"/);
   const successfulTransition = statusRoute.indexOf("if (status.trim() === \"pending_admin\")");
   const rpcRefusal = statusRoute.indexOf("if (rpcErr)");

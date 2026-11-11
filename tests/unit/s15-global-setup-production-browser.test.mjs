@@ -61,7 +61,7 @@ async function runSetup({ isProduction }) {
   const setup = loadModule("e2e/regression/global-setup.ts", {
     "@playwright/test": { chromium: { launch: async () => { events.push("launch"); return browser; } } },
     "./lib/accounts.mjs": {
-      loadAccounts: () => Object.fromEntries(ROLES.map((r) => [r, { email: `${r}@x.test`, password: "not-a-secret" }])),
+      loadAccounts: () => Object.fromEntries(ROLES.map((r) => [r, { email: `${r}@x.test`, password: "not a secret" }])),
       missingRoles: () => [],
       ROLE_KEYS: ROLES,
     },

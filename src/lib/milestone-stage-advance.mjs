@@ -73,7 +73,10 @@ export function planStageStep({ stage, finalStatus, milestoneKey, quality, hasCo
  * of the completed milestone. Never throws.
  * @returns {Promise<{ advanced: boolean, stage: string | null, reason: string | null }>}
  */
-export async function advanceStageForMilestone(supabase, { leadId, milestoneKey, lead, hasCompleteContact }) {
+export async function advanceStageForMilestone(supabase, { leadId, milestoneKey, lead, hasCompleteContact, note }) {
+  // The audit note defaults to the milestone wording. A caller that moves the stage for another
+  // reason (the quotation route: "Quotation generated <quote_no>") passes its own.
+  const auditNote = typeof note === "string" && note.trim() !== "" ? note.trim() : `Milestone completed: ${milestoneKey}`;
   let stage = lead?.stage ?? null;
   let advanced = false;
   for (let guard = 0; guard < STAGE_ORDER.length; guard += 1) {
@@ -93,7 +96,7 @@ export async function advanceStageForMilestone(supabase, { leadId, milestoneKey,
         p_lead_id: leadId,
         p_expected_stage: stage,
         p_next_stage: plan.next,
-        p_note: `Milestone completed: ${milestoneKey}`,
+        p_note: auditNote,
         p_idempotency_key: stageStepKey(leadId, milestoneKey, plan.next),
       });
     } catch {

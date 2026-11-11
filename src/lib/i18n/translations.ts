@@ -65,6 +65,15 @@ export const translations = {
         changed_concurrently: "Milestone saved. The stage was changed by someone else; the latest data has been loaded.",
         stage_update_failed: "Milestone saved, but the stage could not be moved. Please try again.",
       },
+      // S16: shown when a quotation was generated but the lead stage did not move (stage_advance_reason).
+      quoteStageHint: {
+        next_followup_required: "Quotation saved. To move the stage forward, set the next action and next follow-up date first.",
+        first_contact_gate: "Quotation saved. The stage moves on once a complete contact record and a quality assessment exist.",
+        not_permitted: "Quotation saved. Your role cannot change the stage; ask the owner or an admin.",
+        changed_concurrently: "Quotation saved. The stage was changed by someone else; reload to see the latest.",
+        stage_update_failed: "Quotation saved, but the stage could not be moved. Please try again.",
+        stage_read_failed: "Quotation saved, but the lead stage could not be read, so it was not moved.",
+      },
       duplicateReview: {
         salesWarning: "Possible duplicate: a lead with this phone or email may already exist. You can still create it with a reason; an admin/operator will review it.",
         reasonLabel: "Why is this a new lead?",
@@ -631,6 +640,9 @@ export const translations = {
         follow_up_overdue: "Overdue Follow-up",
         first_payment_reminder: "First Payment Reminder",
         team_member_added: "Team Member Added",
+        // S16: written by the daily reminder / approval flow once the database accepts them
+        reminder: "Task Reminder",
+        contract_pending_approval: "Pending Approval",
       },
       // ── S6 (OS fix) additions ──
       titleNewLead: "New lead: ",
@@ -1977,6 +1989,15 @@ export const translations = {
         changed_concurrently: "里程碑已保存。阶段刚被他人修改，已载入最新数据。",
         stage_update_failed: "里程碑已保存，但阶段未能推进，请重试。",
       },
+      // S16：报价已生成但线索阶段没有推进时的提示（stage_advance_reason）。
+      quoteStageHint: {
+        next_followup_required: "报价已保存。要推进阶段，请先填写下一步动作和下次跟进日期。",
+        first_contact_gate: "报价已保存。有完整联系记录并评估质量后，阶段才会推进。",
+        not_permitted: "报价已保存。你的角色不能改阶段，请联系负责人或管理员。",
+        changed_concurrently: "报价已保存。阶段刚被他人修改，请刷新查看最新状态。",
+        stage_update_failed: "报价已保存，但阶段未能推进，请重试。",
+        stage_read_failed: "报价已保存，但读不到线索阶段，所以没有推进。",
+      },
       duplicateReview: {
         salesWarning: "可能重复：系统里可能已有相同电话或邮箱的线索。填写原因后仍可新建，管理员/运营会复核。",
         reasonLabel: "为什么要单独新建？",
@@ -2534,6 +2555,9 @@ export const translations = {
         follow_up_overdue: "跟进逾期",
         first_payment_reminder: "首付提醒",
         team_member_added: "新成员加入",
+        // S16：数据库放行后，每日提醒和审批流程会写入这两种
+        reminder: "待办提醒",
+        contract_pending_approval: "待审批",
       },
       // ── S6 (OS fix) additions ──
       titleNewLead: "新线索：",

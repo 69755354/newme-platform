@@ -37,6 +37,8 @@ const TYPE_ICONS: Record<string, string> = {
   team_member_added: "👥",
   follow_up_overdue: "⚠️",
   first_payment_reminder: "💳",
+  reminder: "⏰",
+  contract_pending_approval: "📝",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -55,6 +57,8 @@ const TYPE_LABELS: Record<string, string> = {
   team_member_added: "notifications.types.team_member_added",
   follow_up_overdue: "notifications.types.follow_up_overdue",
   first_payment_reminder: "notifications.types.first_payment_reminder",
+  reminder: "notifications.types.reminder",
+  contract_pending_approval: "notifications.types.contract_pending_approval",
 };
 
 function getRelatedLink(type: string, relatedType: string | null, relatedId: string | null): string | null {

@@ -10,6 +10,7 @@ import { allowedSetContractStatuses } from "@/lib/contract-status-capabilities.m
 import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmWonForContract } from "@/lib/meta-crm-events";
+import { ensurePendingApproval } from "@/lib/contract-approval-rows.mjs";
 
 /**
  * GET /api/contracts/[id]
@@ -256,6 +257,20 @@ export async function PATCH(
 
     if (status.trim() === "pending_admin") {
       try {
+        // A contract resubmitted after a rejection has no pending approval row (the
+        // earlier one is settled), and the notification below is keyed on it. Open it
+        // first. Idempotent; a failure is logged and the notification then logs its own.
+        const opened = await ensurePendingApproval(supabaseAdmin, {
+          contractId,
+          step: "admin_review",
+          source: "resubmit",
+        });
+        if (opened.error) {
+          logger.warn(
+            { err: opened.error, request_id, operation: "contract_set_status", user_id: user.id, contract_id: contractId },
+            "[API Contracts Detail] Pending approval row could not be opened",
+          );
+        }
         await dispatchPersistedNotification({
           actorId: user.id,
           input: {

@@ -139,6 +139,35 @@ export async function POST(
       );
     }
 
+    // ── First step passed: tell the next approvers their step is open ───
+    // approve_contract() moves a contract that clears admin_review to pending_ceo and
+    // opens the ceo_review row; without this, nobody hears that it is their turn.
+    if (
+      action === "approve" &&
+      (rpcResult as { new_status?: unknown } | null)?.new_status === "pending_ceo"
+    ) {
+      try {
+        await dispatchPersistedNotification({
+          actorId: user.id,
+          input: {
+            type: "contract_pending_approval",
+            contract_id: contractId,
+          },
+        });
+      } catch (notifyErr) {
+        logger.warn(
+          {
+            err: notifyErr,
+            request_id,
+            operation: "contract_approve",
+            user_id: user.id,
+            contract_id: contractId,
+          },
+          "[API Approve] Second-step pending-approval notification failed",
+        );
+      }
+    }
+
     return NextResponse.json(rpcResult);
   } catch (err: any) {
     const message =

@@ -998,3 +998,22 @@ within policy. The alert drill and the delayed verification passed at
 `2026-11-11T21:46:40.477Z`. Meta callback end-to-end acceptance is still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:99edac011c25e237bf7d4da2f7f62bac4ec0693c6c9f64347fa4941b089a6de2 -->
+
+## OS fix S16 provisioning switch technical acceptance (2026-11-12)
+
+Release `7c378c6c6629cbf75b3a575b66e18f58c27d1ffa` (OS fix stream S16 step 1, PR #521:
+the `s16-db-plan` / `s16-db-provision` provisioning switch, its checker, docs and
+tests; no application or schema change) passed candidate CI `43302381047` and was
+deployed through the protected coordinator at `2026-11-12T20:52:45Z`, replacing the
+finalized release `e556a18f`. A first attempt at `2026-11-12T20:45Z` was refused
+before switch-over by the host health gate (root filesystem 83%, above the 80% warning
+line) and restored automatically; 24 stale staging builds were removed (disk 61%) and
+the same release was redeployed. No migration was applied; the database phase stayed
+strict with 8 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and 16 bound artifacts. All
+48 fixture objects were cleaned, with zero residuals and exact KPI restoration.
+Performance measured p75 68 ms / p95 83 ms over 20 samples, within policy. The delayed
+verification passed at `2026-11-12T21:09:50Z`; canonical attestation sealed the bundle
+below. Meta callback end-to-end acceptance is still NOT claimed.
+
+<!-- postdeploy-acceptance-sha256:30f451b2db7bb44ae1d582434999fb73831e0a5a83f00a6e22bc8ce3993437de -->

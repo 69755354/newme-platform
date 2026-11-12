@@ -761,9 +761,21 @@ else
 fi
 
 echo "== applying ${#BRANCH_MIGRATIONS[@]} branch migrations =="
+# REPLAY_STOP_BEFORE=<14-digit version> (MODE=history only) stops after the migrations that sort
+# before that version and exits 0 without fixtures or assertions. It builds the "database from
+# before migration X" template tests/database/policy-equivalence.py needs; it is unset in every
+# gating run.
+if [ -n "${REPLAY_STOP_BEFORE:-}" ]; then
+  [ "$MODE" = history ] || fail "REPLAY_STOP_BEFORE is only meaningful with MODE=history"
+  [[ "$REPLAY_STOP_BEFORE" =~ ^[0-9]{14}$ ]] || fail "REPLAY_STOP_BEFORE must be a 14-digit migration version"
+fi
 for name in "${BRANCH_MIGRATIONS[@]}"; do
   path="$MIGRATIONS_DIR/$name"
   [ -f "$path" ] || fail "$name is listed in BRANCH_MIGRATIONS but does not exist"
+  if [ -n "${REPLAY_STOP_BEFORE:-}" ] && [[ ! "${name:0:14}" < "$REPLAY_STOP_BEFORE" ]]; then
+    echo "== stopped before $REPLAY_STOP_BEFORE (template build, no assertions) =="
+    exit 0
+  fi
   "${PSQL_TX[@]}" -f "$path" >/dev/null || fail "$name did not apply onto the floor"
   printf '  applied %s\n' "$name"
 done

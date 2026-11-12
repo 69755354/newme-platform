@@ -484,8 +484,7 @@ test("the role permission database test follows the isolated-database convention
   // The CI wiring (a `Role permission boundaries` step after the Meta ads one in
   // the migration-replay job, `createdb --template history
   // newme_role_permissions_test` + `PGDATABASE=newme_role_permissions_test
-  // python3 tests/database/role-permissions.py`) is added by the coordinator:
-  // the push token of the fix streams has no `workflow` scope.
+  // python3 tests/database/role-permissions.py`) has been wired into .github/workflows/ci.yml since S16.
   const script = read("tests/database/role-permissions.py");
   assert.match(script, /PGDATABASE"\) == "newme_role_permissions_test"/);
   assert.match(script, /rollback;/);

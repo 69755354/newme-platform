@@ -6,6 +6,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
+import { dispatchPersistedNotification } from "@/lib/notification-dispatch";
 import type { Database, Json } from "@/types/database";
 
 // R5: the GET below embeds installment_plans, whose paid_amount and
@@ -204,10 +205,31 @@ export async function POST(request: NextRequest) {
       installments_count: number;
     };
 
-    // The contract_created notification is withheld on purpose: notifications_type_check
-    // does not list that type yet (every attempt fails with 23514). Restore the sender
-    // after the next database batch adds the type to the constraint (fixes/NEXT-DB-BATCH.md).
-    // The pending-approval event is emitted by the later transition to pending_admin.
+    // contract_created goes out once the contract is committed. It is best effort: the
+    // contract already exists, so a failed notification is logged and never fails the
+    // request. (S12 withheld it while notifications_type_check rejected the type; the
+    // S16 migration added it.) The pending-approval event is emitted by the later
+    // transition to pending_admin.
+    try {
+      await dispatchPersistedNotification({
+        actorId: user.id,
+        input: {
+          type: "contract_created",
+          contract_id: contract.id,
+        },
+      });
+    } catch (notifyErr) {
+      logger.warn(
+        {
+          err: notifyErr,
+          request_id,
+          operation: "contract_create",
+          user_id: user.id,
+          contract_id: contract.id,
+        },
+        "[API Contracts] Contract-created notification failed",
+      );
+    }
 
     revalidatePath("/contracts");
     revalidatePath("/leads");

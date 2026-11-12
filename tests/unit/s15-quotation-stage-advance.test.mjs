@@ -54,7 +54,7 @@ function triggerCheck(from, to) {
 }
 
 function makeWorld(lead) {
-  const state = { stage: lead.stage, adminStageWrites: [], rpcCalls: [], logs: [] };
+  const state = { stage: lead.stage, adminStageWrites: [], rpcCalls: [], rpcNotes: [], logs: [] };
   const admin = {
     from(table) {
       const chain = { table, ops: [] };
@@ -100,6 +100,7 @@ function makeWorld(lead) {
     },
     async rpc(name, args) {
       state.rpcCalls.push([name, args.p_expected_stage, args.p_next_stage]);
+      state.rpcNotes.push(args.p_note);
       if (args.p_expected_stage !== state.stage) return { data: null, error: { message: "Lead was modified concurrently" } };
       const message = triggerCheck(state.stage, args.p_next_stage);
       if (message) return { data: null, error: { message } };
@@ -208,4 +209,14 @@ test("a lead in the stage right before quotation_submitted moves one step", asyn
   assert.deepEqual(state.rpcCalls.map(([, from, to]) => `${from}>${to}`), ["solution_submitted>quotation_submitted"]);
   assert.equal(response.body.stage_advanced, true);
   assert.deepEqual(noErrors(logs), []);
+});
+
+// S16: the audit note names the quotation, not a milestone that was never completed.
+test("the stage_change audit note on the quotation path is 'Quotation generated <quote_no>'", async () => {
+  const { response, state } = await generate({ stage: "solution_submitted", ...READY });
+  assert.equal(response.body.stage_advanced, true);
+  assert.deepEqual(state.rpcNotes, ["Quotation generated NM-2026-0042"]);
+  const walk = await generate({ stage: "new", ...READY });
+  assert.equal(walk.state.rpcNotes.length, 4);
+  assert.ok(walk.state.rpcNotes.every((note) => note === "Quotation generated NM-2026-0042"));
 });

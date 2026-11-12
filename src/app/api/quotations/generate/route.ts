@@ -280,6 +280,7 @@ export async function POST(request: NextRequest) {
           milestoneKey: "quotation",
           lead: current,
           hasCompleteContact,
+          note: `Quotation generated ${quoteNo}`,
         });
       }
     } catch {

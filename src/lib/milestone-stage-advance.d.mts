@@ -28,5 +28,7 @@ export declare function advanceStageForMilestone(
       next_followup_date: string | null;
     } | null;
     hasCompleteContact: boolean;
+    /** Audit note for the stage_change event; defaults to "Milestone completed: <milestoneKey>". */
+    note?: string;
   },
 ): Promise<StageAdvanceResult>;

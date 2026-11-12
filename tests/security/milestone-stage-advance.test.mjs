@@ -186,3 +186,15 @@ test("the mapping is the app's milestone -> stage mapping (same Meta funnel even
     assert.equal(events[milestone], events[stage], `${milestone} and ${stage} must report the same funnel event`);
   }
 });
+
+// S16: the audit note defaults to the milestone text, and a caller that advances the
+// stage for another reason (the quotation route) passes its own.
+test("advanceStageForMilestone writes 'Milestone completed: <key>' by default and an optional note when given", async () => {
+  const calls = [];
+  const supabase = { rpc: async (_name, args) => { calls.push(args.p_note); return { data: { stage: args.p_next_stage }, error: null }; } };
+  const lead = { stage: "solution_submitted", final_status: null, quality: "good", next_action: "call", next_followup_date: "2026-11-10" };
+  await advance.advanceStageForMilestone(supabase, { leadId: LEAD, milestoneKey: "quotation", lead, hasCompleteContact: true });
+  await advance.advanceStageForMilestone(supabase, { leadId: LEAD, milestoneKey: "quotation", lead, hasCompleteContact: true, note: "Quotation generated NM-1" });
+  await advance.advanceStageForMilestone(supabase, { leadId: LEAD, milestoneKey: "quotation", lead, hasCompleteContact: true, note: "   " });
+  assert.deepEqual(calls, ["Milestone completed: quotation", "Quotation generated NM-1", "Milestone completed: quotation"]);
+});

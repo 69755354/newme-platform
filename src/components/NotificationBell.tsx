@@ -38,6 +38,7 @@ const TYPE_ICONS: Record<string, string> = {
   follow_up_overdue: "⚠️",
   first_payment_reminder: "💳",
   reminder: "⏰",
+  warning: "📵",
   contract_pending_approval: "📝",
 };
 
@@ -58,6 +59,7 @@ const TYPE_LABELS: Record<string, string> = {
   follow_up_overdue: "notifications.types.follow_up_overdue",
   first_payment_reminder: "notifications.types.first_payment_reminder",
   reminder: "notifications.types.reminder",
+  warning: "notifications.types.warning",
   contract_pending_approval: "notifications.types.contract_pending_approval",
 };
 

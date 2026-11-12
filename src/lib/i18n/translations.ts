@@ -642,6 +642,7 @@ export const translations = {
         team_member_added: "Team Member Added",
         // S16: written by the daily reminder / approval flow once the database accepts them
         reminder: "Task Reminder",
+        warning: "No-answer Alert",
         contract_pending_approval: "Pending Approval",
       },
       // ── S6 (OS fix) additions ──
@@ -2557,6 +2558,7 @@ export const translations = {
         team_member_added: "新成员加入",
         // S16：数据库放行后，每日提醒和审批流程会写入这两种
         reminder: "待办提醒",
+        warning: "未接听提醒",
         contract_pending_approval: "待审批",
       },
       // ── S6 (OS fix) additions ──

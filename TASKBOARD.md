@@ -1017,3 +1017,26 @@ verification passed at `2026-11-12T21:09:50Z`; canonical attestation sealed the 
 below. Meta callback end-to-end acceptance is still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:30f451b2db7bb44ae1d582434999fb73831e0a5a83f00a6e22bc8ce3993437de -->
+
+## OS fix S16 database batch technical acceptance (2026-11-12)
+
+Release `92e8618ea8cfc69a643fa066ebb59c4266e2a176` (OS fix stream S16, PR #520:
+notification type/related-type constraints including `contract_created`, `reminder`,
+`warning`, `task`, `digest`; contract owner = lead owner in
+`convert_quotation_to_contract`; resubmission and second-level approval
+notifications; CI runs the database behaviour scripts; fast-uri 3.1.9) passed
+candidate CI `43312923234`. Before switch-over a fresh read-only production backup was
+taken at `2026-11-12T21:43:06Z`, then `db-transition s16-db-plan` listed exactly
+`20261112100000` and `20261112100100` and `s16-db-provision` applied both, with every
+posture check true including `s16-notification-constraints-and-lead-owner-present` and
+`s16-notification-warning-type-present` (database phase strict, 10 deferred
+migrations). The release was deployed through the protected coordinator at
+`2026-11-12T21:49:43Z`, replacing the finalized switch release `7c378c6c`. Canonical
+production acceptance verified all four roles, eight browser sessions and 16 bound
+artifacts. All 54 fixture objects were cleaned, with zero residuals and exact KPI
+restoration. Performance measured p75 67 ms / p95 101 ms over 20 samples, within
+policy. The delayed verification passed at `2026-11-12T22:06:46Z`; canonical
+attestation sealed the bundle below. Meta callback end-to-end acceptance is still NOT
+claimed.
+
+<!-- postdeploy-acceptance-sha256:063ebf90858026e911fece8f036396eeed0b4016eaa92c561229181806d5760b -->

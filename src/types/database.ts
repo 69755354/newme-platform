@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=83260addec53c88a7761f4a821c7d8963b9e067e98a1c6f6b96ff91da044bf6f
+// Migration fingerprint: sha256=c982a7394da58c2001d4e7de4fc8e8acaef71aa6be60ebab4d02af1b4c116963
 export type Json =
   | string
   | number

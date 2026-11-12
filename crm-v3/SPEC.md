@@ -1252,7 +1252,7 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `tests/database/contract-activation-wins-lead.py` | 数据库用例：转合同不赢单，合同生效才赢单且幂等，赢单时间在生效时写入。 |
 | `tests/database/policy-equivalence.py` | 数据库用例：策略改写前后等价，session_token_is_current 一律用包裹写法（资料表保留原写法）。 |
 | `tests/database/role-permissions.py` | 数据库用例：按角色的权限矩阵，包括运营可关闭线索、合同创建按角色、设计师与财务的收窄。 |
-| `tests/database/s16-contract-owner-and-notifications.py` | 数据库用例：通知表放行 contract_created、reminder、task、digest 且仍拒绝未知值；转合同后合同负责人是线索负责人，销售能提交审批；线索无负责人时的退回顺序。 |
+| `tests/database/s16-contract-owner-and-notifications.py` | 数据库用例：通知表放行 contract_created、reminder、task、digest 且仍拒绝未知值；转合同后合同负责人是线索负责人，销售能提交审批；线索无负责人时的退回顺序；warning 类型通知可写入。 |
 | `scripts/phase-tool-drill.sh` | 两阶段迁移工具演练：在最小回放底座上执行延后阶段前，补上生产已有、底座缺少的对象（线索文件表、线索工作流阶段表及触发器、项目经理与指派列、客户指派销售列、报价折扣列），使角色收窄迁移里“有表才建”的部分在演练库上与生产一致，规则检查才读得到真值；迁移文件和规则检查本身不变。 |
 
 验证边界：`scripts/check-published-credentials.mjs` 对本批次新增的测试夹具按文件和标识符逐条登记豁免并写明理由，规则本身未放宽。

@@ -1,3 +1,6 @@
+-- Compatibility bridge: older lead schema did not include metadata.
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
 -- Auto-derive lead_status from last_contact_date
 -- 2026-06-04
 CREATE OR REPLACE FUNCTION derive_lead_status()

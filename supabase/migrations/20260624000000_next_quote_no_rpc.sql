@@ -1,34 +1,35 @@
 -- ============================================================
 -- next_quote_no() — atomic, RLS-proof quote number generator
 -- 2026-06-24
---
--- SECURITY DEFINER runs as the table owner, so it sees ALL
--- quotations regardless of the caller's RLS visibility. This is
--- required because sales users can only SELECT their own
--- quotations via RLS, which would make a client-side "max(quote_no)
--- + 1" compute duplicate numbers. Moving the sequence read to the
--- DB guarantees a globally unique NM-YYYY-XXXX per call.
 -- ============================================================
 
-CREATE OR REPLACE FUNCTION next_quote_no()
+CREATE OR REPLACE FUNCTION public.next_quote_no()
 RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_year TEXT := to_char(now(), 'YYYY');
   v_max INT;
   v_next INT;
 BEGIN
+  -- Serialize allocation for this year so concurrent callers cannot receive
+  -- the same number while RLS remains bypassed only inside this function.
+  PERFORM pg_advisory_xact_lock(hashtext('newme:quote-no:' || v_year));
+
   SELECT COALESCE(
     MAX(CAST(split_part(quote_no, '-', 3) AS INT)),
     0
   ) INTO v_max
-  FROM quotations
+  FROM public.quotations
   WHERE quote_no LIKE 'NM-' || v_year || '-%';
+
   v_next := v_max + 1;
   RETURN 'NM-' || v_year || '-' || LPAD(v_next::text, 4, '0');
 END;
 $$;
-GRANT EXECUTE ON FUNCTION next_quote_no() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.next_quote_no() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.next_quote_no() FROM anon;
+GRANT EXECUTE ON FUNCTION public.next_quote_no() TO authenticated;

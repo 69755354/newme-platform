@@ -27,7 +27,8 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public;
 
 -- 先删旧 trigger（如果存在）
 DROP TRIGGER IF EXISTS on_auth_user_email_changed ON auth.users;

@@ -1,3 +1,30 @@
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS final_status TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS current_milestone TEXT DEFAULT 'new';
+
+CREATE TABLE IF NOT EXISTS lead_milestones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  milestone_key TEXT NOT NULL,
+  completed_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  completed_at TIMESTAMPTZ,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (lead_id, milestone_key)
+);
+ALTER TABLE lead_milestones ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS policy_lead_milestones_select_sales ON lead_milestones;
+DROP POLICY IF EXISTS policy_lead_milestones_select_admin ON lead_milestones;
+DROP POLICY IF EXISTS policy_lead_milestones_insert_sales ON lead_milestones;
+DROP POLICY IF EXISTS policy_lead_milestones_insert_admin ON lead_milestones;
+DROP POLICY IF EXISTS policy_lead_milestones_update_sales ON lead_milestones;
+DROP POLICY IF EXISTS policy_lead_milestones_update_admin ON lead_milestones;
+CREATE POLICY policy_lead_milestones_select_sales ON lead_milestones FOR SELECT USING (lead_id IN (SELECT id FROM leads WHERE assigned_to = auth.uid()));
+CREATE POLICY policy_lead_milestones_select_admin ON lead_milestones FOR SELECT USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator')));
+CREATE POLICY policy_lead_milestones_insert_sales ON lead_milestones FOR INSERT WITH CHECK (lead_id IN (SELECT id FROM leads WHERE assigned_to = auth.uid()));
+CREATE POLICY policy_lead_milestones_insert_admin ON lead_milestones FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator')));
+CREATE POLICY policy_lead_milestones_update_sales ON lead_milestones FOR UPDATE USING (lead_id IN (SELECT id FROM leads WHERE assigned_to = auth.uid()));
+CREATE POLICY policy_lead_milestones_update_admin ON lead_milestones FOR UPDATE USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin','boss','operator')));
+
 -- 20260623030000_crm_v3_stage_to_milestone_mapping.sql
 -- CRM v3: 旧stage → Milestone 数据映射
 -- 将生产已有lead的旧stage字段映射到新的lead_milestones表

@@ -1,14 +1,13 @@
 -- Migration: Fix P0 security issues
 -- Date: 2026-06-12
--- 1. Enable RLS on 3 tables that had no protection
+-- 1. Enable RLS on contract/payment tables that exist in this schema chain
 -- 2. Fix notifications_service_insert to require authentication
 
 -- ============================================================
--- P0-1: Enable RLS on contract_approvals, payment_allocations, marketing_campaigns
+-- P0-1: Enable RLS on contract_approvals and payment_allocations
 -- ============================================================
 ALTER TABLE contract_approvals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payment_allocations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE marketing_campaigns ENABLE ROW LEVEL SECURITY;
 
 -- contract_approvals policies
 CREATE POLICY ca_admin_all ON contract_approvals
@@ -36,11 +35,6 @@ CREATE POLICY pa_sales_select ON payment_allocations
     WHERE p.id = payment_allocations.payment_id
     AND c.sales_id = auth.uid()
   ));
-
--- marketing_campaigns policies (admin/boss only)
-CREATE POLICY mc_admin_all ON marketing_campaigns
-  FOR ALL TO authenticated
-  USING (get_my_role() = ANY (ARRAY['admin','boss']));
 
 -- ============================================================
 -- P0-2: Fix notifications_service_insert - restrict to authenticated

@@ -131,3 +131,16 @@ test("daily-reminder writes one reminder per assignee per Dubai day and uses the
   assert.equal(taskWindow.gte, "2026-11-17T20:00:00.000Z");
   assert.equal(taskWindow.lte, "2026-11-18T19:59:59.999Z");
 });
+
+test("check-no-answer only scans leads that are still being worked (not archived, no final status)", async () => {
+  process.env.CRON_SECRET = SECRET;
+  let leadQuery = null;
+  const admin = fakeAdmin((q) => {
+    if (q.table === "leads" && q.kind === "select") { leadQuery = q; return { data: [], error: null }; }
+    throw new Error("unexpected");
+  });
+  const { GET } = loadModule("src/app/api/cron/check-no-answer/route.ts", { "next/server": { NextResponse }, "@/lib/supabase-admin": { supabaseAdmin: admin } });
+  await GET(request());
+  assert.deepEqual(leadQuery.filters.find((f) => f[0] === "eq" && f[1] === "archived")?.slice(1), ["archived", false]);
+  assert.ok(leadQuery.filters.some((f) => f[0] === "is" && f[1] === "final_status" && f[2] === null), "final_status is null");
+});

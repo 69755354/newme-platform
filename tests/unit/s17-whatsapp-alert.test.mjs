@@ -3,7 +3,7 @@
 // state file are exercised. Phone numbers and tokens below are obvious fakes.
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +28,7 @@ async function fixture({ status = 200, body = '{"messages":[{"id":"wamid.X"}]}',
     });
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  server.unref();
   const root = mkdtempSync(join(tmpdir(), "newme-wa-"));
   const env = {
     PATH: process.env.PATH, HOME: root,
@@ -176,6 +177,47 @@ test("Telegram stays available as an option and also checks the HTTP status", as
   assert.equal(r.status, 1);
   assert.equal(f.requests.length, 1);
   assert.match(f.requests[0].url, /^\/botFAKE-TG\/sendMessage/);
+  f.close();
+});
+
+test("long Chinese summaries are cut at a character boundary and the JSON stays valid", async () => {
+  const f = await fixture();
+  for (const summary of ["数据库备份失败".repeat(120), `a${"备份".repeat(300)}`, `ab${"备份".repeat(300)}`]) {
+    const r = await f.run(["k", "info", summary]);
+    assert.equal(r.status, 0, r.stderr);
+    const body = f.requests.at(-1).body;
+    assert.ok(body !== null, "request body is valid JSON");
+    const text = body.template.components[0].parameters[2].text;
+    assert.ok(!text.includes("\uFFFD"), "no broken character");
+    assert.ok(text.length > 100 && text.length <= 400, `length ${text.length}`);
+    assert.ok(summary.startsWith(text), "a clean prefix of the original");
+  }
+  f.close();
+});
+
+test("an unwritable state directory falls back to another one, so repeats are still suppressed", async () => {
+  const f = await fixture();
+  const locked = join(f.root, "locked"); mkdirSync(locked, { mode: 0o500 });
+  const fb = join(f.root, "fallback");
+  const extra = { ALERT_STATE_DIR: join(locked, "state"), ALERT_FALLBACK_DIRS: fb };
+  const first = await f.run(["watch", "failure", "stale"], extra);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stderr, /fallback/);
+  assert.equal(f.requests.length, 2);
+  const second = await f.run(["watch", "failure", "stale"], extra);
+  assert.equal(second.status, 0);
+  assert.equal(f.requests.length, 2, "no second message a minute later");
+  f.close();
+});
+
+test("with no usable state directory at all the alert is sent once, exits 1 and says why", async () => {
+  const f = await fixture();
+  const locked = join(f.root, "locked"); mkdirSync(locked, { mode: 0o500 });
+  const extra = { ALERT_STATE_DIR: join(locked, "a"), ALERT_FALLBACK_DIRS: join(locked, "b") };
+  const r = await f.run(["watch", "failure", "stale"], extra);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /no writable state directory/);
+  assert.equal(f.requests.length, 2, "delivered once to each recipient");
   f.close();
 });
 

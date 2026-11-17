@@ -47,7 +47,15 @@ for arg in "$@"; do
       --numeric-ids|--partial) ;;
       --timeout=[0-9]*) case "${arg#--timeout=}" in *[!0-9]*) refuse "bad --timeout" ;; esac ;;
       --*) refuse "option not allowed: $arg" ;;
-      -[A-Za-z0-9.]*) ;;
+      -*)
+        # A short-option cluster: letters, digits and dots only (no "-M--delete" smuggling), and no "s"
+        # in the part before "e." (-s = secluded args: rsync would then read the real path from the
+        # data stream and the directory check above would mean nothing). Everything after the first
+        # "e" is rsync's own capability string (it legitimately contains s) and is not parsed as options.
+        cluster="${arg#-}"
+        case "$cluster" in ''|*[!A-Za-z0-9.]*) refuse "bad option cluster: $arg" ;; esac
+        case "${cluster%%e*}" in *s*) refuse "secluded-args (-s) is not allowed; do not use -s on the NAS" ;; esac
+        ;;
       *) refuse "unexpected argument before the path: $arg" ;;
     esac
   fi

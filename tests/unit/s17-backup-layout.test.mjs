@@ -96,6 +96,11 @@ test("NAS pull: everything that is not a read-only pull of the backup directory 
     `rsync --server --sender -logDtpre.iLsfxC . ${PULL_DIR}/ extra`,
     `rsync --server --sender -logDtpre.iLsfxC .`,
     `rsync --server --sender -e'sh -c id' . ${PULL_DIR}/`,
+    `rsync --server --sender -slogDtpre.iLsfxCIvu . ${PULL_DIR}/`,          // -s: real path is read from the stream
+    `rsync --server --sender -logDtprse.iLsfxC . ${PULL_DIR}/`,
+    `rsync --server --sender -se.iLsfxC . ${PULL_DIR}/`,
+    `rsync --server --sender -M--delete . ${PULL_DIR}/`,
+    `rsync --server --sender -M--files-from=/x -logDtpre.iLsfxC . ${PULL_DIR}/`,
     `rsync --server --sender -logDtpre.iLsfxC . ${PULL_DIR}/\nid`,
   ];
   for (const cmd of bad) {
@@ -104,6 +109,34 @@ test("NAS pull: everything that is not a read-only pull of the backup directory 
     assert.ok(!/rsync --server/.test(r.b.calls()), `never ran rsync for ${JSON.stringify(cmd)}`);
     assert.ok(!existsSync(join(r.state, "last-pull-ok")));
   }
+});
+
+test("NAS pull: the -s cluster check does not reject the protocol flags after e.", () => {
+  // after "e." rsync's own capability letters follow (they contain s); only the part before is options.
+  assert.equal(pull(`rsync --server --sender -vlogDtpre.iLsfxCIvu . ${PULL_DIR}/`).status, 0);
+});
+
+test("NAS pull end to end with real rsync: normal pull works, a forged -s request cannot read outside the directory", () => {
+  if (spawnSync("rsync", ["--version"]).status !== 0) return;
+  const b = box();
+  const pullDir = join(b.dir, "pull"); mkdirSync(pullDir);
+  const outside = join(b.dir, "outside"); mkdirSync(outside);
+  writeFileSync(join(pullDir, "newme-prod-1.dump.enc"), "ENCRYPTED");
+  writeFileSync(join(outside, "leak.txt"), "OUTSIDE-SECRET");
+  const state = join(b.dir, "state");
+  const common = `NAS_PULL_DIR="${pullDir}" NAS_PULL_STATE="${state}" RSYNC_BIN="$(command -v rsync)"`;
+  // fake ssh: <host> <command words...>; hands the command to the forced command like sshd does
+  const honest = join(b.dir, "ssh-honest"); writeFileSync(honest, `#!/bin/sh\nshift\nexport ${common.replace(/ /g, " export ")}\nSSH_ORIGINAL_COMMAND="$*" exec sh "${wrapper}"\n`); chmodSync(honest, 0o755);
+  // attacker: takes the client's own "-s" command line (which carries no path) and appends the allowed directory
+  const forged = join(b.dir, "ssh-forged"); writeFileSync(forged, `#!/bin/sh\nshift\nexport ${common.replace(/ /g, " export ")}\nSSH_ORIGINAL_COMMAND="$* . ${pullDir}/" exec sh "${wrapper}"\n`); chmodSync(forged, 0o755);
+  const ok = join(b.dir, "dest-ok"); mkdirSync(ok);
+  const r1 = spawnSync("rsync", ["-a", "-e", honest, `nas:${pullDir}/`, `${ok}/`], { encoding: "utf8" });
+  assert.equal(r1.status, 0, r1.stderr);
+  assert.equal(readFileSync(join(ok, "newme-prod-1.dump.enc"), "utf8"), "ENCRYPTED");
+  assert.ok(existsSync(join(state, "last-pull-ok")));
+  const bad = join(b.dir, "dest-bad"); mkdirSync(bad);
+  const r2 = spawnSync("rsync", ["-s", "-a", "-e", forged, `nas:${outside}/leak.txt`, `${bad}/`], { encoding: "utf8" });
+  assert.ok(!existsSync(join(bad, "leak.txt")), "nothing outside the pull directory is readable");
 });
 
 test("NAS pull: a sub-path inside the pull directory is fine", () => {
@@ -171,6 +204,14 @@ function freshness(extra, { localAgeH = 1, pullAgeH = null } = {}) {
   return { ...r, b };
 }
 
+test("freshness: the local-backup recovery message is sent before, and is not skipped by, a NAS problem", () => {
+  const r = freshness({ NAS_PULL_REQUIRED: "1" }, { pullAgeH: 40 });
+  const calls = r.b.calls();
+  assert.ok(calls.indexOf("alert db-backup-freshness recovery") >= 0, calls);
+  assert.ok(calls.indexOf("alert db-backup-freshness recovery") < calls.indexOf("alert nas-pull-freshness failure"));
+  assert.equal((calls.match(/failure/g) ?? []).length, 1, "only one failure message");
+});
+
 test("freshness: NAS pull is not checked until NAS_PULL_REQUIRED=1", () => {
   const r = freshness({}, { pullAgeH: null });
   assert.equal(r.status, 0, r.stderr);
@@ -179,10 +220,10 @@ test("freshness: NAS pull is not checked until NAS_PULL_REQUIRED=1", () => {
 
 test("freshness: a NAS that has not pulled for longer than the limit raises an alert; a recent pull is fine", () => {
   const stale = freshness({ NAS_PULL_REQUIRED: "1" }, { pullAgeH: 40 });
-  assert.equal(stale.status, 1);
+  assert.equal(stale.status, 0, "one alert under its own key; no OnFailure second alert with another key");
   assert.match(stale.b.calls(), /alert nas-pull-freshness failure .*NAS.*40 hours/);
   const never = freshness({ NAS_PULL_REQUIRED: "1" }, { pullAgeH: null });
-  assert.equal(never.status, 1);
+  assert.equal(never.status, 0);
   assert.match(never.b.calls(), /alert nas-pull-freshness failure .*never/);
   const ok = freshness({ NAS_PULL_REQUIRED: "1" }, { pullAgeH: 5 });
   assert.equal(ok.status, 0, ok.stderr);
@@ -213,6 +254,27 @@ test("pull export directory gets a 0640 copy of the newest backups and nothing t
   for (const n of names) assert.equal(statSync(join(pullDir, n)).mode & 0o777, 0o640, n);
   assert.equal(statSync(backups).mode & 0o777, 0o700, "the main directory stays private");
   assert.ok(calls);
+});
+
+test("the pull copy is written through a staging area and moved in, never written into the pull directory directly", () => {
+  const b = box();
+  b.stub("pg_dump", `out=""; for a in "$@"; do case "$a" in --file=*) out="\${a#--file=}";; esac; done; head -c 200000 /dev/zero | tr '\\0' 'x' > "$out"`);
+  b.stub("pg_restore", `case "$*" in *--list*) exit 0;; *--data-only*) printf 'COPY public.leads (id) FROM stdin;\\n1\\n\\\\.\\n'; exit 0;; esac; exit 0`);
+  const realInstall = spawnSync("sh", ["-c", "command -v install"], { encoding: "utf8" }).stdout.trim();
+  b.stub("install", `echo "$*" >> "${b.dir}/install.log"; exec ${realInstall} "$@"`);
+  const key = join(b.dir, "key"); writeFileSync(key, "k".repeat(48), { mode: 0o600 });
+  const url = join(b.dir, "db.url"); writeFileSync(url, "postgresql://postgres.abc:pw@h.example:5432/postgres", { mode: 0o600 });
+  const pullDir = join(b.dir, "pull"); mkdirSync(pullDir, { mode: 0o750 });
+  const r = spawnSync("bash", [join(root, "infra/backup/newme-db-backup.sh")], {
+    encoding: "utf8",
+    env: { PATH: `${b.bin}:${process.env.PATH}`, BACKUP_ENV_FILE: join(b.dir, "none.env"), NEWME_DB_URL_FILE: url, BACKUP_KEY_FILE: key, BACKUP_DIR: join(b.dir, "backups"), BACKUP_ALERT_SCRIPT: join(b.bin, "alert.sh"), PULL_EXPORT_DIR: pullDir, PULL_EXPORT_GROUP: "", BACKUP_STAMP: "20261117T010000Z", HOME: b.dir, TMPDIR: b.dir },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const installs = readFileSync(join(b.dir, "install.log"), "utf8");
+  assert.ok(!installs.includes(`${pullDir}/`), "install never targets the pull directory itself");
+  assert.equal(readdirSync(pullDir).length, 3);
+  assert.deepEqual(readdirSync(join(b.dir, "backups")).filter((n) => n.startsWith(".pull-stage")), [], "staging area removed");
+  assert.ok(!readdirSync(pullDir).some((n) => n.startsWith(".")), "no hidden temp names inside the pull directory");
 });
 
 test("without a pull directory the backup behaves as before", () => {

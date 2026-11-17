@@ -122,12 +122,20 @@ fi
 PULL_EXPORT_DIR="${PULL_EXPORT_DIR:-/var/backups/newme-db-pull}"
 PULL_EXPORT_GROUP="${PULL_EXPORT_GROUP-newme-nas-pull}"
 if [ -d "$PULL_EXPORT_DIR" ]; then
+  # Atomic: stage next to the main directory (same filesystem, invisible to the NAS), then rename into the
+  # pull directory, so a pull that starts mid-backup never sees half a file. The checksum goes in last.
+  STAGE="$BACKUP_DIR/.pull-stage"
+  rm -rf "$STAGE"; mkdir -p "$STAGE"; chmod 700 "$STAGE"
   for f in "$OUT" "$OUT.counts.tsv" "$OUT.sha256"; do
-    install -m 0640 "$f" "$PULL_EXPORT_DIR/$(basename "$f")" || backup_die "could not copy $(basename "$f") to the NAS pull directory" 1
+    install -m 0640 "$f" "$STAGE/$(basename "$f")" || backup_die "could not stage $(basename "$f") for the NAS pull directory" 1
   done
   if [ -n "$PULL_EXPORT_GROUP" ] && getent group "$PULL_EXPORT_GROUP" >/dev/null 2>&1; then
-    chgrp "$PULL_EXPORT_GROUP" "$PULL_EXPORT_DIR"/newme-prod-* || backup_die "could not set the group of the NAS pull copy" 1
+    chgrp "$PULL_EXPORT_GROUP" "$STAGE"/newme-prod-* || backup_die "could not set the group of the NAS pull copy" 1
   fi
+  for name in "$(basename "$OUT")" "$(basename "$OUT").counts.tsv" "$(basename "$OUT").sha256"; do
+    mv -f "$STAGE/$name" "$PULL_EXPORT_DIR/$name" || backup_die "could not move $name into the NAS pull directory" 1
+  done
+  rmdir "$STAGE" 2>/dev/null || rm -rf "$STAGE"
   # Mirror the local retention: whatever the main directory no longer has is removed from the pull copy.
   for p in "$PULL_EXPORT_DIR"/newme-prod-*; do
     [ -e "$p" ] || continue

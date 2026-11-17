@@ -109,12 +109,25 @@ else
   case "$TELEGRAM_BOT_TOKEN" in *[!A-Za-z0-9_:.-]*) fail_usage "TELEGRAM_BOT_TOKEN has unexpected characters" ;; esac
 fi
 
-if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
-  echo "newme-whatsapp-alert: cannot create $STATE_DIR (log and state disabled)" >&2
-  STATE_OK=0
-else
-  chmod 700 "$STATE_DIR" 2>/dev/null || true
-  STATE_OK=1
+# State directory: the configured one, then fallbacks (default /run/newme-alerts, then /tmp). The
+# state is what stops a watchdog that runs every minute from sending every minute, so an unwritable
+# primary directory must not silently turn suppression off.
+FALLBACK_DIRS="${ALERT_FALLBACK_DIRS:-/run/newme-alerts /tmp/newme-alerts-$(id -u)}"
+STATE_OK=0
+FIRST=1
+for candidate in "$STATE_DIR" $FALLBACK_DIRS; do
+  if mkdir -p "$candidate" 2>/dev/null && : > "$candidate/.probe.$$" 2>/dev/null; then
+    rm -f "$candidate/.probe.$$"
+    chmod 700 "$candidate" 2>/dev/null || true
+    if [ "$FIRST" != 1 ]; then echo "newme-whatsapp-alert: $STATE_DIR is not writable; using fallback state directory $candidate" >&2; fi
+    STATE_DIR="$candidate"
+    STATE_OK=1
+    break
+  fi
+  FIRST=0
+done
+if [ "$STATE_OK" = 0 ]; then
+  echo "newme-whatsapp-alert: no writable state directory (tried $STATE_DIR and fallbacks); repeat suppression and the local log are off, this alert is sent once and the call exits 1" >&2
 fi
 LOG_FILE="$STATE_DIR/alerts.log"
 STATE_FILE="$STATE_DIR/$KEY.state"
@@ -142,9 +155,18 @@ case "$EVENT" in
   info) LABEL="通知" ;;
 esac
 
-# One line, no tabs, no runs of spaces (WhatsApp template parameters reject them), at most 400 characters.
+# One line, no tabs, no runs of spaces (WhatsApp template parameters reject them), at most 400 characters
+# (not bytes: a Chinese character is 3 bytes and must never be cut in half). GNU sed in a UTF-8 locale counts
+# characters; iconv -c then drops any incomplete trailing sequence a byte-oriented sed (busybox) may leave. Without
+# iconv the text is reduced to ASCII, which is always valid JSON.
 clean_text() {
-  printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '\000-\010\013\014\016-\037' | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-400
+  base="$(printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '\000-\010\013\014\016-\037' | sed 's/  */ /g; s/^ //; s/ $//' | head -c 1700)"
+  if command -v iconv >/dev/null 2>&1; then
+    # drop the half character head -c may have left, then cut by characters (GNU sed refuses to match on invalid input)
+    printf '%s' "$base" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null | LC_ALL=C.UTF-8 sed 's/^\(.\{1,400\}\).*$/\1/' | iconv -c -f UTF-8 -t UTF-8 2>/dev/null
+  else
+    printf '%s' "$base" | LC_ALL=C tr -cd '\40-\176' | cut -c1-400
+  fi
 }
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
@@ -203,10 +225,14 @@ else
 fi
 
 if [ "$DELIVERY_FAILED" = 1 ]; then exit 1; fi
+if [ "$STATE_OK" = 0 ]; then
+  [ "$EVENT" = failure ] && exit 1
+  exit 0
+fi
 
 if [ "$STATE_OK" = 1 ]; then
   case "$EVENT" in
-    failure) printf 'alerted_at=%s\n' "$NOW" > "$STATE_FILE" ;;
+    failure) printf 'alerted_at=%s\n' "$NOW" > "$STATE_FILE" || { echo "newme-whatsapp-alert: could not write $STATE_FILE; repeats will not be suppressed" >&2; exit 1; } ;;
     recovery) rm -f "$STATE_FILE" ;;
   esac
 fi

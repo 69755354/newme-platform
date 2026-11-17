@@ -36,6 +36,8 @@ AGE_SECONDS=$(( $(date +%s) - $(stat -c '%Y' "$NEWEST") ))
 if [ "$AGE_SECONDS" -gt $(( MAX_AGE_HOURS * 3600 )) ]; then
   backup_die "newest database backup is $(( AGE_SECONDS / 3600 )) hours old (limit ${MAX_AGE_HOURS}); the daily backup did not run or keeps failing" 1
 fi
+# The local backup is fresh: say so now, before the drill and NAS checks, which may exit early.
+send_alert recovery "database backup is fresh ($(( AGE_SECONDS / 3600 ))h old)"
 # Monthly drill: when a pass stamp exists (or DRILL_REQUIRED=1), it must be <= 35 days old.
 DRILL_STAMP="$BACKUP_DIR/.restore-drill-last-pass"
 DRILL_MAX_DAYS="${DRILL_MAX_DAYS:-35}"
@@ -57,15 +59,25 @@ if [ "${NAS_PULL_REQUIRED:-0}" = 1 ]; then
   NAS_STAMP="${NAS_PULL_STATE_DIR:-/var/lib/newme-nas-pull/state}/last-pull-ok"
   NAS_MAX_HOURS="${NAS_PULL_MAX_AGE_HOURS:-30}"
   case "$NAS_MAX_HOURS" in ''|*[!0-9]*) backup_die "NAS_PULL_MAX_AGE_HOURS must be a number" 2;; esac
+  # A NAS problem is reported under its own key and does NOT fail the unit: a failing unit would trigger
+  # OnFailure with a different key and send a second message for the same problem every hour.
   BACKUP_ALERT_KEY=nas-pull-freshness
-  [ -f "$NAS_STAMP" ] || backup_die "the NAS has never completed a pull (NAS_PULL_REQUIRED=1)" 1
-  NAS_AGE_HOURS=$(( ( $(date +%s) - $(stat -c '%Y' "$NAS_STAMP") ) / 3600 ))
-  if [ "$NAS_AGE_HOURS" -gt "$NAS_MAX_HOURS" ]; then
-    backup_die "the NAS has not pulled the backup for $NAS_AGE_HOURS hours (limit ${NAS_MAX_HOURS}); check the NAS scheduled task, its network and its key" 1
+  NAS_PROBLEM=""
+  if [ ! -f "$NAS_STAMP" ]; then
+    NAS_PROBLEM="the NAS has never completed a pull (NAS_PULL_REQUIRED=1)"
+  else
+    NAS_AGE_HOURS=$(( ( $(date +%s) - $(stat -c '%Y' "$NAS_STAMP") ) / 3600 ))
+    if [ "$NAS_AGE_HOURS" -gt "$NAS_MAX_HOURS" ]; then
+      NAS_PROBLEM="the NAS has not pulled the backup for $NAS_AGE_HOURS hours (limit ${NAS_MAX_HOURS}); check the NAS scheduled task, its network and its key"
+    fi
   fi
-  send_alert recovery "the NAS pulled the backup ${NAS_AGE_HOURS}h ago"
+  if [ -n "$NAS_PROBLEM" ]; then
+    backup_log "ERROR: $NAS_PROBLEM"
+    send_alert failure "$NAS_PROBLEM"
+  else
+    send_alert recovery "the NAS pulled the backup ${NAS_AGE_HOURS}h ago"
+  fi
   BACKUP_ALERT_KEY=db-backup-freshness
 fi
 backup_log "OK: newest backup $(basename "$NEWEST") is $(( AGE_SECONDS / 3600 )) hours old"
-send_alert recovery "database backup is fresh ($(( AGE_SECONDS / 3600 ))h old)"
 exit 0

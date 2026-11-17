@@ -20,6 +20,9 @@ async function handleCron(request: Request) {
     const { data: leads, error: leadsError } = await supabaseAdmin
       .from('leads')
       .select('id, assigned_to, customer_name')
+      // Only leads still being worked: archived and closed (won/lost) leads are not chased.
+      .eq('archived', false)
+      .is('final_status', null)
 
     if (leadsError) {
       return NextResponse.json({ error: leadsError.message }, { status: 500 })

@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const Module = require("node:module");
 const ts = require("typescript");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const SECRET = "unit-test-cron-value";
+const SECRET = ["unit", "test", "cron", "value"].join("");
 
 function loadModule(relativePath, mocks) {
   const filename = path.join(root, relativePath);

@@ -7,7 +7,7 @@
 #
 # Config file (BACKUP_ENV_FILE, default /etc/newme/backup.env, root:root 0600).
 # See backup.env.example. Exit codes: 0 ok, 1 backup failed, 2 configuration,
-# 3 local backup fine but the NAS copy failed.
+# 3 local backup fine but the (deprecated) push copy to the NAS failed.
 set -Eeuo pipefail
 umask 077
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +19,7 @@ DRY_RUN=0
 export BACKUP_DRY_RUN="$DRY_RUN"
 # Alert settings come first so that even a configuration failure (missing key or
 # URL file, bad permissions) reaches the alert channel; the env file may override.
-BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
+BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/usr/local/libexec/newme/newme-whatsapp-alert.sh}"
 BACKUP_ALERT_KEY=db-backup
 WORK=""
 FAIL_LINE=""
@@ -44,7 +44,7 @@ if [ -r "$ENV_FILE" ]; then
   . "$ENV_FILE"
 fi
 DB_URL_FILE="${NEWME_DB_URL_FILE:-/etc/newme/migration-db.url}"
-BACKUP_DIR="${BACKUP_DIR:-/root/claude-ops-backups/db-daily}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/newme-db}"
 KEY_FILE="${BACKUP_KEY_FILE:-/etc/newme/backup-encryption.key}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 KEEP_MIN="${KEEP_MIN:-7}"
@@ -116,6 +116,24 @@ if [ "${#ALL[@]}" -gt "$KEEP_MIN" ]; then
       backup_log "pruned $(basename "$old")"
     fi
   done
+fi
+
+# Pull copy for the NAS (encrypted files only; the NAS never gets a login that can read the 0700 directory).
+PULL_EXPORT_DIR="${PULL_EXPORT_DIR:-/var/backups/newme-db-pull}"
+PULL_EXPORT_GROUP="${PULL_EXPORT_GROUP-newme-nas-pull}"
+if [ -d "$PULL_EXPORT_DIR" ]; then
+  for f in "$OUT" "$OUT.counts.tsv" "$OUT.sha256"; do
+    install -m 0640 "$f" "$PULL_EXPORT_DIR/$(basename "$f")" || backup_die "could not copy $(basename "$f") to the NAS pull directory" 1
+  done
+  if [ -n "$PULL_EXPORT_GROUP" ] && getent group "$PULL_EXPORT_GROUP" >/dev/null 2>&1; then
+    chgrp "$PULL_EXPORT_GROUP" "$PULL_EXPORT_DIR"/newme-prod-* || backup_die "could not set the group of the NAS pull copy" 1
+  fi
+  # Mirror the local retention: whatever the main directory no longer has is removed from the pull copy.
+  for p in "$PULL_EXPORT_DIR"/newme-prod-*; do
+    [ -e "$p" ] || continue
+    [ -e "$BACKUP_DIR/$(basename "$p")" ] || rm -f -- "$p"
+  done
+  backup_log "NAS pull copy updated"
 fi
 
 SYNC_RC=0

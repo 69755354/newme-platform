@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/daily-funnel-snapshot (23:50 Asia/Dubai, daily)
+# STATUS: enable
+# install and enable
+
+[Timer]
+OnCalendar=*-*-* 23:50:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@daily-funnel-snapshot.service
+
+[Install]
+WantedBy=timers.target

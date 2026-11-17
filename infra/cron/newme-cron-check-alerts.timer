@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/check-alerts (09:20 Asia/Dubai, daily)
+# STATUS: route-disabled
+# NEVER install: the route is disabled in code; see schedule.json
+
+[Timer]
+OnCalendar=*-*-* 09:20:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@check-alerts.service
+
+[Install]
+WantedBy=timers.target

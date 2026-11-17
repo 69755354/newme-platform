@@ -1,3 +1,5 @@
+> S17 更新：告警改为 WhatsApp 商业接口（发送器 `infra/alerts/newme-whatsapp-alert.sh`），备份目录挪到 /var/backups/newme-db，NAS 改为主动拉取，新增定时任务单元 `infra/cron/`。详见 `docs/runbooks/s17-ops-readiness.md`。Telegram 仅作为可选渠道保留。
+
 # 监控、告警、日志与备份运维手册（S7）
 
 适用范围：生产服务器（app.newme.ae）。本文件只描述仓库里的资产如何工作、出事怎么办；主机上的安装步骤在发布协调员手里的 `S7-INSTALL.md`。
@@ -7,16 +9,16 @@
 
 | 故障 | 谁发现 | 多久 | 通知谁 |
 |---|---|---|---|
-| 整台服务器 / 证书 / 域名 / nginx 挂了 | NAS 上的外部探测 `infra/uptime/external-probe.sh` | 每分钟，连续 2 次失败 | Telegram 告警群 |
-| 本机探测自己卡住不跑了 | `l0-watchdog.sh`（每分钟，独立于探测的锁） + Sentry 定时签到“漏签” | 7 分钟 | Telegram 告警群 + Sentry |
-| 线上出现任何**新**报错（服务端或浏览器） | Sentry 规则“Any NEW production error” | 5 分钟内 | 团队邮件 + 现有 Telegram 转发 |
+| 整台服务器 / 证书 / 域名 / nginx 挂了 | NAS 上的外部探测 `infra/uptime/external-probe.sh` | 每分钟，连续 2 次失败 | WhatsApp 告警（Sam + Tanya 个人号） |
+| 本机探测自己卡住不跑了 | `l0-watchdog.sh`（每分钟，独立于探测的锁） + Sentry 定时签到“漏签” | 7 分钟 | WhatsApp 告警（Sam + Tanya 个人号） + Sentry |
+| 线上出现任何**新**报错（服务端或浏览器） | Sentry 规则“Any NEW production error” | 5 分钟内 | 团队邮件 + 现有 Hermes 转发 |
 | Meta 线索接口失败 | 每次失败都写“原因代码”到统一日志并进 Sentry | 实时 | 同上 |
-| Meta 线索与系统入库对不上 | 每日对账 `newme-meta-reconcile.timer` | 每天 06:40（迪拜） | Telegram 告警群 |
-| 生产登录→打开线索列表→打开一条线索→退出这条链路坏了 | 每日巡检 `scripts/synthetic-journey.mjs`（生产模式，不写业务数据；发布进行中自动跳过） | 每天 | Telegram 告警群（成功也发一条，连续两天没收到“通过”本身就是告警） |
-| 完整流程（分配等写操作）坏了 | 同一脚本的预发布模式（只在预发布跑） | 每天 | Telegram 告警群 |
-| 数据库备份失败 / NAS 没收到（任何失败路径） | `newme-db-backup.service`：脚本自己退出前告警 + systemd 的 `OnFailure` 兜底 | 每天 01:30（迪拜） | Telegram 告警群 |
-| 备份定时器根本没跑 / 最新备份超过 26 小时 | `newme-backup-freshness.timer` | 每小时 | Telegram 告警群 |
-| 备份其实恢复不出来 / 超过 35 天没有演练通过 | 每月恢复演练（本机一次性数据库；失败同样双重告警）+ 每小时新鲜度检查里的 35 天检查 | 每月 3 号 | Telegram 告警群 |
+| Meta 线索与系统入库对不上 | 每日对账 `newme-meta-reconcile.timer` | 每天 06:40（迪拜） | WhatsApp 告警（Sam + Tanya 个人号） |
+| 生产登录→打开线索列表→打开一条线索→退出这条链路坏了 | 每日巡检 `scripts/synthetic-journey.mjs`（生产模式，不写业务数据；发布进行中自动跳过） | 每天 | WhatsApp 告警（Sam + Tanya 个人号）（成功也发一条，连续两天没收到“通过”本身就是告警） |
+| 完整流程（分配等写操作）坏了 | 同一脚本的预发布模式（只在预发布跑） | 每天 | WhatsApp 告警（Sam + Tanya 个人号） |
+| 数据库备份失败 / NAS 没收到（任何失败路径） | `newme-db-backup.service`：脚本自己退出前告警 + systemd 的 `OnFailure` 兜底 | 每天 01:30（迪拜） | WhatsApp 告警（Sam + Tanya 个人号） |
+| 备份定时器根本没跑 / 最新备份超过 26 小时 | `newme-backup-freshness.timer` | 每小时 | WhatsApp 告警（Sam + Tanya 个人号） |
+| 备份其实恢复不出来 / 超过 35 天没有演练通过 | 每月恢复演练（本机一次性数据库；失败同样双重告警）+ 每小时新鲜度检查里的 35 天检查 | 每月 3 号 | WhatsApp 告警（Sam + Tanya 个人号） |
 
 ## 2. Sentry 定时签到为什么 10 月 27 日之后断了
 
@@ -28,7 +30,7 @@
 - 修复（都在仓库里）：
   1. `incident-capture.sh` 一开始就关闭继承来的描述符，并整体限时 90 秒；
   2. `l0-composite-probe.sh` 整体限时 100 秒（小于 cron 的 2 分钟间隔），并在每次跑完后写心跳文件 `/run/newme-l0.heartbeat`；
-  3. 新增 `l0-watchdog.sh`（每分钟，不受那把锁约束）：心跳超过 7 分钟就通过**原有告警通道**发 Telegram；
+  3. 新增 `l0-watchdog.sh`（每分钟，不受那把锁约束）：心跳超过 7 分钟就通过 WhatsApp 告警发送器发出；
   4. 外部探测（第 4 节）不依赖本机任何东西。
 - 旧告警 JAVASCRIPT-NEXTJS-A（“Cron failure: health-check”，累计两万多次）在 Sentry 里已不在未解决列表中，下一次真的漏签会重新触发。
 
@@ -73,8 +75,8 @@
 - 新鲜度检查：`newme-backup-freshness.timer` 每小时看最新一份**完整**备份（有校验和文件）是否在 26 小时内，没有或太旧就告警——专门抓“定时器本身没跑”。第一次备份成功之后再启用它。
 - 残留清理：每次启动先删除 `.work.*`（可能含**明文**转储，进程被强杀时才会留下）和 `*.part` 中超过 1 天的，不碰正在跑的。
 - 加密：AES-256，密钥文件 `/etc/newme/backup-encryption.key`（root 0600，至少 32 字节随机内容）。**密钥必须另存一份到离线的地方（不要只放在这台服务器和 NAS 上），否则备份可能无法打开。** 明文只存在于 0700 工作目录，加密后立即删除；加密文件会被当场解密校验一次（能列目录、各表行数一致）才算成功。
-- 本地保留 30 天（至少保留最新 7 份），位置 `/root/claude-ops-backups/db-daily`（目录 0700，文件 0600）。
-- 同步到 NAS：在 `/etc/newme/backup.env` 里填 `SYNC_TARGET`（rsync over ssh，经 Tailscale 主机名）和 `SYNC_SSH_KEY`。NAS 同步失败不影响本地备份，但会发告警（退出码 3）。NAS 上只需要一个只写目录的专用账号。
+- 本地保留 30 天（至少保留最新 7 份），位置 `/var/backups/newme-db`（root:root，目录 0700，文件 0600；不能放 /root，会被 ProtectHome 隐藏）。
+- 同步到 NAS（S17 起改为 NAS 主动拉取）：服务器上有只读账号 `newme-nas-pull`（仅密钥登录，authorized_keys 里 `restrict,from=,command=` 只允许 rsync 只读下载 `/var/backups/newme-db-pull`），服务器不存任何 NAS 凭据。设置脚本 `infra/backup/newme-nas-pull-setup.sh`；NAS 超过 30 小时没拉取，新鲜度检查会告警（`NAS_PULL_REQUIRED=1`）。旧的推送方式（`SYNC_TARGET`）已弃用。
 - 灾难恢复（新建一个空的 Supabase 项目后）：
   ```
   # 1. 解密（在可信机器上，密钥文件不要贴进聊天）
@@ -105,7 +107,7 @@
 ## 8. 更换 Meta 回调验证口令（只写流程，本次不执行）
 
 验证口令只在 Meta 订阅回调“验证并保存”那一步使用；日常收线索靠的是 App Secret 签名，**所以更换口令不会中断收线索**，前提是先改服务器再改 Meta 后台。
-1. 协调员用 root 备份 `/etc/newme/newme-runtime.env`（放 `/root/claude-ops-backups`，0600）。
+1. 协调员用 root 备份 `/etc/newme/newme-runtime.env`（放 `/var/backups/newme-db`，0600）。
 2. 用一段不回显的脚本生成新值并原子替换 `META_LEADGEN_VERIFY_TOKEN`；新值同时写入 root 专用文件 `/root/meta-verify-token.new`（0600），由 Sam 当面/加密渠道取走。**不要 echo，不要贴聊天。**
 3. 通过 `newme-service-control` 重启应用（走正常流程，非发版）。
 4. Sam 在 Meta 开发者后台 → Webhooks → 编辑回调，填入新口令并“验证并保存”（Meta 会调用 GET 验证，此时服务器已是新值）。

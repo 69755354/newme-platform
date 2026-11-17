@@ -7,7 +7,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=newme-backup-lib.sh
 . "${BACKUP_LIB:-$HERE/newme-backup-lib.sh}"
-BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
+BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/usr/local/libexec/newme/newme-whatsapp-alert.sh}"
 unit="${1:-unknown}"
 case "$unit" in
   newme-db-backup.service) BACKUP_ALERT_KEY=db-backup ;;

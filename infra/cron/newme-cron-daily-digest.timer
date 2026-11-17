@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/daily-digest (09:00 Asia/Dubai, daily)
+# STATUS: after-flag
+# install only together with DAILY_DIGEST_ENABLED=true and Sam approval; see S7-INSTALL.md
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@daily-digest.service
+
+[Install]
+WantedBy=timers.target

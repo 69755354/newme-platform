@@ -16,5 +16,18 @@ UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
-ProtectSystem=full
-ReadWritePaths=/root/claude-ops-backups
+# The backup directory lives under /var/backups, not /root: ProtectHome=true hides /root, /home and
+# /run/user, and a ReadWritePaths entry there cannot bring them back (S7 review, Codex P1).
+# ProtectSystem=strict makes everything else read-only; these are the only writable places. The "-"
+# entries may be missing until the NAS pull account and the first alert exist.
+ProtectSystem=strict
+ReadWritePaths=/var/backups/newme-db -/var/backups/newme-db-pull -/var/lib/newme-alerts
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

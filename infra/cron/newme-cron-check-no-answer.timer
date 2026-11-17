@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/check-no-answer (08:10 Asia/Dubai, daily)
+# STATUS: enable
+# install and enable
+
+[Timer]
+OnCalendar=*-*-* 08:10:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@check-no-answer.service
+
+[Install]
+WantedBy=timers.target

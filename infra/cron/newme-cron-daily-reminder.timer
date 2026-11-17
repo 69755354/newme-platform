@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/daily-reminder (08:00 Asia/Dubai, daily)
+# STATUS: enable
+# install and enable
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@daily-reminder.service
+
+[Install]
+WantedBy=timers.target

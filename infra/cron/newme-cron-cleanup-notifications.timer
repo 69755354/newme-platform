@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/cleanup-notifications (09:02 Asia/Dubai, daily)
+# STATUS: hermes-owned
+# NOT installed: Hermes already calls this endpoint at the same time; see schedule.json
+
+[Timer]
+OnCalendar=*-*-* 09:02:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@cleanup-notifications.service
+
+[Install]
+WantedBy=timers.target

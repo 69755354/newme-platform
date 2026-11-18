@@ -7,6 +7,9 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/usr/local/bin/newme-external-probe.sh
 Environment=UPTIME_ENV_FILE=/etc/newme-uptime.env
+# The alert sender keeps its "already alerted" state here (persistent and writable under ProtectSystem=strict;
+# PrivateTmp would lose a /tmp fallback after every run and the RECOVERED message would never be sent).
+Environment=ALERT_STATE_DIR=/var/lib/newme-uptime/alerts
 TimeoutStartSec=45
 NoNewPrivileges=true
 ProtectSystem=strict

@@ -293,16 +293,25 @@ export async function sendTelegram(env, text) {
 
 /**
  * S17: alerts go to WhatsApp through the shared sender (newme-whatsapp-alert.sh); ALERT_CHANNEL=telegram keeps the
- * old path. A failed run is a "failure" event, a passing run only a "recovery" (sent only if a failure was open),
- * unless SYNTH_NOTIFY_PASS=1 asks for a daily "passed" note. Returns true only when delivery succeeded.
+ * old path. The alert key carries the monitored environment (synthetic-journey-production / -staging), so one
+ * environment can neither recover nor suppress the other's incident. A failed run is a "failure" event; a passing run
+ * always goes through "recovery" first (it closes an open incident and sends only if one was open), and
+ * SYNTH_NOTIFY_PASS=1 then adds a plain "info" note. Returns true only when every delivery succeeded.
  */
 export async function sendAlert(env, text, ok) {
   if ((env.ALERT_CHANNEL || "whatsapp") === "telegram") return sendTelegram(env, text);
   const sender = env.ALERT_SENDER || "/usr/local/libexec/newme/newme-whatsapp-alert.sh";
-  const event = ok ? (env.SYNTH_NOTIFY_PASS === "1" ? "info" : "recovery") : "failure";
-  const r = spawnSync(sender, ["synthetic-journey", event, text], { env, encoding: "utf8", timeout: 120_000 });
-  if (r.status !== 0) console.error(`alert sender exited ${r.status ?? "without a status"}: ${(r.stderr || "").trim().slice(0, 200)}`);
-  return r.status === 0;
+  const key = `synthetic-journey-${(env.SYNTH_MODE?.trim() || "production").toLowerCase() === "staging" ? "staging" : "production"}`;
+  const events = ok ? (env.SYNTH_NOTIFY_PASS === "1" ? ["recovery", "info"] : ["recovery"]) : ["failure"];
+  let delivered = true;
+  for (const event of events) {
+    const r = spawnSync(sender, [key, event, text], { env, encoding: "utf8", timeout: 120_000 });
+    if (r.status !== 0) {
+      delivered = false;
+      console.error(`alert sender exited ${r.status ?? "without a status"}: ${(r.stderr || "").trim().slice(0, 200)}`);
+    }
+  }
+  return delivered;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

@@ -204,12 +204,14 @@ function freshness(extra, { localAgeH = 1, pullAgeH = null } = {}) {
   return { ...r, b };
 }
 
-test("freshness: the local-backup recovery message is sent before, and is not skipped by, a NAS problem", () => {
-  const r = freshness({ NAS_PULL_REQUIRED: "1" }, { pullAgeH: 40 });
-  const calls = r.b.calls();
-  assert.ok(calls.indexOf("alert db-backup-freshness recovery") >= 0, calls);
-  assert.ok(calls.indexOf("alert db-backup-freshness recovery") < calls.indexOf("alert nas-pull-freshness failure"));
-  assert.equal((calls.match(/failure/g) ?? []).length, 1, "only one failure message");
+test("freshness: the recovery message waits for every fatal check; a stale drill keeps the failure open", () => {
+  const ok = freshness({ NAS_PULL_REQUIRED: "1" }, { pullAgeH: 40 });
+  assert.equal(ok.status, 0);
+  assert.ok(ok.b.calls().includes("alert db-backup-freshness recovery"), "recovery after all checks passed");
+  assert.equal((ok.b.calls().match(/failure/g) ?? []).length, 1, "only the NAS failure message");
+  const stale = freshness({ DRILL_REQUIRED: "1" }, { pullAgeH: null });
+  assert.equal(stale.status, 1, "no drill has passed: the unit fails");
+  assert.ok(!stale.b.calls().includes("alert db-backup-freshness recovery"), "no recovery while the unit is failing");
 });
 
 test("freshness: NAS pull is not checked until NAS_PULL_REQUIRED=1", () => {

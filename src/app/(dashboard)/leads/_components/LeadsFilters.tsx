@@ -137,9 +137,10 @@ export function LeadsFilters({
         {PIPELINE_STAGES.map(s => <option key={s.key} value={s.key}>{t(`stageLabels.${s.key}`)}</option>)}
       </select>
       <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}
-        className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
+        className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[140px]">
         <option value="all">{t("leads.allSources")}</option>
         {sources.map(src => <option key={src} value={src}>{t(`sourceLabels.${src}`) || src}</option>)}
+        <option value="whatsapp_ad">{t("whatsappAds.filterLabel")}</option>
       </select>
       <select value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">

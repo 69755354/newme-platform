@@ -6,6 +6,7 @@ import { logger, genReqId } from "@/lib/logger";
 import { moneyRpcFailure } from "@/lib/money-rpc.mjs";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmWonForQuotation } from "@/lib/meta-crm-events";
+import { enqueueWhatsAppPurchaseForQuotation } from "@/lib/whatsapp-capi.mjs";
 import type { Json } from "@/types/database";
 
 /**
@@ -190,6 +191,7 @@ export async function POST(
 
     // Best-effort Meta CRM "Won" feedback once the lead is committed as won.
     await enqueueMetaCrmWonForQuotation(supabaseAdmin, quotationId);
+    await enqueueWhatsAppPurchaseForQuotation(supabaseAdmin, quotationId);
 
     // Revalidate cached pages to reflect new contract
     revalidatePath("/quotes");

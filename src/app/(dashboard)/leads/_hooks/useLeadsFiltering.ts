@@ -43,6 +43,7 @@ import { useMemo } from "react";
 import { Lead } from "./useLeadsData";
 import { PIPELINE_STAGES } from "../_utils/constants";
 import { daysSince } from "../_utils/format";
+import { WHATSAPP_AD_FILTER, isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 
 export type StageTotal = { count: number; value: number };
 
@@ -84,7 +85,8 @@ export function useLeadsFiltering({
     let result = [...leads];
     if (stageFilter !== "all")
       result = result.filter((l) => (l.final_status || l.stage) === stageFilter);
-    if (sourceFilter !== "all") result = result.filter((l) => l.source === sourceFilter);
+    if (sourceFilter === WHATSAPP_AD_FILTER) result = result.filter((l) => isWhatsAppAdLead(l));
+    else if (sourceFilter !== "all") result = result.filter((l) => l.source === sourceFilter);
     if (statusFilter !== "all") result = result.filter((l) => l.lead_status === statusFilter);
     if (qualityFilter !== "all") result = result.filter((l) => l.quality === qualityFilter);
     if (probabilityFilter !== null)

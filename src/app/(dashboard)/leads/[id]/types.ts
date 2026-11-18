@@ -67,6 +67,11 @@ export interface Lead {
   hold_since: string | null;
   source_platform: string | null;
   source_channel: string | null;
+  ctwa_clid?: string | null;
+  wa_first_inbound_at?: string | null;
+  wa_first_reply_at?: string | null;
+  wa_ad_headline?: string | null;
+  wa_ad_source_url?: string | null;
   campaign_id: string | null;
   campaign_name: string | null;
   adset_id: string | null;

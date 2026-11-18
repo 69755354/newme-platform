@@ -94,6 +94,7 @@ function route(w, role = "sales") {
     "@/lib/meta-crm-events": {
       enqueueMetaCrmEventForLead: async (_db, _id, key) => { w.state.meta.push(key); },
     },
+    "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppCapiForProgress: async () => "skipped" },
     "@/lib/request-auth-context": {
       applyRequestAuthCookies: (_c, r) => r,
       getRequestAuthContext: async () => ({ supabase: w.supabase, user: { id: SALES }, role }),

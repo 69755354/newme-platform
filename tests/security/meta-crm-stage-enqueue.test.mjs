@@ -36,6 +36,13 @@ const nextServer = {
   NextResponse: { json: (body, init = {}) => ({ body, status: init.status ?? 200, json: async () => body }) },
 };
 
+// Click-to-WhatsApp feedback is queued beside the form feedback; these stubs record what the routes ask for.
+const waCalls = [];
+const waStub = {
+  enqueueWhatsAppCapiForProgress: async (_db, leadId, key) => { waCalls.push(["progress", leadId, key]); return "queued"; },
+  enqueueWhatsAppPurchaseForLead: async (_db, leadId) => { waCalls.push(["purchase", leadId]); return "queued"; },
+};
+
 function loadStageRoute({ rpcResult, enqueued }) {
   const chain = (result) => {
     const c = { select: () => c, eq: () => c, single: async () => result, maybeSingle: async () => result,
@@ -60,6 +67,7 @@ function loadStageRoute({ rpcResult, enqueued }) {
     },
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "contacted" }, { key: "requirement_confirmed" }] },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async (_db, lead, stage) => { enqueued.push([lead.id, stage]); return "queued"; } },
+    "@/lib/whatsapp-capi.mjs": waStub,
     "@/lib/supabase-admin": { supabaseAdmin: admin },
     "next/server": nextServer,
   });
@@ -134,6 +142,7 @@ function loadMilestoneRoute({ queued, insertError = null, existing = [] }) {
     "@/lib/first-contact-gate.mjs": { isAssessedQuality: () => true, isCompleteContact: () => true },
     "@/lib/milestone-stage-advance.mjs": milestoneStageAdvance,
     "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async (db, leadId, key) => { queued.push([db.tag, leadId, key]); return "queued"; } },
+    "@/lib/whatsapp-capi.mjs": waStub,
     "next/server": nextServer,
   });
 }
@@ -212,4 +221,24 @@ test("a quotation converted to a contract reports Won only for a committed won M
   }
   const convert = fsSync.readFileSync(path.join(repoRoot, "src/app/api/quotations/[id]/convert/route.ts"), "utf8");
   assert.ok(convert.indexOf("enqueueMetaCrmWonForQuotation(supabaseAdmin, quotationId)") > convert.indexOf("if (rpcErr)"));
+});
+
+// ── S18: the same committed events feed the click-to-WhatsApp outbox ──
+test("a committed stage move reports its stage to the WhatsApp feedback queue; a replay or mismatch does not", async () => {
+  waCalls.length = 0;
+  const committed = loadStageRoute({ rpcResult: { id: "lead-1", stage: "requirement_confirmed" }, enqueued: [] });
+  assert.equal((await patch(committed, "requirement_confirmed")).status, 200);
+  assert.deepEqual(waCalls, [["progress", "lead-1", "requirement_confirmed"]]);
+  waCalls.length = 0;
+  for (const rpcResult of [{ id: "lead-1", stage: "contacted", idempotent_replay: true }, { id: "lead-1", stage: "contacted" }, { id: "lead-2", stage: "requirement_confirmed" }]) {
+    await patch(loadStageRoute({ rpcResult, enqueued: [] }), "requirement_confirmed");
+  }
+  assert.deepEqual(waCalls, []);
+});
+
+test("completing a milestone also reports it to the WhatsApp feedback queue", async () => {
+  waCalls.length = 0;
+  const route = loadMilestoneRoute({ queued: [] });
+  assert.equal((await completeMilestone(route, "requirements")).status, 200);
+  assert.deepEqual(waCalls, [["progress", "lead-1", "requirements"]]);
 });

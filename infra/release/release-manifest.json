@@ -234,6 +234,12 @@
       "version": "20261112100100",
       "file": "20261112100100_notification_warning_type.sql",
       "sha256": "dc3f19f12811f4682f1570c406162582dd5547d61d6c00e5672e47ab7375d5be"
+    },
+    {
+      "$comment": "Click-to-WhatsApp ad leads (S18): additive lead columns, three server-only tables and one service-role writer. Inert until the WhatsApp webhook is enabled.",
+      "version": "20261118200000",
+      "file": "20261118200000_whatsapp_ctwa_leads.sql",
+      "sha256": "ec95ce21ec6ddbb938b250287893dcc5eeef8c95dda29359ca6a15ab9352100d"
     }
   ],
   "companions": [

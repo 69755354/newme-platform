@@ -36,6 +36,8 @@ export interface Lead {
   campaign_name: string | null; source_platform: string | null;
   quality: string | null;
   poor_reason: string | null;
+  source_channel?: string | null;
+  ctwa_clid?: string | null;
 }
 
 interface SalesUser {

@@ -11,6 +11,7 @@ import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
+import { enqueueWhatsAppCapiForProgress, enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
 
 const VALID_STAGES = new Set([
   ...PIPELINE_STAGES.map((stage) => stage.key),
@@ -120,6 +121,11 @@ export async function PATCH(
         && typeof committed.stage === "string" ? committed.stage : null;
       if (!tagError && tag?.meta_leadgen_id && committedStage === stage) {
         await enqueueMetaCrmStageEvent(supabaseAdmin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, committedStage);
+      }
+      // Click-to-WhatsApp leads report to the business-messaging dataset instead.
+      if (committedStage && committedStage === stage) {
+        if (committedStage === "won") await enqueueWhatsAppPurchaseForLead(supabaseAdmin, leadId);
+        else await enqueueWhatsAppCapiForProgress(supabaseAdmin, leadId, committedStage);
       }
     } catch { /* tracking must never fail a stage change */ }
 

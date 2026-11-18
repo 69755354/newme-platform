@@ -24,6 +24,7 @@ import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
+import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
 import LeadSalesProcess from "./LeadSalesProcess";
 import LeadTimeline from "./LeadTimeline";
 import LeadFoldingPanel from "./LeadFoldingPanel";
@@ -582,6 +583,7 @@ export default function LeadDetailPage() {
             reassigning={reassigning}
             transferHistory={transferHistory}
           />
+          <LeadWhatsAppAdPanel lead={lead} t={t} />
         </aside>
 
         <main className="min-w-0 space-y-3">

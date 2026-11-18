@@ -10,6 +10,7 @@ import { allowedSetContractStatuses } from "@/lib/contract-status-capabilities.m
 import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmWonForContract } from "@/lib/meta-crm-events";
+import { enqueueWhatsAppPurchaseForContract } from "@/lib/whatsapp-capi.mjs";
 import { ensurePendingApproval } from "@/lib/contract-approval-rows.mjs";
 
 /**
@@ -301,6 +302,15 @@ export async function PATCH(
         logger.warn(
           { err: metaErr, request_id, operation: "contract_set_status", contract_id: contractId },
           "[API Contracts Detail] Meta Won feedback not queued",
+        );
+      }
+      // Click-to-WhatsApp leads report a Purchase (contract amount) to the business-messaging dataset.
+      try {
+        await enqueueWhatsAppPurchaseForContract(supabaseAdmin, contractId);
+      } catch (waErr) {
+        logger.warn(
+          { err: waErr, request_id, operation: "contract_set_status", contract_id: contractId },
+          "[API Contracts Detail] WhatsApp Purchase feedback not queued",
         );
       }
     }

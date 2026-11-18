@@ -15,7 +15,7 @@ export interface PilotConversation {
   pending_since: string | null; last_inbound_at: string | null; last_outbound_at: string | null;
   observed_response_seconds: number[];
 }
-export function verifyWhatsAppSignature(bytes: Uint8Array, signature: string | null, secret: string): boolean;
+export function verifyWhatsAppSignature(bytes: Uint8Array, signature: string | null, secret: string | string[] | undefined): boolean;
 export function isWhatsAppEventFresh(time: number, now?: number): boolean;
 export function extractWhatsAppEvents(payload: unknown, channels: PilotChannel[], contactSalt: string, now?: number): PilotEvent[];
 export function summarizeWhatsAppEvents(events: PilotEvent[]): PilotConversation[];

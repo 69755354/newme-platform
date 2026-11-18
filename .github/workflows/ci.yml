@@ -689,6 +689,13 @@ jobs:
           MODE=history REPLAY_STOP_BEFORE=20261104110000 PGDATABASE=pre_s2 bash scripts/replay-migrations.sh
           PRE_S2_DATABASE=pre_s2 python3 tests/database/policy-equivalence.py
 
+      # S18 click-to-WhatsApp ad leads: the one database writer, run on a copy of the replayed
+      # `history` database. The script rolls its scenarios back.
+      - name: WhatsApp ad lead writer (S18)
+        run: |
+          createdb --template history newme_whatsapp_ctwa_test
+          PGDATABASE=newme_whatsapp_ctwa_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s18-whatsapp-ctwa.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

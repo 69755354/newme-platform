@@ -292,7 +292,8 @@ test("migration replay job gates on a negative control and never reaches product
   // run in the repository into a coin flip on which image the job landed.
   assert.match(job, /"psql \(PostgreSQL\) 16\.14 \(Ubuntu 16\.14-1\.pgdg24\.04\+"\*\)/);
   assert.match(job, /"psql \(PostgreSQL\) 16\.15 \(Ubuntu 16\.15-1\.pgdg24\.04\+"\*\)/);
-  assert.match(job, /accepted: 16\.14 or 16\.15 from pgdg24\.04/);
+  assert.match(job, /"psql \(PostgreSQL\) 16\.16 \(Ubuntu 16\.16-1\.pgdg24\.04\+"\*\)/);
+  assert.match(job, /accepted: 16\.14, 16\.15 or 16\.16 from pgdg24\.04/);
   // The set stays closed: no third minor, and no wildcard over the minor.
   assert.doesNotMatch(job, /16\.1\[45\]|16\.\*/);
   assert.doesNotMatch(job, /\bapt(?:-get)?\s+(?:update|install)\b/);

@@ -575,6 +575,11 @@
           "name": "s16-notification-warning-type-present",
           "expect": true,
           "sql": "SELECT (SELECT count(*)=1 FROM pg_constraint WHERE conrelid=to_regclass('public.notifications') AND conname='notifications_type_check' AND contype='c' AND convalidated AND pg_get_constraintdef(oid) LIKE '%''warning''::%' AND pg_get_constraintdef(oid) LIKE '%''contract_created''::%' AND pg_get_constraintdef(oid) LIKE '%''team_member_added''::%')"
+        },
+        {
+          "name": "s18-whatsapp-ctwa-leads-present",
+          "expect": true,
+          "sql": "SELECT (SELECT count(*)=3 AND bool_and(c.relrowsecurity) AND bool_and(NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE')) AND bool_and(NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE')) FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN ('whatsapp_conversations','whatsapp_message_events','whatsapp_capi_events') AND c.relkind='r') AND (SELECT count(*)=1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.record_whatsapp_ad_event(jsonb,boolean)') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) AND (SELECT count(*)=5 FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name IN ('ctwa_clid','wa_first_inbound_at','wa_first_reply_at','wa_ad_headline','wa_ad_source_url'))"
         }
       ]
     }

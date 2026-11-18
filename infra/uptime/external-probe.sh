@@ -3,13 +3,17 @@
 # Runs OUTSIDE the production server (company NAS over Tailscale, or any small
 # always-on machine) so a dead server, expired certificate, broken DNS or dead
 # nginx is noticed by something that does not die with it. POSIX sh on purpose:
-# NAS shells are often busybox. No secrets live in this file; the Telegram token
-# and group id come from an env file readable only by its owner.
+# NAS shells are often busybox. No secrets live in this file; alert settings come from
+# an env file readable only by its owner.
+#
+# Alerts (S17): default channel is WhatsApp through newme-whatsapp-alert.sh (ALERT_SENDER, installed
+# next to this script, configured by its own /etc/newme/alerts.env). ALERT_CHANNEL=telegram keeps the
+# old Telegram path as an option. Both treat an HTTP error answer as "not delivered".
 #
 #   Config (UPTIME_ENV_FILE, default /etc/newme-uptime.env, chmod 600):
 #     NEWME_BASE_URL=https://app.newme.ae
-#     TELEGRAM_BOT_TOKEN=...            (bot that is a member of the alert group)
-#     TELEGRAM_CHAT_ID=-100...          (the alert GROUP: Sam + backup)
+#     ALERT_SENDER=/usr/local/bin/newme-whatsapp-alert.sh   (default channel: WhatsApp)
+#     ALERT_CHANNEL=telegram            (optional) with TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
 #     FAIL_THRESHOLD=2                  (consecutive failed minutes before alerting)
 #     STATE_DIR=/var/lib/newme-uptime
 #     DAILY_HEARTBEAT_HOUR_UTC=3        (optional: one "still watching" message a day;
@@ -37,13 +41,23 @@ case "$THRESHOLD" in ''|*[!0-9]*) echo "FAIL_THRESHOLD must be a number" >&2; ex
 case "$BASE_URL" in https://*) ;; *) echo "NEWME_BASE_URL must be https" >&2; exit 2;; esac
 mkdir -p "$STATE_DIR" || { echo "cannot create STATE_DIR" >&2; exit 2; }
 
+ALERT_CHANNEL="${ALERT_CHANNEL:-whatsapp}"
+ALERT_SENDER="${ALERT_SENDER:-/usr/local/bin/newme-whatsapp-alert.sh}"
+
 tg_send() {
   # The token is passed through a curl config on stdin so it never appears in
   # the process list; the message body is plain text.
   [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] || { echo "telegram not configured" >&2; return 1; }
   printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" |
-    curl -sS -m 15 -o /dev/null -K - --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$1" \
+    curl --fail -sS -m 15 -o /dev/null -K - --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$1" \
       -w '' >/dev/null 2>&1
+}
+
+# notify <failure|recovery|info> <text>: returns 0 only when the message was delivered.
+notify() {
+  if [ "$ALERT_CHANNEL" = telegram ]; then tg_send "$2"; return; fi
+  [ -x "$ALERT_SENDER" ] || { echo "alert sender not found: $ALERT_SENDER" >&2; return 1; }
+  "$ALERT_SENDER" uptime-probe "$1" "$2"
 }
 
 BODY="$STATE_DIR/body.$$"
@@ -67,13 +81,13 @@ fail_count=0; alerted=0
 
 if [ "$RESULT" -eq 0 ]; then
   if [ "$alerted" = 1 ]; then
-    tg_send "恢复 / RECOVERED: app.newme.ae is reachable again. 网站已恢复访问。" || echo "recovery message not delivered" >&2
+    notify recovery "恢复 / RECOVERED: app.newme.ae is reachable again. 网站已恢复访问。" || echo "recovery message not delivered" >&2
   fi
   fail_count=0; alerted=0
 else
   fail_count=$((fail_count + 1))
   if [ "$fail_count" -ge "$THRESHOLD" ] && [ "$alerted" = 0 ]; then
-    if tg_send "故障 / DOWN: app.newme.ae — $FAIL_REASON (failed ${fail_count} checks in a row). 网站检查连续失败，请立即查看。"; then
+    if notify failure "故障 / DOWN: app.newme.ae — $FAIL_REASON (failed ${fail_count} checks in a row). 网站检查连续失败，请立即查看。"; then
       alerted=1
     else
       echo "alert not delivered; will retry next run" >&2
@@ -85,7 +99,7 @@ printf 'fail_count=%s\nalerted=%s\n' "$fail_count" "$alerted" > "$STATE_FILE"
 # Dead-man heartbeat: proves this watcher itself is alive.
 if [ -n "$HEARTBEAT_HOUR" ] && [ "$(expr "$NOW_HOUR" + 0)" -eq "$(expr "$HEARTBEAT_HOUR" + 0)" ] && [ "$RESULT" -eq 0 ]; then
   if [ "$(cat "$STATE_DIR/heartbeat-day" 2>/dev/null)" != "$TODAY" ]; then
-    tg_send "巡检正常 / OK: external uptime probe is alive, app.newme.ae healthy. 外部探测运行正常。" && printf '%s' "$TODAY" > "$STATE_DIR/heartbeat-day"
+    notify info "巡检正常 / OK: external uptime probe is alive, app.newme.ae healthy. 外部探测运行正常。" && printf '%s' "$TODAY" > "$STATE_DIR/heartbeat-day"
   fi
 fi
 

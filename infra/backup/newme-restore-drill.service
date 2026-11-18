@@ -15,4 +15,4 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
-ReadWritePaths=/root/claude-ops-backups
+ReadWritePaths=/var/backups/newme-db -/var/lib/newme-alerts

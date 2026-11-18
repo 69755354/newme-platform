@@ -644,6 +644,11 @@ export const translations = {
         reminder: "Task Reminder",
         warning: "No-answer Alert",
         contract_pending_approval: "Pending Approval",
+        // S17: remaining types the database accepts
+        follow_up_reminder: "Follow-up Reminder",
+        contract_approved: "Contract Approved",
+        contract_rejected: "Contract Rejected",
+        contract_superseded: "Contract Superseded",
       },
       // ── S6 (OS fix) additions ──
       titleNewLead: "New lead: ",
@@ -2560,6 +2565,11 @@ export const translations = {
         reminder: "待办提醒",
         warning: "未接听提醒",
         contract_pending_approval: "待审批",
+        // S17：数据库允许的其余类型
+        follow_up_reminder: "跟进提醒",
+        contract_approved: "合同已批准",
+        contract_rejected: "合同被驳回",
+        contract_superseded: "合同已被取代",
       },
       // ── S6 (OS fix) additions ──
       titleNewLead: "新线索：",

@@ -40,6 +40,11 @@ const TYPE_ICONS: Record<string, string> = {
   reminder: "⏰",
   warning: "📵",
   contract_pending_approval: "📝",
+  // S17: every type the database constraint accepts needs an icon
+  follow_up_reminder: "⏰",
+  contract_approved: "✅",
+  contract_rejected: "❌",
+  contract_superseded: "🔁",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -61,6 +66,10 @@ const TYPE_LABELS: Record<string, string> = {
   reminder: "notifications.types.reminder",
   warning: "notifications.types.warning",
   contract_pending_approval: "notifications.types.contract_pending_approval",
+  follow_up_reminder: "notifications.types.follow_up_reminder",
+  contract_approved: "notifications.types.contract_approved",
+  contract_rejected: "notifications.types.contract_rejected",
+  contract_superseded: "notifications.types.contract_superseded",
 };
 
 function getRelatedLink(type: string, relatedType: string | null, relatedId: string | null): string | null {

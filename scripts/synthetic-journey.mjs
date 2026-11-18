@@ -282,13 +282,36 @@ export function formatReport(result, config) {
   return `${result.critical ? "【严重】CRITICAL " : ""}每日巡检失败 / ${label} FAILED${where} at step "${result.failedStep}". ${result.error ?? ""}`.trim();
 }
 
-async function sendTelegram(env, text) {
+export async function sendTelegram(env, text) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return false;
   const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text }), signal: AbortSignal.timeout(15_000),
   });
   return response.ok;
+}
+
+/**
+ * S17: alerts go to WhatsApp through the shared sender (newme-whatsapp-alert.sh); ALERT_CHANNEL=telegram keeps the
+ * old path. The alert key carries the monitored environment (synthetic-journey-production / -staging), so one
+ * environment can neither recover nor suppress the other's incident. A failed run is a "failure" event; a passing run
+ * always goes through "recovery" first (it closes an open incident and sends only if one was open), and
+ * SYNTH_NOTIFY_PASS=1 then adds a plain "info" note. Returns true only when every delivery succeeded.
+ */
+export async function sendAlert(env, text, ok) {
+  if ((env.ALERT_CHANNEL || "whatsapp") === "telegram") return sendTelegram(env, text);
+  const sender = env.ALERT_SENDER || "/usr/local/libexec/newme/newme-whatsapp-alert.sh";
+  const key = `synthetic-journey-${(env.SYNTH_MODE?.trim() || "production").toLowerCase() === "staging" ? "staging" : "production"}`;
+  const events = ok ? (env.SYNTH_NOTIFY_PASS === "1" ? ["recovery", "info"] : ["recovery"]) : ["failure"];
+  let delivered = true;
+  for (const event of events) {
+    const r = spawnSync(sender, [key, event, text], { env, encoding: "utf8", timeout: 120_000 });
+    if (r.status !== 0) {
+      delivered = false;
+      console.error(`alert sender exited ${r.status ?? "without a status"}: ${(r.stderr || "").trim().slice(0, 200)}`);
+    }
+  }
+  return delivered;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
@@ -305,7 +328,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   if (!result.ok && !result.critical && !config.onewayStage) result = await runJourney({ config });
   const text = formatReport(result, config);
   console.log(text);
-  const delivered = await sendTelegram(process.env, text).catch(() => false);
+  const delivered = await sendAlert(process.env, text, result.ok).catch(() => false);
   if (!delivered && !result.ok) console.error("alert could not be delivered");
   process.exit(result.ok ? 0 : 1);
 }

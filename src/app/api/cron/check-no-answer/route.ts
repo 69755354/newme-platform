@@ -20,6 +20,9 @@ async function handleCron(request: Request) {
     const { data: leads, error: leadsError } = await supabaseAdmin
       .from('leads')
       .select('id, assigned_to, customer_name')
+      // Only leads still being worked: archived and closed (won/lost) leads are not chased.
+      .eq('archived', false)
+      .is('final_status', null)
 
     if (leadsError) {
       return NextResponse.json({ error: leadsError.message }, { status: 500 })
@@ -35,7 +38,7 @@ async function handleCron(request: Request) {
     for (const lead of leads) {
       const { data: recentLogs, error: logsError } = await supabaseAdmin
         .from('follow_up_logs')
-        .select('id, no_answer')
+        .select('id, no_answer, created_at')
         .eq('lead_id', lead.id)
         .order('created_at', { ascending: false })
         .limit(3)
@@ -54,6 +57,21 @@ async function handleCron(request: Request) {
         .eq('id', lead.id)
 
       if (lead.assigned_to) {
+        // Idempotent: the timer runs once a day (infra/cron), so warn again only when a newer
+        // log has arrived since the last warning for this lead. If the lookup fails we cannot
+        // tell, so write nothing and let the next run decide rather than risk a duplicate.
+        const newestLogAt = recentLogs[0].created_at
+        const { data: alreadyWarned, error: warnedError } = await supabaseAdmin
+          .from('notifications')
+          .select('id')
+          .eq('user_id', lead.assigned_to)
+          .eq('type', 'warning')
+          .eq('related_id', lead.id)
+          .eq('related_type', 'lead')
+          .gte('created_at', newestLogAt)
+          .limit(1)
+        if (warnedError || (alreadyWarned && alreadyWarned.length > 0)) continue
+
         const { error: notifError } = await supabaseAdmin
           .from('notifications')
           .insert({

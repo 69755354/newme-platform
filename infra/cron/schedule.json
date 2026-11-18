@@ -1,0 +1,63 @@
+{
+  "timezone": "Asia/Dubai",
+  "auth": "header x-cron-secret must equal CRON_SECRET of the application (401/403 otherwise)",
+  "baseUrl": "http://127.0.0.1:3001 (the application port; no nginx, no TLS, no rate limit in between)",
+  "endpoints": [
+    {
+      "name": "daily-reminder",
+      "install": "enable",
+      "dubaiTime": "08:00",
+      "idempotent": true,
+      "why": "Pending tasks due today become one reminder per assignee before the sales day starts. One write per assignee per Dubai day (S17)."
+    },
+    {
+      "name": "check-no-answer",
+      "install": "enable",
+      "dubaiTime": "08:10",
+      "idempotent": true,
+      "why": "Three unanswered calls in a row warn the lead owner. Warns again only when a newer follow-up log exists (S17)."
+    },
+    {
+      "name": "daily-funnel-snapshot",
+      "install": "enable",
+      "dubaiTime": "23:50",
+      "idempotent": true,
+      "why": "End-of-day funnel counts. The route dates the snapshot with the UTC date; 23:50 Dubai is 19:50 UTC, the same calendar date, so the snapshot date equals the Dubai date. It deletes and rewrites today's rows, so reruns are safe."
+    },
+    {
+      "name": "daily-digest",
+      "install": "after-flag",
+      "dubaiTime": "09:00",
+      "idempotent": false,
+      "why": "Manager digest. The route answers Disabled until DAILY_DIGEST_ENABLED=true; enable the timer only together with the flag and Sam's approval. Not idempotent: do not run it twice a day."
+    },
+    {
+      "name": "check-overdue-installments",
+      "install": "hermes-owned",
+      "dubaiTime": "09:02",
+      "idempotent": true,
+      "why": "Hermes already calls it at 09:02 Dubai (15 of 15 days in the nginx log). Not taken over: a second caller adds nothing. The unit exists only so the day Hermes stops, this timer can replace it; it is idempotent (existing notifications are skipped, status moves once), so overlap is harmless."
+    },
+    {
+      "name": "cleanup-notifications",
+      "install": "hermes-owned",
+      "dubaiTime": "09:02",
+      "idempotent": true,
+      "why": "Hermes already calls it at 09:02 Dubai. Not taken over. Deleting rows older than 90 days is idempotent."
+    },
+    {
+      "name": "check-alerts",
+      "install": "route-disabled",
+      "dubaiTime": "09:20",
+      "idempotent": false,
+      "why": "The route is disabled in code (2026-06-27, produced 432 duplicate notifications per call). Never enable the timer until the route has deduplication and this file says so."
+    },
+    {
+      "name": "check-overdue-followups",
+      "install": "route-disabled",
+      "dubaiTime": "09:25",
+      "idempotent": false,
+      "why": "The route is disabled in code (redundant with check-alerts, no dedup). Same rule as check-alerts."
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/check-overdue-followups (09:25 Asia/Dubai, daily)
+# STATUS: route-disabled
+# NEVER install: the route is disabled in code; see schedule.json
+
+[Timer]
+OnCalendar=*-*-* 09:25:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@check-overdue-followups.service
+
+[Install]
+WantedBy=timers.target

@@ -1,6 +1,37 @@
 {
   "_note": "Temporary high/critical vulnerability exceptions. The gate requires every entry to match the current official npm audit, expire within 90 days, and carry review ownership.",
   "_audit_source": "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk",
-  "_updated": "2026-08-15",
-  "accepted": []
+  "_updated": "2026-11-18",
+  "accepted": [
+    {
+      "package": "picomatch",
+      "vuln_id": "GHSA-FC5Q-39XC-VJPF",
+      "severity": "high",
+      "risk_reason": "ReDoS in picomatch <=4.0.7 on crafted extglob patterns; patterns here come only from our own tooling configuration, never from users. Evidence checked 2026-11-18: `npm ls --omit=dev` shows the package only below @sentry/nextjs -> @rollup/* / fdir / @sentry/bundler-plugin-core, which are used by Sentry's build-time source-map upload and compile loaders (handleRunAfterProductionCompile, loaders/*). Loading `@sentry/nextjs` and calling `withSentryConfig` in a fresh Node process loads 0 modules of picomatch, glob, minimatch, fdir, tinyglobby, @rollup/* or @sentry/bundler-plugin-core; loading the Next server (`next/dist/server/next`) also loads 0 of them. Next.js itself uses its own compiled copy. The other dependents (eslint, typescript-eslint, eslint-config-next, tinyglobby) are devDependencies, absent from `next start`. No file under src/ imports them.",
+      "mitigation": "No patched picomatch exists yet (4.0.7 is the newest published version, so an override cannot fix it). Build-only exposure, production runtime never loads it. Review condition: remove this entry and add an override as soon as picomatch > 4.0.7 is published; re-check at expiry.",
+      "owner": "claude-ops (coordinator for Sam); review every Monday and on any dependency PR",
+      "expires": "2026-12-17",
+      "audit_ref": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf (npm audit source 1247710)"
+    },
+    {
+      "package": "glob",
+      "vuln_id": "GHSA-3G3M-2FJR-6PW4",
+      "severity": "high",
+      "risk_reason": "AbortSignal cancellation bypass in glob >=9 <=14.0.1 (GitHub rates it moderate; the dependency chain counts as high only because of picomatch). glob 13.0.6 is used by @sentry/bundler-plugin-core at build time on our own file lists. Evidence checked 2026-11-18: `npm ls --omit=dev` shows the package only below @sentry/nextjs -> @rollup/* / fdir / @sentry/bundler-plugin-core, which are used by Sentry's build-time source-map upload and compile loaders (handleRunAfterProductionCompile, loaders/*). Loading `@sentry/nextjs` and calling `withSentryConfig` in a fresh Node process loads 0 modules of picomatch, glob, minimatch, fdir, tinyglobby, @rollup/* or @sentry/bundler-plugin-core; loading the Next server (`next/dist/server/next`) also loads 0 of them. Next.js itself uses its own compiled copy. The other dependents (eslint, typescript-eslint, eslint-config-next, tinyglobby) are devDependencies, absent from `next start`. No file under src/ imports them.",
+      "mitigation": "Fix is glob 14.0.2 (a major version beyond @sentry/bundler-plugin-core's ^13 range); forcing it by override risks breaking the production build. Review condition: drop the exception when a @sentry/nextjs release depends on glob >=14.0.2, or at expiry.",
+      "owner": "claude-ops (coordinator for Sam); review every Monday and on any dependency PR",
+      "expires": "2026-12-17",
+      "audit_ref": "https://github.com/advisories/GHSA-3g3m-2fjr-6pw4 (npm audit source 1244013)"
+    },
+    {
+      "package": "minimatch",
+      "vuln_id": "GHSA-G3HV-75WG-M249",
+      "severity": "high",
+      "risk_reason": "Denial of service through globparts amplification in minimatch >=7 <11.0.1 (GitHub rates it moderate; counted high only through the picomatch chain). minimatch is pinned to 10.2.5 by an override and used by glob and typescript-estree on our own patterns. Evidence checked 2026-11-18: `npm ls --omit=dev` shows the package only below @sentry/nextjs -> @rollup/* / fdir / @sentry/bundler-plugin-core, which are used by Sentry's build-time source-map upload and compile loaders (handleRunAfterProductionCompile, loaders/*). Loading `@sentry/nextjs` and calling `withSentryConfig` in a fresh Node process loads 0 modules of picomatch, glob, minimatch, fdir, tinyglobby, @rollup/* or @sentry/bundler-plugin-core; loading the Next server (`next/dist/server/next`) also loads 0 of them. Next.js itself uses its own compiled copy. The other dependents (eslint, typescript-eslint, eslint-config-next, tinyglobby) are devDependencies, absent from `next start`. No file under src/ imports them.",
+      "mitigation": "Fix is minimatch 11.0.1, a major version; the existing 10.2.5 override is shared by eslint 9 and typescript-estree, so jumping to 11 needs a lint/build verification of its own. Review condition: raise the override to 11.x in a dedicated change and remove this entry, or at expiry.",
+      "owner": "claude-ops (coordinator for Sam); review every Monday and on any dependency PR",
+      "expires": "2026-12-17",
+      "audit_ref": "https://github.com/advisories/GHSA-g3hv-75wg-m249 (npm audit source 1244623)"
+    }
+  ]
 }

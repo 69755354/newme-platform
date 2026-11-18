@@ -1,6 +1,7 @@
 // RBAC: cron (x-cron-secret)
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { dubaiDate } from '@/lib/daily-digest.mjs'
 
 export async function GET(request: Request) {
   return handleCron(request)
@@ -16,9 +17,10 @@ async function handleCron(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
-    const now = new Date()
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    // "Today" is the Dubai day (UTC+4, no daylight saving), not the process timezone.
+    const today = dubaiDate()
+    const startOfDay = new Date(`${today}T00:00:00.000+04:00`)
+    const endOfDay = new Date(`${today}T23:59:59.999+04:00`)
 
     const { data: tasks, error: tasksError } = await supabaseAdmin
       .from('tasks')
@@ -59,6 +61,17 @@ async function handleCron(request: Request) {
       })
       const preview = previewItems.join('；')
       const suffix = count > 5 ? '等' : ''
+
+      // Idempotent: at most one reminder per assignee per Dubai day (timer retry, manual re-run).
+      const { data: sentToday, error: sentError } = await supabaseAdmin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', assigneeId)
+        .eq('type', 'reminder')
+        .eq('related_type', 'task')
+        .gte('created_at', startOfDay.toISOString())
+        .limit(1)
+      if (sentError || (sentToday && sentToday.length > 0)) continue
 
       const { error: notifError } = await supabaseAdmin
         .from('notifications')

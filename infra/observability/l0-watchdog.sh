@@ -8,7 +8,9 @@ set -u -o pipefail
 
 HEARTBEAT_FILE="${L0_HEARTBEAT_FILE:-/run/newme-l0.heartbeat}"
 STALE_SECONDS="${L0_STALE_SECONDS:-420}"
-ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
+# S17: alerts go to WhatsApp through the shared sender; HERMES_ALERT_STATE_SCRIPT still overrides
+# (tests, or a host that wants the old Telegram state machine back).
+ALERT_SCRIPT="${HERMES_ALERT_STATE_SCRIPT:-${NEWME_ALERT_SCRIPT:-/usr/local/libexec/newme/newme-whatsapp-alert.sh}}"
 ALERT_KEY=l0-heartbeat-stale
 NOW="${L0_WATCHDOG_NOW:-$(date +%s)}"
 

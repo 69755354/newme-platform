@@ -27,7 +27,7 @@ while [ $# -gt 0 ]; do
 done
 
 # Alert settings first so that even a configuration failure alerts.
-BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/opt/hermes-scripts/observability/hermes-alert-state-v1.sh}"
+BACKUP_ALERT_SCRIPT="${BACKUP_ALERT_SCRIPT:-/usr/local/libexec/newme/newme-whatsapp-alert.sh}"
 BACKUP_ALERT_KEY=db-restore-drill
 WORK=""
 STARTED_DB=0
@@ -85,7 +85,7 @@ if [ -r "$ENV_FILE" ]; then
   # shellcheck disable=SC1090
   . "$ENV_FILE"
 fi
-BACKUP_DIR="${BACKUP_DIR:-/root/claude-ops-backups/db-daily}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/newme-db}"
 KEY_FILE="${BACKUP_KEY_FILE:-/etc/newme/backup-encryption.key}"
 # Restore errors that are known to be harmless (matched after quoted names are
 # replaced by "X"). The pass criterion is the per-table row count, not this list.

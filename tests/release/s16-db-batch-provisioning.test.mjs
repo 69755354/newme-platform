@@ -14,10 +14,12 @@ const N=S16_EVENTS.length;
 // The live release is the one before S16: the manifest minus the S16 entries and their
 // predicates. Before the S16 migrations are in the tree the manifest already is that release.
 const live=structuredClone(manifest);
+// Later additive suffixes (each one deferred entry plus one posture predicate, appended after S16) are
+// part of the live release's future, not of S16: cut everything from S16 on.
+const predAt=manifest.posture.deferred_contract.predicates.findIndex(x=>S16_PREDICATE_NAMES.includes(x.name));
 if(at>=0){
-  if(at!==live.deferred_contract.length-N)throw new Error('the S16 migrations must be the LAST deferred entries');
-  live.deferred_contract.splice(-N);
-  live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.filter(x=>!S16_PREDICATE_NAMES.includes(x.name));
+  live.deferred_contract.splice(at);
+  live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.slice(0,predAt);
 }
 const sqls=inTree?urls.map(url=>fs.readFileSync(url,'utf8')):null;
 const candidate=structuredClone(live);
@@ -55,8 +57,8 @@ test('the S16 migrations, when present in the tree, match the pinned hashes, are
   }
   assert.ok(inTree,'both S16 migration files are part of the tree');
   S16_EVENTS.forEach((event,i)=>assert.equal(hashed(sqls[i]),event.sha256));
-  assert.deepEqual(manifest.deferred_contract.slice(at),S16_EVENTS.map(({version,file,sha256})=>({version,file,sha256})));
-  assert.deepEqual(manifest.posture.deferred_contract.predicates.slice(-N),S16_PREDICATES.map(x=>({...x})));
+  assert.deepEqual(manifest.deferred_contract.slice(at,at+N),S16_EVENTS.map(({version,file,sha256})=>({version,file,sha256})));
+  assert.deepEqual(manifest.posture.deferred_contract.predicates.slice(predAt,predAt+N),S16_PREDICATES.map(x=>({...x})));
 });
 
 test('the S16 migrations follow the repository conventions',()=>{
@@ -141,7 +143,8 @@ for(const [label,change] of [
 test('the deploy wrapper gates S16 provisioning like the other additive suffixes',()=>{
   const wrapper=fs.readFileSync(new URL('../../infra/systemd/newme-deploy.sh',import.meta.url),'utf8');
   assert.match(wrapper,/s16-db-plan\|s16-db-provision\) ;;/);
-  assert.match(wrapper,/\|s16-db-plan\|s16-db-provision>" >&2/);
+  // later additive switches (S18) are appended to the usage list after this one
+  assert.match(wrapper,/\|s16-db-plan\|s16-db-provision(?:\|[a-z0-9-]+)*>" >&2/);
   const start=wrapper.indexOf('= s16-db-plan ]');
   const block=wrapper.slice(start,wrapper.indexOf('case "$DB_TRANSITION_OPERATION" in',start));
   assert.match(block,/--phase deferred_contract --verify-only/);

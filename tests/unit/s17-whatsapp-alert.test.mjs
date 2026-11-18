@@ -197,7 +197,7 @@ test("long Chinese summaries are cut at a character boundary and the JSON stays 
 
 test("an unwritable state directory falls back to another one, so repeats are still suppressed", async () => {
   const f = await fixture();
-  const locked = join(f.root, "locked"); mkdirSync(locked, { mode: 0o500 });
+  const locked = join(f.root, "locked"); writeFileSync(locked, "a file, so nothing can be created below it (even as root)");
   const fb = join(f.root, "fallback");
   const extra = { ALERT_STATE_DIR: join(locked, "state"), ALERT_FALLBACK_DIRS: fb };
   const first = await f.run(["watch", "failure", "stale"], extra);
@@ -212,7 +212,7 @@ test("an unwritable state directory falls back to another one, so repeats are st
 
 test("with no usable state directory at all the alert is sent once, exits 1 and says why", async () => {
   const f = await fixture();
-  const locked = join(f.root, "locked"); mkdirSync(locked, { mode: 0o500 });
+  const locked = join(f.root, "locked"); writeFileSync(locked, "a file, so nothing can be created below it (even as root)");
   const extra = { ALERT_STATE_DIR: join(locked, "a"), ALERT_FALLBACK_DIRS: join(locked, "b") };
   const r = await f.run(["watch", "failure", "stale"], extra);
   assert.equal(r.status, 1);

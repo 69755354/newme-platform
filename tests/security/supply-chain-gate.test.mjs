@@ -238,19 +238,11 @@ test("pre-install toolchain gate exists and validates exact Node, npm, and root 
   }).join("\n"), /configuration is unsafe or overridden/);
 });
 
-test("the checked-in advisory exception registry holds only the reviewed build-time entries, each short-lived and evidenced", async () => {
+test("the checked-in advisory exception registry contains no entries absent from the current audit", async () => {
   const exceptions = JSON.parse(await readFile(path.join(ROOT, ".supply-chain-accept.json"), "utf8"));
-  // Entries absent from the current audit are rejected by the gate itself (stale exception); this pins
-  // which entries may exist at all, so a new one cannot slip in without changing this list.
-  assert.deepEqual(
-    exceptions.accepted.map((item) => `${item.package}|${item.vuln_id}`).sort(),
-    ["glob|GHSA-3G3M-2FJR-6PW4", "minimatch|GHSA-G3HV-75WG-M249", "picomatch|GHSA-FC5Q-39XC-VJPF"],
-  );
-  for (const item of exceptions.accepted) {
-    assert.ok(item.expires <= "2026-12-17", `${item.package} expires within 30 days of acceptance`);
-    assert.match(item.risk_reason, /next start|Loading `@sentry\/nextjs`/, `${item.package} records the runtime-unreachable evidence`);
-    assert.ok(item.owner && item.mitigation.includes("Review condition"), `${item.package} has an owner and a review condition`);
-  }
+  // glob/minimatch were downgraded to moderate and picomatch withdrawn upstream (2026-11-19), so the
+  // build-time exceptions accepted for S17 are stale and removed; the gate only tracks high/critical.
+  assert.deepEqual(exceptions.accepted, []);
 });
 
 async function listCodeFiles(dir) {

@@ -1040,3 +1040,22 @@ attestation sealed the bundle below. Meta callback end-to-end acceptance is stil
 claimed.
 
 <!-- postdeploy-acceptance-sha256:063ebf90858026e911fece8f036396eeed0b4016eaa92c561229181806d5760b -->
+
+## OS fix S17 ops readiness technical acceptance (2026-11-18)
+
+Release `7e5049e1dd81817f1fb51024443febb4cb19cd37` (OS fix stream S17, PR #524: notification
+bell icons and labels for every allowed type; idempotent `daily-reminder` and
+`check-no-answer` with active-lead scope; systemd cron timers, database backups under
+`/var/backups/newme-db` with an optional NAS pull account, WhatsApp alert sender and
+supply-chain acceptances expiring 2026-12-17; no migration) passed candidate CI
+`44213068315` and was deployed through the protected coordinator at
+`2026-11-18T01:13:16Z`, replacing the finalized release `92e8618e`. The database phase
+stayed strict with 10 deferred migrations present (`contract_verified`). Canonical
+production acceptance verified all four roles, eight browser sessions and 16 bound
+artifacts. All 54 fixture objects were cleaned, with zero residuals and exact KPI
+restoration. Performance measured p75 61 ms / p95 74 ms over 20 samples, within policy.
+The delayed verification passed at `2026-11-18T01:30:28Z`; canonical attestation sealed
+the bundle below. Host units are installed separately per the S7/S17 install runbook.
+Meta callback end-to-end acceptance is still NOT claimed.
+
+<!-- postdeploy-acceptance-sha256:889d720c1dfe466128c10ce1861592ae3ce8074955f646e8ac1a27fb0da10913 -->

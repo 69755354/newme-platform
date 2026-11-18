@@ -35,7 +35,6 @@
 # done here.
 build.log -text
 docs/meta-ads-auth-instructions.txt -text
-src/app/api/leads/\[id\]/quality/route.ts -text
 tests/integration/api-validation-static.test.mjs -text
 
 # This is an authenticated production schema capture whose exact bytes are

@@ -1059,3 +1059,20 @@ the bundle below. Host units are installed separately per the S7/S17 install run
 Meta callback end-to-end acceptance is still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:889d720c1dfe466128c10ce1861592ae3ce8074955f646e8ac1a27fb0da10913 -->
+
+## OS fix S18 provisioning switch technical acceptance (2026-11-19)
+
+Release `08a61b9cd82a4a66838d0500b61156c980525993` (OS fix stream S18 step 1, PR #527:
+the `s18-db-plan` / `s18-db-provision` provisioning switch, its checker, docs and
+tests, plus two CI-environment repairs; no application or schema change) passed
+candidate CI `44393845857` and was deployed through the protected coordinator at
+`2026-11-18T20:48:37Z`, replacing the finalized release `7e5049e1`. No migration was
+applied; the database phase stayed strict with 10 deferred migrations present
+(`contract_verified`). Canonical production acceptance verified all four roles, eight
+browser sessions and bound artifacts. All fixture objects were cleaned, with zero
+residuals and exact KPI restoration. Performance measured p75 41 ms / p95 69 ms,
+within policy. The delayed verification passed at `2026-11-18T21:05:50Z`; canonical
+attestation sealed the bundle below. Meta callback end-to-end acceptance is still NOT
+claimed.
+
+<!-- postdeploy-acceptance-sha256:c72e2ce211b4a356b269e28dbb0c3bf4d69c87c5808dedb292e5237be6d81f47 -->

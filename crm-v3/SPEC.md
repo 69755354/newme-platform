@@ -36,6 +36,12 @@
 - 发布批次 1（已上线 100006be）：Meta 编号总表导出 `src/app/api/export/meta-ids/route.ts`、每日取数与 NAS 上传脚本 `infra/meta-ids/newme-meta-ids-export.sh`、`infra/nas/newme-nas-upload.sh`；测试账号对真人不可见（`src/lib/system-accounts.mjs`）；数据导入门禁操作与 S21 开关。
 - S21 应用：WhatsApp 对话正文入库、首次响应/联系次数/跟进状态：线索页卡片 `src/app/(dashboard)/leads/[id]/LeadFollowupCard.tsx`、接口 `src/app/api/leads/[id]/followup/route.ts`、定时接口 `src/app/api/cron/check-whatsapp-followups/route.ts`（默认关闭）；迁移 `20261119100000_whatsapp_followup_monitor.sql`。
 
+## 2026-11-19 S24 线索派发与重复审核（功能对等 G2/G3）
+
+- 七个派发状态（已派发 / 资料待补 / 待核电话 / 未分配 / 重复待审 / 重复不派发 / 已排除测试）由数据库例程 `evaluate_lead_dispatch` 统一判定，不改 leads 表，设计见 `docs/s24-dispatch-review.md`；迁移 `20261119300000_lead_dispatch_and_review.sql`（经 s24 开关上线）。
+- 行政工作台页面 `src/app/(dashboard)/dispatch/page.tsx`、`src/app/(dashboard)/dispatch/dispatch-client.tsx`、`src/components/dispatch/DispatchWorkbench.tsx`、`src/components/dispatch/shared.ts`；线索页标签 `src/app/(dashboard)/leads/[id]/LeadDispatchCard.tsx`，挂载于 `src/app/(dashboard)/leads/[id]/page.tsx`。
+- 接口：`src/app/api/dispatch/queue/route.ts`、`src/app/api/dispatch/refresh/route.ts`、`src/app/api/dispatch/[leadId]/route.ts`、`src/app/api/dispatch/[leadId]/decide/route.ts`、`src/app/api/duplicates/route.ts`、`src/app/api/duplicates/[id]/route.ts`、`src/app/api/duplicates/[id]/resolve/route.ts`、`src/app/api/duplicates/[id]/reopen/route.ts`；定时接口 `src/app/api/cron/dispatch-sweep/route.ts`（默认关闭）；共用 `src/lib/lead-dispatch-api.ts`、`src/lib/lead-dispatch.mjs`；路由权限 `src/proxy.ts`；中英文案 `src/lib/i18n/translations.ts`；类型指纹 `src/types/database.ts`。全表回填是发布门禁执行的脚本 `scripts/s24-dispatch-backfill.sql`，应用内没有批量按钮。
+
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 

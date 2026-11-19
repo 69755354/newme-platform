@@ -46,6 +46,13 @@
       "why": "Hermes already calls it at 09:02 Dubai. Not taken over. Deleting rows older than 90 days is idempotent."
     },
     {
+      "name": "check-visit-overdue",
+      "install": "after-flag",
+      "dubaiTime": "09:45",
+      "idempotent": true,
+      "why": "Overdue visit reports (S23): one warning notification per recipient per visit (event key), for open visits whose report was due in the last 14 days. The route answers Disabled until VISIT_OVERDUE_ALERTS_ENABLED=true; install the timer only together with the flag. Idempotent: the database routine writes each event key once."
+    },
+    {
       "name": "check-alerts",
       "install": "route-disabled",
       "dubaiTime": "09:20",

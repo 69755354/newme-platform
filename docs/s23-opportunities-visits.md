@@ -133,8 +133,9 @@ steps are database functions that re-check the actor's role. Reads from a client
 
 * `GET/POST /api/opportunities`, `GET/PATCH /api/opportunities/{id}`; `GET/POST /api/visits`,
   `GET/PATCH /api/visits/{id}`, `POST /api/visits/{id}/approve`, `POST /api/visits/{id}/review`,
-  `POST /api/visits/{id}/submit`. Creating accepts a client key (`request_key`) so a retried request returns the
-  same row (idempotent). Role checks run before any service-role query.
+  `POST /api/visits/{id}/submit`. Creating is idempotent without a client key: a retried request that repeats the same name (opportunity) or the
+  same lead and planned time (visit) with the same content returns the existing row (`duplicate: true`), a
+  different request with the same key is a 409 conflict. Role checks run before any service-role query.
 * `GET /api/cron/check-visit-overdue`: disabled unless `VISIT_OVERDUE_ALERTS_ENABLED=true`; calls
   `public.flag_overdue_visit_reports()`, which writes one `warning` notification per recipient per visit
   (`event_key = visit-overdue:<id>`), so running it again changes nothing.

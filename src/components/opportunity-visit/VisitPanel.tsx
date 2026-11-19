@@ -151,6 +151,17 @@ export default function VisitPanel({ t, role, leadId }: Props) {
               {!v.submitted_at && <span>{t("visits.reportDue")}: {when(v.report_due_at)}</span>}
               {v.submitted_at && <span>{t(`visits.reviewStatus.${v.review_status}`)}</span>}
             </div>
+            {v.submitted_at && (
+              <dl className="mt-1 space-y-0.5 rounded-md bg-muted/30 px-2 py-1" data-testid="visit-report-readonly">
+                {([["visits.actualStart", when(v.actual_start)], ["visits.actualFinish", when(v.actual_finish)], ["visits.result", v.result],
+                  ["visits.nextAction", v.next_action], ["visits.nextFollowup", v.next_followup_date]] as const).map(([label, value]) => (
+                  <div key={label} className="flex gap-2"><dt className="shrink-0 text-muted-foreground">{t(label)}</dt><dd className="whitespace-pre-wrap break-words">{value || "—"}</dd></div>
+                ))}
+                <div className="flex gap-2"><dt className="shrink-0 text-muted-foreground">{t("visits.evidenceLink")}</dt>
+                  <dd className="break-all">{v.evidence_link && /^https?:\/\//i.test(v.evidence_link)
+                    ? <a className="underline" href={v.evidence_link} target="_blank" rel="noopener noreferrer">{v.evidence_link}</a> : v.evidence_link || "—"}</dd></div>
+              </dl>
+            )}
             {v.review_notes && v.review_status !== "pending" && <div className="mt-0.5 text-amber-300">{v.review_notes}</div>}
             <div className="mt-1 flex flex-wrap gap-2">
               {staff && !v.submitted_at && v.plan_approval !== "approved" && (

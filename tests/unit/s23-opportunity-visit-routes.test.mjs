@@ -35,6 +35,12 @@ function makeDb(seed, { fail } = {}) {
   const matches = (row, filters) => filters.every(([op, col, val]) => {
     if (op === "eq") return row[col] === val;
     if (op === "in") return val.includes(row[col]);
+    if (op === "is") return (row[col] ?? null) === val;
+    if (op === "neq") return row[col] !== val;
+    if (op === "not") return col === "submitted_at" ? (row[col] ?? null) !== null : true; // .not(col, "is", null)
+    if (op === "lt") return new Date(row[col]).getTime() < new Date(val).getTime();
+    if (op === "gte") return new Date(row[col]).getTime() >= new Date(val).getTime();
+    if (op === "or") return String(col).split(",").some((part) => { const [c, o, v] = part.split("."); return o === "eq" ? row[c] === v : new Date(row[c]).getTime() >= new Date(v).getTime(); });
     if (op === "ilike") return String(row[col]).toLowerCase() === String(val).replace(/\\([\\%_])/g, "$1").toLowerCase();
     return true;
   });
@@ -58,7 +64,8 @@ function makeDb(seed, { fail } = {}) {
     if (q.op === "update") { hit.forEach((r) => Object.assign(r, q.payload)); return q.single ? { data: hit[0] ?? null, error: null } : { data: hit, error: null }; }
     if (q.single === "single") return hit.length === 1 ? { data: hit[0], error: null } : { data: null, error: { code: "PGRST116" } };
     if (q.single === "maybeSingle") return { data: hit[0] ?? null, error: null };
-    return { data: hit, error: null, count: hit.length };
+    const range = q.filters.find((f) => f[0] === "range");
+    return { data: range ? hit.slice(range[1], range[2] + 1) : hit, error: null, count: hit.length };
   };
   const from = (table) => {
     const q = { table, op: "select", filters: [], payload: null, single: null };
@@ -241,6 +248,18 @@ test("visits: create, replay, conflict, and workflow columns are never accepted 
   assert.equal(replay.status, 200);
   assert.equal((await json(replay)).duplicate, true);
   assert.equal((await visits.POST(post("/api/visits", { ...PLAN, purpose: "another purpose" }))).status, 409);
+  // A retry that differs only in report content or owner is a conflict, not a silent replay.
+  assert.equal((await visits.POST(post("/api/visits", { ...PLAN, result: "Different result" }))).status, 409);
+  assert.equal((await visits.POST(post("/api/visits", { ...PLAN, evidence_link: "https://example.com/x" }))).status, 409);
+  setup("operator", OPERATOR);
+  const withResult = { ...PLAN, planned_at: "2026-12-10T06:00:00.000Z", result: "First result", actual_start: "2026-12-10T06:00:00Z" };
+  assert.equal((await visits.POST(post("/api/visits", withResult))).status, 201);
+  assert.equal((await visits.POST(post("/api/visits", { ...withResult, actual_start: "2026-12-10T10:00:00.000Z" }))).status, 409);
+  assert.equal((await visits.POST(post("/api/visits", { ...withResult, owner_id: SALES2 }))).status, 409);
+  const sameAgain = await visits.POST(post("/api/visits", { ...withResult, actual_start: "2026-12-10T06:00:00.000Z" }));
+  assert.equal(sameAgain.status, 200);
+  assert.equal((await json(sameAgain)).duplicate, true);
+  setup("sales", SALES1);
   assert.equal((await visits.POST(post("/api/visits", { ...PLAN, lead_id: LEAD2 }))).status, 403);
   assert.equal((await visits.POST(post("/api/visits", { ...PLAN, planned_at: "yesterday" }))).status, 422);
 });
@@ -254,6 +273,16 @@ test("visit list carries the derived status and filters by it", async () => {
   assert.deepEqual(all.data.map((v) => v.status).sort(), ["overdue", "planned"]);
   const overdue = await json(await visits.GET(get("/api/visits?status=overdue")));
   assert.deepEqual(overdue.data.map((v) => v.id), ["a"]);
+  // The filter runs before the page range: older overdue rows are found even behind newer planned ones.
+  const many = [{ id: "old", lead_id: LEAD1, planned_at: "2026-01-01T06:00:00Z", plan_approval: "approved", submitted_at: null, review_status: "pending", report_due_at: "2026-01-02T05:30:00Z", archived: false, purpose: "o", opportunity_id: null },
+    ...Array.from({ length: 3 }, (_, i) => ({ id: `new${i}`, lead_id: LEAD1, planned_at: "2027-06-01T06:00:00Z", plan_approval: "pending", submitted_at: null, review_status: "pending", report_due_at: "2027-06-02T05:30:00Z", archived: false, purpose: "n", opportunity_id: null }))];
+  setup("operator", OPERATOR, { visit_reports: many });
+  const paged = await json(await visits.GET(get("/api/visits?status=overdue&limit=1")));
+  assert.deepEqual(paged.data.map((v) => v.id), ["old"]);
+  assert.equal(paged.pagination.total, 1);
+  const planned = await json(await visits.GET(get("/api/visits?status=planned&limit=2")));
+  assert.equal(planned.data.length, 2);
+  assert.equal(planned.pagination.total, 3);
   assert.equal((await visits.GET(get("/api/visits?status=bogus"))).status, 400);
   assert.equal((await visits.GET(get("/api/visits?lead_id=bad"))).status, 400);
 });

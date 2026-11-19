@@ -11,6 +11,19 @@ import { ApiFailure, handle, invalid, pageParams, readJson, requireLeadAccess, w
 export const dynamic = "force-dynamic";
 const STATUSES = new Set(["planned", "approved", "completed", "reviewed", "overdue"]);
 
+/** Mirrors visitReportStatus() / public.visit_report_status() as database predicates, so the filter runs before range and count. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyStatusFilter(query: any, status: string, nowIso: string) {
+  switch (status) {
+    case "reviewed": return query.not("submitted_at", "is", null).eq("review_status", "accepted");
+    case "completed": return query.not("submitted_at", "is", null).neq("review_status", "accepted");
+    case "overdue": return query.is("submitted_at", null).neq("plan_approval", "rejected").lt("report_due_at", nowIso);
+    case "approved": return query.is("submitted_at", null).eq("plan_approval", "approved").gte("report_due_at", nowIso);
+    default: // planned: open, not approved, not overdue (a rejected plan never becomes overdue)
+      return query.is("submitted_at", null).in("plan_approval", ["pending", "rejected"]).or(`plan_approval.eq.rejected,report_due_at.gte.${nowIso}`);
+  }
+}
+
 export async function GET(request: NextRequest) {
   return handle(request, "visits_list", async ({ context, respond, db }) => {
     if (!["admin", "boss", "operator", "sales"].includes(context.role)) throw new ApiFailure(403, "forbidden");
@@ -25,10 +38,12 @@ export async function GET(request: NextRequest) {
       .order("planned_at", { ascending: false }).order("id").range(offset, offset + limit - 1);
     if (leadId) query = query.eq("lead_id", leadId);
     if (url.searchParams.get("include_archived") !== "1") query = query.eq("archived", false);
+    if (status) query = applyStatusFilter(query, status, new Date().toISOString());
     const { data, error, count } = await query;
     if (error) throw error;
     const rows = (data ?? []).map((row) => withStatus(row as Record<string, unknown>));
-    // The status is derived from the clock, so the filter runs on the page after the derivation.
+    // The status filter already ran in the database (before the page range and the count); this keeps the answer
+    // consistent with the derived status if the clock moved between the two.
     const filtered = status ? rows.filter((row) => row.status === status) : rows;
     const opportunityIds = [...new Set(filtered.map((row) => row.opportunity_id as string | null).filter(Boolean))] as string[];
     const names = new Map<string, string>();
@@ -59,8 +74,15 @@ export async function POST(request: NextRequest) {
     const { data: existing, error: lookupError } = await supabaseAdmin.from("visit_reports").select("*")
       .eq("lead_id", value.lead_id).eq("planned_at", value.planned_at).eq("archived", false).maybeSingle();
     if (lookupError) throw lookupError;
-    const same = existing && ["purpose", "location", "person_to_meet", "opportunity_id"].every((key) => !(key in value)
-      || (existing as Record<string, unknown>)[key] === value[key]);
+    // A retry is the same request only if every persisted input field matches (an absent field means null).
+    const row = (existing ?? {}) as Record<string, unknown>;
+    const instant = (v: unknown) => (v === null || v === undefined ? null : new Date(v as string).getTime());
+    const plain = (v: unknown) => (v === undefined ? null : v);
+    const same = !!existing
+      && ["planned_at", "actual_start", "actual_finish"].every((key) => instant(row[key]) === instant(value[key]))
+      && ["purpose", "location", "person_to_meet", "opportunity_id", "result", "next_action", "next_followup_date", "evidence_link"]
+        .every((key) => plain(row[key]) === plain(value[key]))
+      && row.owner_id === owner;
     if (same) return respond({ data: withStatus(existing as Record<string, unknown>), duplicate: true });
     throw new ApiFailure(409, "duplicate");
   });

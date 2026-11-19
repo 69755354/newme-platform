@@ -171,3 +171,10 @@ Completeness and Status (formulas) -> `visit_report_status()`; Overdue incomplet
 
 Rollback: stop using the pages; the tables are inert without them. A manual undo of the schema is written at the
 end of the migration file and is only for an empty test database.
+
+## Known follow-ups
+
+Both items live in the migration `20261119200000_opportunities_and_visit_reports.sql`, whose checksum is pinned by the release; they are accepted for this release and tracked for a follow-up migration (the overdue alerts are off by default and have no timer):
+
+- Plan corrections after a reviewer returns a submitted report for fixes: changing a plan field resets plan approval to pending while the report stays submitted, which the submit constraint rejects. Needs a trigger/constraint change so the reopened state can be saved and re-approved.
+- Overdue reminder batches: `flag_overdue_visit_reports` always scans the oldest 500 open visits in the 14-day window, including ones already notified. Needs the limit applied after excluding fully notified visits (or a cursor).

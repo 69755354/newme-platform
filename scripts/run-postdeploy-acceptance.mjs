@@ -1774,9 +1774,7 @@ async function delayedReadback({
   releaseSha,
   deployedAt,
   alertSecret,
-  recoveryEventId,
-  recoveryProviderDeliveryId,
-  recoveryProviderOperationId,
+  alertPair,
   serviceRuntimeBaseline,
   readinessToken,
   signal,
@@ -1821,28 +1819,47 @@ async function delayedReadback({
   }
   if (criticalLogs.length !== 0) refuse("delayed_critical_logs_present");
   checkTimes.logs = utcSecond();
-  const providerResult = await readDelayedAlertProviderState({
-    releaseRoot,
-    releaseSha,
-    secret: alertSecret,
-    recoveryEventId,
-    recoveryProviderDeliveryId,
-    recoveryProviderOperationId,
-    notBefore,
-    signal,
-  });
-  const providerReadback = providerResult.receipt;
-  if (providerReadback.status !== "ok" || Date.parse(providerReadback.occurred_at) > Date.now()) refuse("delayed_alert_state_invalid");
-  checkTimes.alerts = providerReadback.occurred_at;
+  // The provider readback is the only alert dependent step; a failure here (or a drill that already
+  // failed) is reported to the caller as alertFailureCode and becomes a recorded warning there.
+  let providerResult = null;
+  let providerReadback = null;
+  let alertFailureCode = alertPair ? null : "alert_drill_not_verified";
+  if (alertPair) {
+    try {
+      providerResult = await readDelayedAlertProviderState({
+        releaseRoot,
+        releaseSha,
+        secret: alertSecret,
+        recoveryEventId: alertPair.recovery.event_id,
+        recoveryProviderDeliveryId: alertPair.recovery.provider_delivery_id,
+        recoveryProviderOperationId: alertPair.recovery.provider_operation_id,
+        notBefore,
+        signal,
+      });
+      providerReadback = providerResult.receipt;
+      if (providerReadback.status !== "ok" || Date.parse(providerReadback.occurred_at) > Date.now()) refuse("delayed_alert_state_invalid");
+    } catch (error) {
+      if (!isWarnableAlertFailure(error, signal)) throw error;
+      providerResult = null;
+      providerReadback = null;
+      alertFailureCode = error.code;
+    }
+  }
+  checkTimes.alerts = providerReadback ? providerReadback.occurred_at : utcSecond();
   assertNoServiceRestartSinceDeploy(serviceRuntimeBaseline, currentSystemdRuntime());
   checkTimes.restarts = utcSecond();
   const completedAt = utcSecond();
   return {
     notBefore,
     completedAt,
-    checks: ["service", "logs", "alerts", "restarts"].map((id) => ({ id, status: "pass", completed_at: checkTimes[id] })),
+    checks: ["service", "logs", "alerts", "restarts"].map((id) => ({
+      id,
+      status: id === "alerts" && !providerReadback ? "warned" : "pass",
+      completed_at: checkTimes[id],
+    })),
     providerReadback,
-    providerReadbackTrigger: providerResult.trigger,
+    providerReadbackTrigger: providerResult ? providerResult.trigger : null,
+    alertFailureCode: providerReadback ? null : alertFailureCode,
   };
 }
 
@@ -1876,6 +1893,7 @@ export function assemblePostdeployBundle({
   flowResults,
   cleanup,
   alertPair,
+  alertWarning = null,
   performanceResult,
   delayedResult,
   generatedAt,
@@ -1978,23 +1996,35 @@ export function assemblePostdeployBundle({
     verified_at: cleanup.verifiedAt,
     ...paymentReversalClaim,
   });
-  add("alert_drill", "alert_drill", alertPair.recovery.occurred_at, {
-    runner: "newme-postdeploy-alert-drill/v1",
-    drill_run_id: `alert:drill:${release.deploy_run_id}`,
-    failure_event_id: alertPair.failure.event_id,
-    recovery_event_id: alertPair.recovery.event_id,
-    failure_provider_delivery_id: alertPair.failure.provider_delivery_id,
-    recovery_provider_delivery_id: alertPair.recovery.provider_delivery_id,
-    failure_provider_operation_id: alertPair.failure.provider_operation_id,
-    recovery_provider_operation_id: alertPair.recovery.provider_operation_id,
-    failure_trigger_sha256: alertPair.failureTrigger.trigger_sha256,
-    recovery_trigger_sha256: alertPair.recoveryTrigger.trigger_sha256,
-    failure_receipt_sha256: alertPair.failure.body_sha256,
-    recovery_receipt_sha256: alertPair.recovery.body_sha256,
-    failed_at: alertPair.failure.occurred_at,
-    recovered_at: alertPair.recovery.occurred_at,
-    final_status: "ok",
-  });
+  if (alertWarning && alertPair) refuse("alert_evidence_ambiguous");
+  if (!alertWarning && !alertPair) refuse("alert_evidence_missing");
+  if (alertWarning) {
+    add("alert_drill", "alert_drill", alertWarning.attempted_at, {
+      runner: "newme-postdeploy-alert-drill/v1",
+      drill_run_id: `alert:drill:${release.deploy_run_id}`,
+      final_status: "warned",
+      reason_code: alertWarning.reason_code,
+      attempted_at: alertWarning.attempted_at,
+    });
+  } else {
+    add("alert_drill", "alert_drill", alertPair.recovery.occurred_at, {
+      runner: "newme-postdeploy-alert-drill/v1",
+      drill_run_id: `alert:drill:${release.deploy_run_id}`,
+      failure_event_id: alertPair.failure.event_id,
+      recovery_event_id: alertPair.recovery.event_id,
+      failure_provider_delivery_id: alertPair.failure.provider_delivery_id,
+      recovery_provider_delivery_id: alertPair.recovery.provider_delivery_id,
+      failure_provider_operation_id: alertPair.failure.provider_operation_id,
+      recovery_provider_operation_id: alertPair.recovery.provider_operation_id,
+      failure_trigger_sha256: alertPair.failureTrigger.trigger_sha256,
+      recovery_trigger_sha256: alertPair.recoveryTrigger.trigger_sha256,
+      failure_receipt_sha256: alertPair.failure.body_sha256,
+      recovery_receipt_sha256: alertPair.recovery.body_sha256,
+      failed_at: alertPair.failure.occurred_at,
+      recovered_at: alertPair.recovery.occurred_at,
+      final_status: "ok",
+    });
+  }
   add("performance", "performance", performanceResult.measuredAt, {
     runner: "newme-postdeploy-performance/v1",
     measurement_run_id: `performance:run:${release.deploy_run_id}`,
@@ -2003,20 +2033,29 @@ export function assemblePostdeployBundle({
     p95_ms: performanceResult.p95,
     measured_at: performanceResult.measuredAt,
   });
-  add("delayed_verify", "delayed_verification", delayedResult.completedAt, {
-    runner: "newme-postdeploy-delayed-verification/v1",
-    verification_run_id: `delayed:run:${release.deploy_run_id}`,
-    not_before: delayedResult.notBefore,
-    completed_at: delayedResult.completedAt,
-    status: "pass",
-    checks: delayedResult.checks,
-    provider_trigger_sha256: delayedResult.providerReadbackTrigger.trigger_sha256,
-    provider_event_id: delayedResult.providerReadback.event_id,
-    provider_delivery_id: delayedResult.providerReadback.provider_delivery_id,
-    provider_query_id: delayedResult.providerReadback.provider_operation_id,
-    provider_receipt_sha256: delayedResult.providerReadback.body_sha256,
-    provider_observed_at: delayedResult.providerReadback.occurred_at,
-  });
+  add("delayed_verify", "delayed_verification", delayedResult.completedAt, alertWarning
+    ? {
+      runner: "newme-postdeploy-delayed-verification/v1",
+      verification_run_id: `delayed:run:${release.deploy_run_id}`,
+      not_before: delayedResult.notBefore,
+      completed_at: delayedResult.completedAt,
+      status: "pass",
+      checks: delayedResult.checks,
+    }
+    : {
+      runner: "newme-postdeploy-delayed-verification/v1",
+      verification_run_id: `delayed:run:${release.deploy_run_id}`,
+      not_before: delayedResult.notBefore,
+      completed_at: delayedResult.completedAt,
+      status: "pass",
+      checks: delayedResult.checks,
+      provider_trigger_sha256: delayedResult.providerReadbackTrigger.trigger_sha256,
+      provider_event_id: delayedResult.providerReadback.event_id,
+      provider_delivery_id: delayedResult.providerReadback.provider_delivery_id,
+      provider_query_id: delayedResult.providerReadback.provider_operation_id,
+      provider_receipt_sha256: delayedResult.providerReadback.body_sha256,
+      provider_observed_at: delayedResult.providerReadback.occurred_at,
+    });
   const bundle = {
     schema_version: "newme-postdeploy-evidence/v1",
     policy: { path: POLICY_PATH, sha256: sha256(policyBytes) },
@@ -2034,22 +2073,29 @@ export function assemblePostdeployBundle({
       ...paymentReversalClaim,
       artifact_id: "fixture_cleanup",
     },
-    alert_drill: {
-      failure_event_id: alertPair.failure.event_id,
-      recovery_event_id: alertPair.recovery.event_id,
-      failure_provider_delivery_id: alertPair.failure.provider_delivery_id,
-      recovery_provider_delivery_id: alertPair.recovery.provider_delivery_id,
-      failure_provider_operation_id: alertPair.failure.provider_operation_id,
-      recovery_provider_operation_id: alertPair.recovery.provider_operation_id,
-      failure_trigger_sha256: alertPair.failureTrigger.trigger_sha256,
-      recovery_trigger_sha256: alertPair.recoveryTrigger.trigger_sha256,
-      failure_receipt_sha256: alertPair.failure.body_sha256,
-      recovery_receipt_sha256: alertPair.recovery.body_sha256,
-      failed_at: alertPair.failure.occurred_at,
-      recovered_at: alertPair.recovery.occurred_at,
-      final_status: "ok",
-      artifact_id: "alert_drill",
-    },
+    alert_drill: alertWarning
+      ? {
+        final_status: "warned",
+        reason_code: alertWarning.reason_code,
+        attempted_at: alertWarning.attempted_at,
+        artifact_id: "alert_drill",
+      }
+      : {
+        failure_event_id: alertPair.failure.event_id,
+        recovery_event_id: alertPair.recovery.event_id,
+        failure_provider_delivery_id: alertPair.failure.provider_delivery_id,
+        recovery_provider_delivery_id: alertPair.recovery.provider_delivery_id,
+        failure_provider_operation_id: alertPair.failure.provider_operation_id,
+        recovery_provider_operation_id: alertPair.recovery.provider_operation_id,
+        failure_trigger_sha256: alertPair.failureTrigger.trigger_sha256,
+        recovery_trigger_sha256: alertPair.recoveryTrigger.trigger_sha256,
+        failure_receipt_sha256: alertPair.failure.body_sha256,
+        recovery_receipt_sha256: alertPair.recovery.body_sha256,
+        failed_at: alertPair.failure.occurred_at,
+        recovered_at: alertPair.recovery.occurred_at,
+        final_status: "ok",
+        artifact_id: "alert_drill",
+      },
     performance: {
       samples_ms: performanceResult.samples,
       p75_ms: performanceResult.p75,
@@ -2057,18 +2103,25 @@ export function assemblePostdeployBundle({
       measured_at: performanceResult.measuredAt,
       artifact_id: "performance",
     },
-    delayed_verification: {
-      not_before: delayedResult.notBefore,
-      completed_at: delayedResult.completedAt,
-      status: "pass",
-      provider_trigger_sha256: delayedResult.providerReadbackTrigger.trigger_sha256,
-      provider_event_id: delayedResult.providerReadback.event_id,
-      provider_delivery_id: delayedResult.providerReadback.provider_delivery_id,
-      provider_query_id: delayedResult.providerReadback.provider_operation_id,
-      provider_receipt_sha256: delayedResult.providerReadback.body_sha256,
-      provider_observed_at: delayedResult.providerReadback.occurred_at,
-      artifact_id: "delayed_verify",
-    },
+    delayed_verification: alertWarning
+      ? {
+        not_before: delayedResult.notBefore,
+        completed_at: delayedResult.completedAt,
+        status: "pass",
+        artifact_id: "delayed_verify",
+      }
+      : {
+        not_before: delayedResult.notBefore,
+        completed_at: delayedResult.completedAt,
+        status: "pass",
+        provider_trigger_sha256: delayedResult.providerReadbackTrigger.trigger_sha256,
+        provider_event_id: delayedResult.providerReadback.event_id,
+        provider_delivery_id: delayedResult.providerReadback.provider_delivery_id,
+        provider_query_id: delayedResult.providerReadback.provider_operation_id,
+        provider_receipt_sha256: delayedResult.providerReadback.body_sha256,
+        provider_observed_at: delayedResult.providerReadback.occurred_at,
+        artifact_id: "delayed_verify",
+      },
     artifacts,
     generated_at: generatedAt,
   };
@@ -2564,6 +2617,19 @@ function errorCode(error) {
   return error instanceof ProducerError ? error.code : "unexpected_failure";
 }
 
+/**
+ * Only a failure of the alert provider drill or of its delayed provider readback may be downgraded to a
+ * recorded warning. Smoke, health, fixture, performance, restart and log failures, interruptions and any
+ * unexpected (non-ProducerError) failure still freeze the gate exactly as before.
+ */
+const WARNABLE_ALERT_CODE = /^(?:alert|delayed_alert)_[a-z0-9_]{1,50}$/;
+export function isWarnableAlertFailure(error, signal = null) {
+  return error instanceof ProducerError
+    && !signal?.aborted
+    && error.code !== "uat_interrupted"
+    && WARNABLE_ALERT_CODE.test(error.code);
+}
+
 /** Our own refusal codes, and node's errno constants, are safe to echo. */
 const REFUSAL_IDENTITY = /^[A-Za-z][A-Za-z0-9_]{1,62}$/;
 const ERROR_NAME = /^[A-Za-z][A-Za-z0-9]{0,39}$/;
@@ -2713,6 +2779,38 @@ export function assertPostdeployOperationsClear() {
   return { state: "clear" };
 }
 
+/**
+ * Record an alert drill failure as a warning instead of freezing the gate. The fixtures are already cleaned
+ * and the acceptance journal is still healthy at this point. The canonical alert state is moved back to its
+ * recovered shape on a best-effort basis, then the per-attempt alert inbox and state directories are
+ * archived beside the journal so a later acceptance for the same SHA never meets leftovers. Nothing here
+ * can make the bundle claim an alert pass: the bundle carries final_status "warned" and the reason code.
+ */
+function recordAlertWarning({ code, releaseRoot, releaseSha, journal }) {
+  recordJournalStep(journal, "alert_drill_warned", [code]);
+  let recovery;
+  try {
+    recovery = recoverCanonicalAlertState({ releaseRoot, releaseSha });
+  } catch (error) {
+    recovery = `unconfirmed_${errorCode(error)}`;
+  }
+  recordJournalStep(journal, `alert_warning_state_${recovery}`, []);
+  const safeAttempt = journal.attempt_id.replace(/[^A-Za-z0-9._-]/g, "_");
+  const journalDirectory = journalPaths(releaseSha).directory;
+  archiveAttemptDirectory(
+    path.join(ALERT_INBOX_ROOT, releaseSha),
+    path.join(journalDirectory, `alert-${safeAttempt}.archive`),
+    "uat_alert_inbox",
+  );
+  archiveAttemptDirectory(
+    path.join(ALERT_STATE_ROOT, releaseSha),
+    path.join(journalDirectory, `alert-state-${safeAttempt}.archive`),
+    "uat_alert_state",
+  );
+  process.stderr.write(`postdeploy producer: WARNING alert drill not verified code=${code} state=${recovery}; gate not frozen\n`);
+  return { reason_code: code, attempted_at: utcSecond() };
+}
+
 export async function runCanonicalPostdeployAcceptance(releaseSha, { signal = null } = {}) {
   if (process.platform === "win32" || typeof process.getuid !== "function" || process.getuid() !== 0) refuse("producer_requires_posix_root");
   if (!RELEASE_SHA.test(releaseSha)) refuse("release_sha_invalid");
@@ -2851,28 +2949,42 @@ export async function runCanonicalPostdeployAcceptance(releaseSha, { signal = nu
     const performanceResult = await measurePerformance(releaseSha, readinessToken, fetch, 20, signal);
     if (performanceResult.p75 > 2000 || performanceResult.p95 > 5000) refuse("performance_threshold_exceeded");
     recordJournalStep(journal, "performance_measured", performanceResult.samples);
-    const alertPair = await runCanonicalAlertDrill({
-      releaseRoot,
-      releaseSha,
-      secret: credentials.alertSecret,
-      journal,
-      signal,
-    });
-    if (Date.parse(alertPair.failure.occurred_at) < Date.parse(release.deployed_at)) refuse("alert_drill_predates_deploy");
-    recordJournalStep(journal, "alert_provider_pair_verified", [alertPair.failure.body_sha256, alertPair.recovery.body_sha256]);
+    let alertPair = null;
+    let alertWarning = null;
+    try {
+      alertPair = await runCanonicalAlertDrill({
+        releaseRoot,
+        releaseSha,
+        secret: credentials.alertSecret,
+        journal,
+        signal,
+      });
+      if (Date.parse(alertPair.failure.occurred_at) < Date.parse(release.deployed_at)) refuse("alert_drill_predates_deploy");
+      recordJournalStep(journal, "alert_provider_pair_verified", [alertPair.failure.body_sha256, alertPair.recovery.body_sha256]);
+    } catch (error) {
+      if (!isWarnableAlertFailure(error, signal)) throw error;
+      alertPair = null;
+      alertWarning = recordAlertWarning({ code: error.code, releaseRoot, releaseSha, journal });
+    }
     const delayedResult = await delayedReadback({
       releaseRoot,
       releaseSha,
       deployedAt: release.deployed_at,
       alertSecret: credentials.alertSecret,
-      recoveryEventId: alertPair.recovery.event_id,
-      recoveryProviderDeliveryId: alertPair.recovery.provider_delivery_id,
-      recoveryProviderOperationId: alertPair.recovery.provider_operation_id,
+      alertPair,
       serviceRuntimeBaseline: serviceRuntime,
       readinessToken,
       signal,
     });
-    recordJournalStep(journal, "delayed_provider_readback_verified", [delayedResult.providerReadback.body_sha256]);
+    if (!alertWarning && delayedResult.alertFailureCode) {
+      alertWarning = recordAlertWarning({ code: delayedResult.alertFailureCode, releaseRoot, releaseSha, journal });
+      alertPair = null;
+    }
+    recordJournalStep(
+      journal,
+      alertWarning ? "delayed_verification_alert_warned" : "delayed_provider_readback_verified",
+      alertWarning ? [alertWarning.reason_code] : [delayedResult.providerReadback.body_sha256],
+    );
     const generatedAt = utcSecond();
     const assembled = assemblePostdeployBundle({
       release,
@@ -2885,6 +2997,7 @@ export async function runCanonicalPostdeployAcceptance(releaseSha, { signal = nu
       flowResults,
       cleanup,
       alertPair,
+      alertWarning,
       performanceResult,
       delayedResult,
       generatedAt,

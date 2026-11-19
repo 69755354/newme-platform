@@ -112,7 +112,9 @@
     "require_provider_receipts": true,
     "require_notifier_owned_provider_delivery": true,
     "require_distinct_event_ids": true,
-    "final_status": "ok"
+    "final_status": "ok",
+    "allow_recorded_warning": true,
+    "warning_final_status": "warned"
   },
   "performance": {
     "runner": "newme-postdeploy-performance/v1",

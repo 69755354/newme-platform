@@ -37,6 +37,14 @@
 - S21 应用：WhatsApp 对话正文入库、首次响应/联系次数/跟进状态：线索页卡片 `src/app/(dashboard)/leads/[id]/LeadFollowupCard.tsx`、接口 `src/app/api/leads/[id]/followup/route.ts`、定时接口 `src/app/api/cron/check-whatsapp-followups/route.ts`（默认关闭）；迁移 `20261119100000_whatsapp_followup_monitor.sql`。
 - S25 应用：WhatsApp 共存一次性同步（聊天历史 `history`、通讯录 `smb_app_state_sync`）经现有 webhook `src/app/api/whatsapp/webhook/route.ts` 入库：解析 `src/lib/whatsapp-history.mjs`，写入 `whatsapp_message_events`（`backfilled=true`，按消息编号去重）与 `whatsapp_synced_contacts`；历史不建线索、不发提醒、不推 Meta、不影响首次响应监控（`check-whatsapp-followups` 只读 `backfilled=false`）；开关 `WHATSAPP_HISTORY_SYNC_ENABLED`；迁移 `20261119400000_whatsapp_history_backfill.sql`，说明 `docs/s25-whatsapp-history.md`。
 
+## 2026-11-19 S23 商机与拜访报告（PR #538，迁移 20261119200000 经 s23 开关提供）
+
+- 商机（对应云盘 Projects 页）与拜访报告（对应云盘 Visit Report 页），设计见 `docs/s23-opportunities-visits.md`：表 `opportunity_stages`、`opportunities`、`visit_reports`；销售只见自己线索的行，运营/老板/admin 全见；客户端只读，写入走服务端，批准/提交/复核走四个服务端例程。
+- 接口：`src/app/api/opportunities/route.ts`、`src/app/api/opportunities/[id]/route.ts`、`src/app/api/visits/route.ts`、`src/app/api/visits/[id]/route.ts`，工作流 `src/app/api/visits/[id]/approve/route.ts`、`src/app/api/visits/[id]/submit/route.ts`、`src/app/api/visits/[id]/review/route.ts`，共用 `src/lib/opportunity-visit-api.ts`。
+- 逾期提醒 `src/app/api/cron/check-visit-overdue/route.ts`：默认关闭（`VISIT_OVERDUE_ALERTS_ENABLED`），不装定时器，不触发 Meta 回传。
+- 界面：线索详情页的商机卡 `src/app/(dashboard)/leads/[id]/LeadOpportunitiesCard.tsx` 与拜访卡 `src/app/(dashboard)/leads/[id]/LeadVisitsCard.tsx`；列表页 `src/app/(dashboard)/opportunities/page.tsx`（`opportunities-client.tsx`）、`src/app/(dashboard)/visits/page.tsx`（`visits-client.tsx`）；组件 `src/components/opportunity-visit/OpportunityPanel.tsx`、`VisitPanel.tsx`、`shared.ts`。侧边栏未改。
+- 同批已并入主线、此前未登记的文件：Meta 编号导出 `src/app/api/export/meta-ids/route.ts`、`infra/meta-ids/newme-meta-ids-export.sh`；NAS 上传 `infra/nas/newme-nas-upload.sh`。
+
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 

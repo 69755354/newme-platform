@@ -703,6 +703,13 @@ jobs:
           createdb --template history newme_whatsapp_followup_test
           PGDATABASE=newme_whatsapp_followup_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s21-followup-monitor.sql
 
+      # S24 lead dispatch states, phone review, duplicate review and row-level security, on a copy of the
+      # replayed `history` database. The script rolls its scenarios back.
+      - name: Lead dispatch and duplicate review (S24)
+        run: |
+          createdb --template history newme_dispatch_review_test
+          PGDATABASE=newme_dispatch_review_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s24-dispatch-review.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

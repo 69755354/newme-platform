@@ -76,10 +76,10 @@ Evaluation order (the first rule that applies wins):
    administrator released the lead (`release_reason` present).
 5. `review_phone`: a phone is present and `dispatch_phone_flag` is not `ok`: `invalid` (cannot be normalised by the
    same rules as `src/lib/lead-contact.mjs`) or `suspect` (six or more equal digits in a row, or an ascending or
-   descending run of seven digits). Skipped when the same normalised number was confirmed by an administrator
+   descending run of nine digits). Skipped when the same normalised number was confirmed by an administrator
    (`phone_confirmed_norm`); a different number is reviewed again.
 6. `duplicate_review`: an open duplicate review exists, or evaluation finds an older, non-archived, non-test lead
-   with the same normalised phone, the same e-mail (case-insensitive) or the same Meta lead id, and the pair has
+   with the same normalised phone, the same e-mail (case-insensitive) or the same Meta lead id (today the leads table also holds that id unique, so this match is a second line of defence), and the pair has
    not already been decided as `kept_separate`. Only the newer lead of a pair is flagged, so the original is never
    put in the queue by its own duplicate. A new pending review is created in the same transaction.
 7. `unassigned`: the lead has no owner.

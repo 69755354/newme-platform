@@ -7,7 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -23,27 +22,21 @@ import { onFetchFailure } from "@/lib/fetch-interruption";
 /* ─── Types ─── */
 interface AdsROIData {
   period: { start_date: string | null; end_date: string | null } | null;
-  summary: {
-    total_spend: number | null;
-    total_leads: number;
-    cpl: number | null;
-    conversions: number;
-    signed_amount: number;
-    roas: number | null;
-  } | null;
+  data_last_updated: string | null;
+  spend_stale: boolean;
+  spend_days_old: number | null;
+  summary: { total_spend: number | null; total_leads: number; cpl: number | null } | null;
   campaign_breakdown: CampaignRow[];
+  ad_breakdown: AdRow[];
+  weekly_breakdown: WeekRow[];
   source_quality: SourceQualityRow[];
 }
 
-interface CampaignRow {
-  campaign: string;
-  spend: number | null;
-  leads: number;
-  cpl: number | null;
-  conversions: number;
-  signed_amount: number;
-  roas: number | null;
-}
+interface CampaignRow { campaign: string; spend: number | null; leads: number; cpl: number | null }
+interface AdRow { ad: string; ad_id: string | null; spend: number | null; leads: number; cpl: number | null }
+interface WeekRow { week_start: string; week_end: string; spend: number | null; leads: number; cpl: number | null }
+
+const WINDOWS = [7, 30, 90] as const;
 
 const SOURCE_LABEL: Record<string, string> = {
   ins: "ins",
@@ -89,12 +82,14 @@ export default function AdsROI() {
   const [data, setData] = useState<AdsROIData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [days, setDays] = useState<number>(30);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
     (async () => {
       try {
-        const res = await fetch("/api/dashboard/ads-roi");
+        const res = await fetch(`/api/dashboard/ads-roi?days=${days}`);
         if (!res.ok) {
           if (res.status === 403) {
             setError(t("common.forbidden"));
@@ -114,7 +109,7 @@ export default function AdsROI() {
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [days]);
 
   if (loading) {
     return (
@@ -144,39 +139,119 @@ export default function AdsROI() {
     );
   }
 
-  const { summary, campaign_breakdown, source_quality, period } = data;
+  const { summary, campaign_breakdown, ad_breakdown, weekly_breakdown, source_quality, period } = data;
 
   return (
     <div className="space-y-4">
-      {/* Period indicator */}
-      {period?.start_date && period?.end_date && (
+      {/* Data freshness: spend only moves when the Meta sync runs */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex gap-1 bg-muted p-1 rounded-lg">
+          {WINDOWS.map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={cn(
+                "px-3 py-1 text-xs rounded-md font-medium transition-colors",
+                days === d ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t("analytics.adsLastDays").replace("{n}", String(d))}
+            </button>
+          ))}
+        </div>
+        {period?.start_date && period?.end_date && (
+          <p className="text-[11px] text-muted-foreground">
+            {t("analytics.campaignPeriod")}: {period.start_date} ~ {period.end_date}
+          </p>
+        )}
         <p className="text-[11px] text-muted-foreground">
-          {t("analytics.campaignPeriod")}: {period.start_date} ~ {period.end_date}
+          {t("analytics.adsDataUpdated")}: {data.data_last_updated ?? "—"}
         </p>
+      </div>
+      {data.spend_stale && (
+        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+          {data.data_last_updated
+            ? t("analytics.adsStaleBanner").replace("{date}", data.data_last_updated).replace("{n}", String(data.spend_days_old ?? ""))
+            : t("analytics.adsNoSpendBanner")}
+        </div>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+      {/* Summary cards: spend, leads, cost per lead (the return stops at leads) */}
+      <div className="grid grid-cols-3 gap-2">
         {[
           { label: t("analytics.totalSpend"), value: fmtAED(summary.total_spend) },
           { label: t("analytics.totalLeads"), value: fmtNum(summary.total_leads) },
           { label: t("analytics.cpl"), value: fmtAED(summary.cpl) },
-          { label: t("analytics.conversions"), value: fmtNum(summary.conversions) },
-          { label: t("analytics.wonAmount"), value: fmtAED(summary.signed_amount) },
-          { label: t("analytics.roas"), value: finite(summary.roas) === null ? "—" : `${finite(summary.roas)!.toFixed(2)}x` },
         ].map((card) => (
-          <div
-            key={card.label}
-            className="p-3 rounded-lg border border-border/50 bg-card/50"
-          >
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
-              {card.label}
-            </p>
-            <p className="text-lg font-bold text-foreground mt-0.5">
-              {card.value}
-            </p>
+          <div key={card.label} className="p-3 rounded-lg border border-border/50 bg-card/50">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{card.label}</p>
+            <p className="text-lg font-bold text-foreground mt-0.5">{card.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Per week */}
+      <div>
+        <h3 className="text-xs font-semibold text-foreground mb-2">{t("analytics.adsByWeek")}</h3>
+        <div className="rounded-lg border border-border/50 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("analytics.adsWeek")}</TableHead>
+                <TableHead className="text-right">{t("analytics.totalSpend")}</TableHead>
+                <TableHead className="text-right">{t("analytics.totalLeads")}</TableHead>
+                <TableHead className="text-right">{t("analytics.cpl")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {weekly_breakdown.map((row) => (
+                <TableRow key={row.week_start}>
+                  <TableCell className="font-medium">{row.week_start} ~ {row.week_end}</TableCell>
+                  <TableCell className="text-right">{fmtAED(row.spend)}</TableCell>
+                  <TableCell className="text-right">{row.leads}</TableCell>
+                  <TableCell className="text-right">{fmtAED(row.cpl)}</TableCell>
+                </TableRow>
+              ))}
+              {weekly_breakdown.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-6">{t("analytics.noCampaignData")}</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* Per ad */}
+      <div>
+        <h3 className="text-xs font-semibold text-foreground mb-2">{t("analytics.adsByAd")}</h3>
+        <div className="rounded-lg border border-border/50 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("analytics.adsAd")}</TableHead>
+                <TableHead className="text-right">{t("analytics.totalSpend")}</TableHead>
+                <TableHead className="text-right">{t("analytics.totalLeads")}</TableHead>
+                <TableHead className="text-right">{t("analytics.cpl")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {ad_breakdown.map((row) => (
+                <TableRow key={`${row.ad_id ?? ""}|${row.ad}`}>
+                  <TableCell className="font-medium max-w-[220px] truncate">{row.ad}</TableCell>
+                  <TableCell className="text-right">{fmtAED(row.spend)}</TableCell>
+                  <TableCell className="text-right">{row.leads}</TableCell>
+                  <TableCell className="text-right">{fmtAED(row.cpl)}</TableCell>
+                </TableRow>
+              ))}
+              {ad_breakdown.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-6">{t("analytics.noCampaignData")}</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {/* Campaign table */}
@@ -192,48 +267,20 @@ export default function AdsROI() {
                 <TableHead className="text-right">{t("analytics.totalSpend")}</TableHead>
                 <TableHead className="text-right">{t("analytics.totalLeads")}</TableHead>
                 <TableHead className="text-right">{t("analytics.cpl")}</TableHead>
-                <TableHead className="text-right">{t("analytics.conversions")}</TableHead>
-                <TableHead className="text-right">{t("analytics.wonAmount")}</TableHead>
-                <TableHead className="text-right">{t("analytics.roas")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {campaign_breakdown.map((row) => (
                 <TableRow key={row.campaign}>
-                  <TableCell className="font-medium max-w-[160px] truncate">
-                    {row.campaign}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {fmtAED(row.spend)}
-                  </TableCell>
+                  <TableCell className="font-medium max-w-[220px] truncate">{row.campaign}</TableCell>
+                  <TableCell className="text-right">{fmtAED(row.spend)}</TableCell>
                   <TableCell className="text-right">{row.leads}</TableCell>
-                  <TableCell className="text-right">
-                    {fmtAED(row.cpl)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {row.conversions}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {fmtAED(row.signed_amount)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge
-                      variant={row.roas !== null && row.roas >= 1 ? "default" : "secondary"}
-                      className={cn(
-                        "text-[10px]",
-                        row.roas !== null && row.roas >= 1
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : "bg-rose-500/10 text-rose-400"
-                      )}
-                    >
-                      {row.roas === null ? "—" : `${row.roas.toFixed(2)}x`}
-                    </Badge>
-                  </TableCell>
+                  <TableCell className="text-right">{fmtAED(row.cpl)}</TableCell>
                 </TableRow>
               ))}
               {campaign_breakdown.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
                     {t("analytics.noCampaignData")}
                   </TableCell>
                 </TableRow>
@@ -258,7 +305,6 @@ export default function AdsROI() {
                 <TableHead className="text-right">{t("analytics.qualityNormal")}</TableHead>
                 <TableHead className="text-right">{t("analytics.qualityPending")}</TableHead>
                 <TableHead className="text-right">{t("analytics.qualityBad")}</TableHead>
-                <TableHead className="text-right">{t("analytics.conversionRate")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -278,26 +324,11 @@ export default function AdsROI() {
                   <TableCell className="text-right text-rose-400">
                     {row.bad}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-[10px]",
-                        row.conv_rate >= 20
-                          ? "text-emerald-400 border-emerald-500/30"
-                          : row.conv_rate >= 10
-                          ? "text-amber-400 border-amber-500/30"
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {row.conv_rate}%
-                    </Badge>
-                  </TableCell>
                 </TableRow>
               ))}
               {source_quality.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
                     {t("analytics.noSourceData")}
                   </TableCell>
                 </TableRow>

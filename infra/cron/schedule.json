@@ -32,6 +32,13 @@
       "why": "Manager digest. The route answers Disabled until DAILY_DIGEST_ENABLED=true; enable the timer only together with the flag and Sam's approval. Not idempotent: do not run it twice a day."
     },
     {
+      "name": "ads-sync",
+      "install": "after-flag",
+      "dubaiTime": "06:20",
+      "idempotent": true,
+      "why": "Daily Meta ad spend sync for the last 7 Dubai days ending yesterday (S27). ad_spend had stopped at 2026-10-23 because only the admin route could write it. The route answers Disabled until ADS_SYNC_CRON_ENABLED=true; enable the timer only together with the flag, once the Meta ad account is paid and the token works. Idempotent: replace_meta_ad_spend_window deletes and rewrites the window inside one transaction, so a rerun changes nothing."
+    },
+    {
       "name": "check-overdue-installments",
       "install": "hermes-owned",
       "dubaiTime": "09:02",

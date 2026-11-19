@@ -402,35 +402,21 @@ export async function GET(request: Request) {
   const metaLeads = leadsData.filter((l: any) => ["ins", "fb"].includes(l.source));
   const totalMetaLeads = metaLeads.length;
   const leadsByCampaign: Record<string, number> = {};
-  const conversionsByCampaign: Record<string, number> = {};
-  const signedAmountByCampaign: Record<string, number> = {};
   for (const lead of metaLeads) {
     const raw = lead.campaign_name || "Uncategorized";
     const c = normalizeCampaign(raw);
     if (!displayNameMap[c]) displayNameMap[c] = raw;
     leadsByCampaign[c] = (leadsByCampaign[c] || 0) + 1;
-    if (isWonLead(lead)) {
-      conversionsByCampaign[c] = (conversionsByCampaign[c] || 0) + 1;
-      signedAmountByCampaign[c] = (signedAmountByCampaign[c] || 0) + wonLeadValue(lead);
-    }
   }
-
-  const totalConversions = metaLeads.filter((l: any) => isWonLead(l)).length;
-  const totalSignedAmount = metaLeads.filter((l: any) => isWonLead(l))
-    .reduce((sum: number, l: any) => sum + (parseFloat(String(l.quotation_value || "")) || 0), 0);
 
   const allCampaigns = new Set([...Object.keys(spendByCampaign), ...Object.keys(leadsByCampaign)]);
   const campaignBreakdown = Array.from(allCampaigns).map((c) => {
     const spend = spendByCampaign[c] || 0;
     const lds = leadsByCampaign[c] || 0;
-    const conv = conversionsByCampaign[c] || 0;
-    const signedAmt = signedAmountByCampaign[c] || 0;
     return {
       campaign: displayNameMap[c] || c, campaign_key: c,
       spend: Math.round(spend * 100) / 100, leads: lds,
       cpl: lds > 0 ? Math.round((spend / lds) * 100) / 100 : 0,
-      conversions: conv, signed_amount: Math.round(signedAmt * 100) / 100,
-      roas: spend > 0 ? Math.round((signedAmt / spend) * 100) / 100 : 0,
     };
   }).sort((a, b) => b.spend - a.spend);
 
@@ -440,11 +426,10 @@ export async function GET(request: Request) {
   const startDate = adSpendData.length > 0 ? adSpendData[0].spend_date : null;
   const endDate = adSpendData.length > 0 ? adSpendData[adSpendData.length - 1].spend_date : null;
   const overallCpl = totalMetaLeads > 0 ? Math.round((totalSpend / totalMetaLeads) * 100) / 100 : 0;
-  const overallRoas = totalSpend > 0 ? Math.round((totalSignedAmount / totalSpend) * 100) / 100 : 0;
 
   const adsRoi = {
     period: { start_date: startDate, end_date: endDate },
-    summary: { total_spend: Math.round(totalSpend * 100) / 100, total_leads: totalMetaLeads, cpl: overallCpl, conversions: totalConversions, signed_amount: Math.round(totalSignedAmount * 100) / 100, roas: overallRoas },
+    summary: { total_spend: Math.round(totalSpend * 100) / 100, total_leads: totalMetaLeads, cpl: overallCpl },
     campaign_breakdown: campaignBreakdown,
     source_quality: sourceQualityBreakdown,
   };

@@ -27,7 +27,10 @@ test("attribution pages group by lead source before platform", () => {
   const shared = metrics();
   assert.match(shared, /lead\?\.source \|\| lead\?\.source_platform \|\| "other"/);
   const ads = fs.readFileSync(path.join(repoRoot, pages[0]), "utf8");
-  assert.match(ads, /l\.source \|\| l\.source_platform \|\| "other"/, pages[0]);
+  // S27: the /ads page keys through attributionGroup (src/lib/ads-leads.mjs), which keeps the same source-first rule
+  assert.match(ads, /attributionGroup\(/, pages[0]);
+  const adsLib = fs.readFileSync(path.join(repoRoot, "src/lib/ads-leads.mjs"), "utf8");
+  assert.match(adsLib, /clean\(lead\.source\) \|\| clean\(lead\.source_platform\) \|\| "other"/);
   const settings = fs.readFileSync(path.join(repoRoot, pages[1]), "utf8");
   assert.doesNotMatch(settings, /source_platform \|\| /, "settings page groups with the shared default key");
 });

@@ -23,6 +23,8 @@
  * a renamed ad does not fork into two rows the way an upsert-on-name would.
  */
 
+import { addDaysToDateKey, dubaiDateKey } from "./dubai-time.mjs";
+
 export const META_API_SOURCE = "meta_api";
 export const EXCEL_SOURCE = "meta";
 /** `meta_api:<digits>` — see apiSourceForAccount(). */
@@ -247,14 +249,10 @@ export function mapInsights(insights, { source = META_API_SOURCE } = {}) {
   return { rows, rejected, duplicates };
 }
 
-/** Inclusive window, defaulting to the last `days` days ending yesterday (UTC). */
+/** Inclusive window, defaulting to the last `days` days ending yesterday (Dubai calendar; Meta reports in the account's day). */
 export function defaultWindow(days = 7, now = new Date()) {
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  end.setUTCDate(end.getUTCDate() - 1);
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - (days - 1));
-  const iso = (d) => d.toISOString().slice(0, 10);
-  return { since: iso(start), until: iso(end) };
+  const until = addDaysToDateKey(dubaiDateKey(now), -1);
+  return { since: addDaysToDateKey(until, -(days - 1)), until };
 }
 
 export function windowFromRequest(searchParams, { maxDays = 92 } = {}) {

@@ -64,6 +64,44 @@ export function createSheetsClient({ serviceAccount, fetchImpl = fetch, sleep = 
       if (!title) throw new SyncError("no_sheet", "spreadsheet has no tabs");
       return title;
     },
+    async getSheetId(id, title) {
+      const meta = await api(`${id}`, { query: "?fields=sheets.properties(sheetId,title)" }, "get sheet id");
+      const sheet = (meta.sheets ?? []).find((x) => x.properties?.title === title);
+      if (!sheet) throw new SyncError("no_sheet", "tab not found");
+      return sheet.properties.sheetId;
+    },
+    /** One batchUpdate: value + background + note of each cell in the same request. See guardSheets for what is allowed. */
+    async batchUpdateCells(id, tab, ops) {
+      if (!ops.length) return {};
+      const sheetId = await this.getSheetId(id, tab);
+      const requests = ops.map((o) => {
+        if (o.kind === "rowbg") {
+          return { repeatCell: { range: { sheetId, startRowIndex: o.row - 1, endRowIndex: o.row, startColumnIndex: o.c1, endColumnIndex: o.c2 + 1 },
+            cell: { userEnteredFormat: { backgroundColor: o.bg } }, fields: "userEnteredFormat.backgroundColor" } };
+        }
+        const cellData = {}; const fields = [];
+        if (o.value !== undefined) { cellData.userEnteredValue = { stringValue: String(o.value) }; fields.push("userEnteredValue"); }
+        if (o.bg) { cellData.userEnteredFormat = { backgroundColor: o.bg }; fields.push("userEnteredFormat.backgroundColor"); }
+        if (o.note !== undefined) { cellData.note = o.note; fields.push("note"); }
+        return { updateCells: { rows: [{ values: [cellData] }], fields: fields.join(","), start: { sheetId, rowIndex: o.row - 1, columnIndex: o.col } } };
+      });
+      return api(`${id}:batchUpdate`, { method: "POST", body: { requests } }, "format update");
+    },
+    /** Value, background and note of single cells, in the order asked. ranges are single-cell A1 strings. */
+    async getCells(id, ranges) {
+      const out = [];
+      for (let i = 0; i < ranges.length; i += 40) {
+        const part = ranges.slice(i, i + 40);
+        const q = `?fields=${enc("sheets.data.rowData.values(formattedValue,userEnteredFormat.backgroundColor,note)")}&${part.map((r) => `ranges=${enc(r)}`).join("&")}`;
+        const r = await api(`${id}`, { query: q }, "get cells");
+        const data = r.sheets?.[0]?.data ?? [];
+        part.forEach((_, k) => {
+          const c = data[k]?.rowData?.[0]?.values?.[0] ?? {};
+          out.push({ value: c.formattedValue ?? "", bg: c.userEnteredFormat?.backgroundColor ?? null, note: c.note ?? "" });
+        });
+      }
+      return out;
+    },
     async getValues(id, range) {
       const r = await api(`${id}/values/${enc(range)}`, { query: "?majorDimension=ROWS" }, "get values");
       return r.values ?? [];

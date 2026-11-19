@@ -110,15 +110,40 @@ export function guardSheets(sheets, policy) {
     getFirstSheetTitle: (...a) => sheets.getFirstSheetTitle(...a),
     batchUpdateValues(id, data) { for (const d of data) check(id, d.range, "update"); return sheets.batchUpdateValues(id, data); },
     appendValues(id, range, values) { check(id, range, "append"); return sheets.appendValues(id, range, values); },
+    getSheetId: (...a) => sheets.getSheetId(...a),
+    getCells: (...a) => sheets.getCells(...a),
+    /**
+     * Format and note requests have their own door: each op must fall on a cell that is already allowed for writing
+     * (rule.formatCells), or be the one header note on the OS-owned sheet. Nothing else can reach the format API.
+     */
+    batchUpdateCells(id, tab, ops) {
+      const rule = policy[id];
+      if (!rule || !rule.formatCells) throw new SyncError("write_blocked", "format requests are not allowed on this spreadsheet");
+      if (rule.tab && tab !== rule.tab) throw new SyncError("write_blocked", `format outside tab ${rule.tab}`);
+      for (const op of ops) {
+        const kinds = { cell: ["row", "col", "value", "bg", "note"], rowbg: ["row", "c1", "c2", "bg"], headernote: ["row", "col", "note"] };
+        if (!kinds[op.kind]) throw new SyncError("write_blocked", "unknown format request");
+        if (Object.keys(op).some((k) => k !== "kind" && !kinds[op.kind].includes(k))) throw new SyncError("write_blocked", "unexpected field in format request");
+        if (op.kind === "headernote") {
+          if (!rule.headerNote || op.row !== 1 || op.col !== 0) throw new SyncError("write_blocked", "header note is only allowed on A1 of the OS-owned sheet");
+          continue;
+        }
+        const cols = op.kind === "cell" ? [op.col] : [op.c1, op.c2];
+        for (const c of cols) if (!rule.formatCells.test(`${columnLetter(c)}${op.row}`)) throw new SyncError("write_blocked", `format on ${columnLetter(c)}${op.row} is outside the allowed cells`);
+        if (op.row < (rule.minRow ?? 2)) throw new SyncError("write_blocked", "format touches the header row");
+        if (op.kind === "cell" && op.value !== undefined && !rule.cells.test(`${columnLetter(op.col)}${op.row}`) && !rule.formatCells.test(`${columnLetter(op.col)}${op.row}`)) throw new SyncError("write_blocked", "value outside allowed cells");
+      }
+      return sheets.batchUpdateCells(id, tab, ops);
+    },
   };
 }
 
 export function buildWritePolicy({ metaSheetId, metaTab, salesSheetId, salesTab, clidColumn }) {
   const width = columnLetter(META_IDS_HEADER.length - 1);
   return {
-    [metaSheetId]: { tab: metaTab, cells: new RegExp(`^A\\d+(:${width}\\d+)?$|^A(:${width})?$`), minRow: 2, append: true },
+    [metaSheetId]: { tab: metaTab, cells: new RegExp(`^A\\d+(:${width}\\d+)?$|^A(:${width})?$`), formatCells: new RegExp(`^[A-${width}]\\d+$`), headerNote: true, minRow: 2, append: true },
     // Sales sheet: exactly one cell of exactly one column, no appends, no header row.
-    [salesSheetId]: { tab: salesTab, cells: new RegExp(`^${clidColumn}\\d+$`), minRow: 2, append: false },
+    [salesSheetId]: { tab: salesTab, cells: new RegExp(`^${clidColumn}\\d+$`), formatCells: new RegExp(`^${clidColumn}\\d+$`), minRow: 2, append: false },
   };
 }
 
@@ -175,7 +200,7 @@ export function locateSalesColumns(phoneCol, clidCol, cfg = DEFAULTS) {
 
 /**
  * leads: [{lead_ref, phone, ctwa_clid, created_at}] (OS side). Returns
- * {writes:[{row, value, lead_ref}], unchanged, unmatched:[{lead_ref, reason}], ambiguous:[{lead_ref, rows}], manual:[{lead_ref, row}], conflicts}.
+ * {writes:[{row, value, lead_ref}], unchanged, unmatched:[{lead_ref, reason}], ambiguous:[{lead_ref, rows}], manual:[{lead_ref, row, edited, current}], conflicts}.
  * A cell is written only when it is empty or still holds the value this program wrote earlier for that lead (owned[lead_ref]);
  * anything else was typed by a person: skipped and reported, never overwritten.
  * Only ever plans a cell in the clid column of a data row; rows that do not match are reported, never created.
@@ -207,11 +232,44 @@ export function planCtwaColumnX(phoneCol, clidCol, leads, cfg = DEFAULTS, owned 
     if (rows.length > 1) { ambiguous.push({ lead_ref: lead.lead_ref, rows: rows.length }); continue; }
     const row = rows[0]; const current = cell(clidCol[row]).trim();
     if (current === lead.ctwa_clid) { unchanged++; continue; }
-    if (current && current !== owned[lead.lead_ref]) { manual.push({ lead_ref: lead.lead_ref, row: row + 1 }); continue; }
+    if (current && current !== owned[lead.lead_ref]) {
+      // `edited` = this program wrote the cell earlier and a person changed it since (gets the yellow mark)
+      manual.push({ lead_ref: lead.lead_ref, row: row + 1, edited: owned[lead.lead_ref] !== undefined, current });
+      continue;
+    }
     writes.push({ row: row + 1, value: lead.ctwa_clid, lead_ref: lead.lead_ref });
   }
   writes.sort((a, b) => a.row - b.row);
   return { writes, unchanged, unmatched, ambiguous, manual, conflicts };
+}
+
+// ---------- provenance marks (colour + note on every cell the program writes) ----------
+export const BLUE = Object.freeze({ red: 0.85, green: 0.92, blue: 1 });   // written by OS
+export const YELLOW = Object.freeze({ red: 1, green: 0.95, blue: 0.6 });  // a person changed an OS value
+export const HEADER_NOTE = "本表全部由 OS 自动写入，请勿手改";
+export const dubaiStamp = (ms) => new Date(ms + 4 * 3_600_000).toISOString().slice(0, 16).replace("T", " ");
+/** Short, phone-free label of a lead: first 7 characters of the public reference, then stars. */
+export const maskRef = (ref) => `${cell(ref).slice(0, 7)}****`;
+export const noteWritten = (ms, ref) => `OS 同步 迪拜时间 ${dubaiStamp(ms)}｜来源：OS｜线索 ${maskRef(ref)}`;
+export const noteEdited = (ms) => `人工修改于 ${dubaiStamp(ms)}，OS 不再覆盖`;
+export const noteUpdated = (ms, last) => `OS 更新 迪拜时间 ${dubaiStamp(ms)}｜上次 ${last ?? "首次"}`;
+
+/** What read-back must find for each op: [{row, col, value?, bg?, note?}] (rowbg is checked on its first cell). */
+export function expectedFromOps(ops) {
+  return ops.map((o) => o.kind === "rowbg" ? { row: o.row, col: o.c1, bg: o.bg }
+    : o.kind === "headernote" ? { row: o.row, col: o.col, note: o.note } : { row: o.row, col: o.col, value: o.value, bg: o.bg, note: o.note });
+}
+const near = (a, b) => Math.abs((a ?? 0) - (b ?? 0)) < 0.01;
+const sameBg = (a, b) => near(a?.red, b?.red) && near(a?.green, b?.green) && near(a?.blue, b?.blue);
+/** expected: expectedFromOps(); actual: [{value, bg, note}] in the same order. Returns the expected entries that differ. */
+export function diffCellReadBack(expected, actual) {
+  return expected.filter((e, i) => {
+    const a = actual[i] ?? {};
+    if (e.value !== undefined && cell(a.value) !== cell(e.value)) return true;
+    if (e.bg !== undefined && !sameBg(a.bg, e.bg)) return true;
+    if (e.note !== undefined && cell(a.note) !== e.note) return true;
+    return false;
+  });
 }
 
 // ---------- caps and verification ----------
@@ -234,14 +292,16 @@ export function diffReadBack(expected, actual) {
 // ---------- state ----------
 export function emptyState() {
   return { version: 1, leads_cursor: null, events_cursor: null, pending_ctwa: {}, last_ok_at: null, last_run_at: null,
-    consecutive_failures: 0, nas_uploaded: {}, x_written: {} };
+    consecutive_failures: 0, nas_uploaded: {}, x_written: {}, x_manual_marked: {}, meta_times: {}, meta_header_noted: false };
 }
 export function normalizeState(raw) {
   const base = emptyState();
   if (!raw || typeof raw !== "object") return base;
   return { ...base, ...raw, pending_ctwa: raw.pending_ctwa && typeof raw.pending_ctwa === "object" ? raw.pending_ctwa : {},
     nas_uploaded: raw.nas_uploaded && typeof raw.nas_uploaded === "object" ? raw.nas_uploaded : {},
-    x_written: raw.x_written && typeof raw.x_written === "object" ? raw.x_written : {} };
+    x_written: raw.x_written && typeof raw.x_written === "object" ? raw.x_written : {},
+    x_manual_marked: raw.x_manual_marked && typeof raw.x_manual_marked === "object" ? raw.x_manual_marked : {},
+    meta_times: raw.meta_times && typeof raw.meta_times === "object" ? raw.meta_times : {} };
 }
 /** Query lower bound: cursor minus the overlap, so a late-committing row is never skipped. Null = full read. */
 export function sinceFromCursor(cursor, overlapSeconds = DEFAULTS.overlapSeconds) {

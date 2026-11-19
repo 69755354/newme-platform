@@ -4,6 +4,7 @@
 // Default off: without OS_DRIVE_SYNC_ENABLED=true a real run does nothing. --dry-run only reads and prints
 // the planned writes. See docs/s28-drive-nas-sync.md. Never prints keys, phone numbers or click ids.
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +12,8 @@ import { pathToFileURL } from "node:url";
 import { buildMetaIdRows, leadRef } from "../src/lib/meta-ids-export.mjs";
 import { createSheetsClient, loadServiceAccount } from "../src/lib/google-sheets-client.mjs";
 import {
-  DEFAULTS, SyncError, a1Tab, assertWithinCap, buildWritePolicy, columnLetter, diffReadBack, dubaiDay, formatReport, guardSheets,
+  BLUE, DEFAULTS, HEADER_NOTE, SyncError, YELLOW, a1Tab, assertWithinCap, buildWritePolicy, columnIndex, columnLetter, diffCellReadBack, diffReadBack, expectedFromOps,
+  dubaiStamp, noteEdited, noteUpdated, noteWritten, dubaiDay, formatReport, guardSheets,
   maxIso, normalizeState, parseCsv, planCtwaColumnX, planMetaIdsUpsert, reconcileMetaIds, shouldAlert, sinceFromCursor,
 } from "../src/lib/os-drive-sync.mjs";
 
@@ -141,6 +143,22 @@ async function verifyAndRetry(sheets, id, writes, rewrite) {
   if (bad.length) throw new SyncError("readback_mismatch", `read-back mismatch on ${bad.length} range(s) after one retry`);
 }
 
+/** Apply colour/note ops in one request, read the cells back (value, background, note); retry the mismatches once. */
+async function applyOps(guarded, id, tab, ops) {
+  const expected = expectedFromOps(ops);
+  const readBack = async (exp) => guarded.getCells(id, exp.map((e) => `${a1Tab(tab)}!${columnLetter(e.col)}${e.row}`));
+  await guarded.batchUpdateCells(id, tab, ops);
+  let bad = diffCellReadBack(expected, await readBack(expected));
+  if (bad.length) {
+    const again = ops.filter((_, i) => bad.includes(expected[i]));
+    await guarded.batchUpdateCells(id, tab, again);
+    const exp2 = expectedFromOps(again);
+    bad = diffCellReadBack(exp2, await readBack(exp2));
+  }
+  if (bad.length) throw new SyncError("readback_mismatch", `read-back mismatch on ${bad.length} cell(s) (value, colour or note) after one retry`);
+}
+const hashText = (t) => createHash("sha256").update(String(t)).digest("hex").slice(0, 16);
+
 // ---------- the sync run ----------
 export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args = {}, now = () => Date.now(), log = console.log, leadsOverride = null }) {
   const startedAt = new Date(now()).toISOString();
@@ -180,7 +198,10 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
     meta_updates: planA.updates.length, meta_appends: planA.appends.length, meta_unchanged: planA.unchanged, meta_duplicate_keys: planA.duplicateSheetKeys,
     x_writes: planB.writes.length, x_manual_skipped: planB.manual.length, x_unchanged: planB.unchanged, x_unmatched: planB.unmatched.length, x_ambiguous: planB.ambiguous.length,
   });
-  const planned = planA.updates.length + planA.appends.length + planB.writes.length;
+  // people changed a value this program wrote earlier: mark it yellow once (not again until it changes again)
+  const marks = planB.manual.filter((m) => m.edited && state.x_manual_marked[m.lead_ref] !== hashText(m.current));
+  summary.x_marks = marks.length;
+  const planned = planA.updates.length + planA.appends.length + planB.writes.length + marks.length;
   summary.planned_writes = planned;
 
   if (args.dryRun) {
@@ -193,10 +214,17 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   // 3. write + read back
   const changes = []; const ts = startedAt;
   const guarded = guardSheets(sheets, buildWritePolicy({ ...cfg, metaTab: titles.meta }));
+  const metaOps = [];
   if (planA.updates.length) {
     const data = planA.updates.map((u) => ({ range: `${a1Tab(titles.meta)}!A${u.row}:${WIDTH}${u.row}`, values: [u.values] }));
     await guarded.batchUpdateValues(cfg.metaSheetId, data);
     await verifyAndRetry(guarded, cfg.metaSheetId, data, (bad) => guarded.batchUpdateValues(cfg.metaSheetId, bad));
+    for (const u of planA.updates) {
+      const key = `${u.values[0]}|${u.values[2]}|${u.values[3]}`;
+      metaOps.push({ kind: "rowbg", row: u.row, c1: 0, c2: 14, bg: BLUE });
+      u.values.forEach((v, c) => { if (v !== u.previous[c]) metaOps.push({ kind: "cell", row: u.row, col: c, note: noteUpdated(now(), state.meta_times[key]) }); });
+      state.meta_times[key] = dubaiStamp(now());
+    }
     for (const u of planA.updates) changes.push({ ts, sheet: "meta_ids", action: "update", row: u.row, lead_ref: u.values[0], meta_id_type: u.values[2], meta_id: u.values[3], values: u.values, previous: u.previous });
   }
   if (planA.appends.length) {
@@ -207,16 +235,31 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
     if (diffReadBack([{ range: updated, values: planA.appends }], [{ values: back[0] }]).length) {
       throw new SyncError("readback_mismatch", "read-back mismatch after append");
     }
+    const first = Number(/!A(\d+):/.exec(updated)?.[1]);
+    if (!Number.isInteger(first)) throw new SyncError("append_no_range", "append range could not be read");
+    planA.appends.forEach((v, i) => {
+      metaOps.push({ kind: "rowbg", row: first + i, c1: 0, c2: 14, bg: BLUE }, { kind: "cell", row: first + i, col: 0, note: noteUpdated(now(), null) });
+      state.meta_times[`${v[0]}|${v[2]}|${v[3]}`] = dubaiStamp(now());
+    });
     for (const v of planA.appends) changes.push({ ts, sheet: "meta_ids", action: "append", lead_ref: v[0], meta_id_type: v[2], meta_id: v[3], values: v });
   }
-  if (planB.writes.length) {
-    const data = planB.writes.map((w) => ({ range: `${a1Tab(cfg.salesTab)}!${cfg.clidColumn}${w.row}`, values: [[w.value]] }));
-    await guarded.batchUpdateValues(cfg.salesSheetId, data);
-    await verifyAndRetry(guarded, cfg.salesSheetId, data, (bad) => guarded.batchUpdateValues(cfg.salesSheetId, bad));
-    for (const w of planB.writes) changes.push({ ts, sheet: "home_owners_x", action: "write", row: w.row, lead_ref: w.lead_ref, value: w.value });
+  if (!state.meta_header_noted) metaOps.push({ kind: "headernote", row: 1, col: 0, note: HEADER_NOTE });
+  if (metaOps.length) {
+    await applyOps(guarded, cfg.metaSheetId, titles.meta, metaOps);
+    if (!state.meta_header_noted) { state.meta_header_noted = true; changes.push({ ts, sheet: "meta_ids", action: "header_note", row: 1 }); }
+  }
+  if (planB.writes.length || marks.length) {
+    const col = columnIndex(cfg.clidColumn); const nowMs = now();
+    const ops = [
+      ...planB.writes.map((w) => ({ kind: "cell", row: w.row, col, value: w.value, bg: BLUE, note: noteWritten(nowMs, w.lead_ref) })),
+      ...marks.map((m) => ({ kind: "cell", row: m.row, col, bg: YELLOW, note: noteEdited(nowMs) })),
+    ];
+    await applyOps(guarded, cfg.salesSheetId, cfg.salesTab, ops);
+    for (const w of planB.writes) changes.push({ ts, sheet: "home_owners_x", action: "write", row: w.row, lead_ref: w.lead_ref, value: w.value, note: noteWritten(nowMs, w.lead_ref) });
+    for (const m of marks) { changes.push({ ts, sheet: "home_owners_x", action: "mark_edited_by_person", row: m.row, lead_ref: m.lead_ref, note: noteEdited(nowMs) }); state.x_manual_marked[m.lead_ref] = hashText(m.current); }
   }
 
-  for (const w of planB.writes) state.x_written[w.lead_ref] = w.value;
+  for (const w of planB.writes) { state.x_written[w.lead_ref] = w.value; delete state.x_manual_marked[w.lead_ref]; }
 
   // 4. NAS spool + upload (a failed upload is retried next run, it never blocks the cursor)
   let nasError = null;

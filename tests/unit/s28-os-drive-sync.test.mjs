@@ -8,7 +8,7 @@ import { META_IDS_HEADER } from "../../src/lib/meta-ids-export.mjs";
 import { createSheetsClient } from "../../src/lib/google-sheets-client.mjs";
 import {
   backoffDelayMs, buildWritePolicy, columnIndex, columnLetter, guardSheets, phoneKey, phoneKeysFromCell, planCtwaColumnX,
-  planMetaIdsUpsert, retryAfterMs, shouldAlert, sinceFromCursor, maskPhone, assertWithinCap, DEFAULTS,
+  planMetaIdsUpsert, retryAfterMs, BLUE, YELLOW, HEADER_NOTE, noteWritten, noteEdited, shouldAlert, sinceFromCursor, maskPhone, assertWithinCap, DEFAULTS,
 } from "../../src/lib/os-drive-sync.mjs";
 import { createIo, parseArgs, runReconcile, runSync } from "../../scripts/os-drive-nas-sync.mjs";
 
@@ -17,7 +17,7 @@ const A1 = /^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/;
 
 /** In-memory spreadsheets. grids[id] = array of rows (strings). Records every write range. */
 function fakeSheets(grids, titles = { [META]: "Registry", [SALES]: "Home-owners" }) {
-  const writes = []; let requests = 0;
+  const writes = []; let requests = 0; const fmt = {};
   const parse = (range) => {
     const bang = range.lastIndexOf("!"); const a1 = range.slice(bang + 1);
     const m = a1.match(A1); const c1 = columnIndex(m[1]); const c2 = columnIndex(m[3] ?? m[1]);
@@ -34,11 +34,28 @@ function fakeSheets(grids, titles = { [META]: "Registry", [SALES]: "Home-owners"
     values.forEach((vals, i) => { while (g.length < r1 + i) g.push([]); vals.forEach((v, j) => { g[r1 + i - 1][c1 + j] = String(v); }); });
   };
   return {
-    writes, grids, get requestCount() { return requests; },
+    writes, grids, fmt, get requestCount() { return requests; },
     async getFirstSheetTitle(id) { requests++; return titles[id]; },
     async getValues(id, range) { requests++; return read(id, range); },
     async batchGetValues(id, ranges) { requests++; return ranges.map((r) => read(id, r)); },
     async batchUpdateValues(id, data) { requests++; for (const d of data) { writes.push({ id, range: d.range }); put(id, d.range, d.values); } return {}; },
+    async getSheetId() { requests++; return 7; },
+    async batchUpdateCells(id, tab, ops) {
+      requests++;
+      for (const o of ops) {
+        if (o.kind === "rowbg") { writes.push({ id, range: `'${tab}'!${columnLetter(o.c1)}${o.row}:${columnLetter(o.c2)}${o.row}`, format: true }); for (let c = o.c1; c <= o.c2; c++) (fmt[`${id}:${o.row},${c}`] ??= {}).bg = o.bg; continue; }
+        writes.push({ id, range: `'${tab}'!${columnLetter(o.col)}${o.row}`, format: true });
+        const f = (fmt[`${id}:${o.row},${o.col}`] ??= {});
+        if (o.kind === "headernote") { f.note = o.note; continue; }
+        if (o.value !== undefined) put(id, `'${tab}'!${columnLetter(o.col)}${o.row}`, [[o.value]]);
+        if (o.bg) f.bg = o.bg; if (o.note !== undefined) f.note = o.note;
+      }
+      return {};
+    },
+    async getCells(id, ranges) {
+      requests++;
+      return ranges.map((r) => { const { c1, r1 } = parse(r); const f = fmt[`${id}:${r1},${c1}`] ?? {}; return { value: grids[id][r1 - 1]?.[c1] ?? "", bg: f.bg ?? null, note: f.note ?? "" }; });
+    },
     async appendValues(id, range, values) {
       requests++; const g = grids[id]; const start = g.length + 1; values.forEach((v) => g.push([...v])); writes.push({ id, range: `append:${range}`, rows: values.length });
       return { updates: { updatedRange: `'${titles[id]}'!A${start}:O${start + values.length - 1}` } };
@@ -137,7 +154,7 @@ test("planCtwaColumnX: matches by phone, reports unmatched and ambiguous, never 
   const leads = [1, 2, 3, 4, 5].map((n) => ({ lead_ref: `r${n}`, phone: `+97150000000${n}`, ctwa_clid: `CLID_${n}_abcdefghij`, created_at: "2026-11-19" }));
   const p = planCtwaColumnX(P, X, leads);
   assert.deepEqual(p.writes.map((w) => [w.row, w.lead_ref]), [[2, "r1"]]);
-  assert.deepEqual(p.manual, [{ lead_ref: "r2", row: 3 }], "a value typed by a person is skipped, never overwritten");
+  assert.deepEqual(p.manual, [{ lead_ref: "r2", row: 3, edited: false, current: "OLD" }], "a value typed by a person is skipped, never overwritten");
   assert.equal(p.unchanged, 1);
   const owned = planCtwaColumnX(P, X, leads, DEFAULTS, { r2: "OLD" });
   assert.deepEqual(owned.writes.map((w) => w.lead_ref), ["r1", "r2"], "a value this program wrote earlier may be updated");
@@ -159,10 +176,13 @@ test("run: writes Meta IDs rows and column X only, nothing else changes, reads b
   assert.deepEqual(diffCells, ["X2"], "only column X of the matched row changed");
   assert.equal(sales[1][0], "typed-by-sales");
   for (const w of t.sheets.writes.filter((x) => x.id === SALES)) assert.match(w.range, /^'Home-owners'!X\d+$/);
+  assert.deepEqual(t.sheets.fmt[`${SALES}:2,23`].bg, BLUE);
+  assert.equal(t.sheets.fmt[`${SALES}:2,23`].note, noteWritten(t.clock.t, "NM-000000010000"));
+  assert.ok(!t.sheets.fmt[`${SALES}:2,23`].note.includes("9715"), "note carries no phone");
   assert.equal(t.uploads.length, 1);
   const jsonl = readFileSync(t.io.changesFile("20261120").file, "utf8");
   assert.ok(!jsonl.includes("+9715") && !jsonl.includes("0500000"), "no phone numbers in the NAS records");
-  assert.equal(jsonl.trim().split("\n").length, 3);
+  assert.equal(jsonl.trim().split("\n").length, 4, "2 appends + 1 X write + the one-time header note");
 });
 
 test("run: a human-typed X value is left alone and reported; our own earlier value is updated", async () => {
@@ -177,6 +197,63 @@ test("run: a human-typed X value is left alone and reported; our own earlier val
   const r2 = await t.run();
   assert.equal(r2.summary.x_writes, 1); assert.equal(sales[2][23], "CLID_2_changedvalue");
   assert.equal(sales[1][23], "typed-by-hand");
+});
+
+test("meta sheet: header note once, new and updated rows blue, updated cells carry a note with the last time", async () => {
+  const leads = [lead(1, { updated_at: "2026-11-18T00:00:00.000Z" })];
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([]) });
+  await t.run();
+  const f = t.sheets.fmt;
+  assert.equal(f[`${META}:1,0`].note, HEADER_NOTE);
+  assert.deepEqual(f[`${META}:2,0`].bg, BLUE); assert.deepEqual(f[`${META}:2,14`].bg, BLUE);
+  leads[0].stage = "qualified"; leads[0].updated_at = "2026-11-20T07:00:00.000Z"; t.clock.t += 3_600_000;
+  await t.run();
+  assert.match(f[`${META}:2,10`].note, /^OS 更新 迪拜时间 2026-11-20 13:00｜上次 2026-11-20 12:00$/);
+  assert.equal(f[`${META}:2,3`].note, undefined, "unchanged cells get no new note");
+  assert.equal(t.sheets.writes.filter((w) => w.format && w.range === "'Registry'!A1").length, 1, "header note written only once");
+});
+
+test("a person edits a value the program wrote: yellow mark and note once, value never overwritten", async () => {
+  const sales = salesGrid([sRow("+971500000001")]);
+  const leads = [lead(1)];
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: sales });
+  await t.run();
+  assert.equal(sales[1][23], "CLID_1_abcdefghij");
+  sales[1][23] = "hand-edited";
+  leads[0].updated_at = "2026-11-20T06:00:00.000Z";
+  const r = await t.run();
+  assert.equal(r.summary.x_marks, 1); assert.equal(sales[1][23], "hand-edited");
+  assert.deepEqual(t.sheets.fmt[`${SALES}:2,23`].bg, YELLOW);
+  assert.equal(t.sheets.fmt[`${SALES}:2,23`].note, noteEdited(t.clock.t));
+  const before = t.sheets.writes.length; leads[0].updated_at = "2026-11-20T06:30:00.000Z";
+  const again = await t.run();
+  assert.equal(again.summary.x_marks, 0); assert.equal(t.sheets.writes.length, before, "marked once, not every run");
+  assert.ok(readFileSync(t.io.changesFile("20261120").file, "utf8").includes("mark_edited_by_person"));
+});
+
+test("guard: format requests only reach already-allowed cells; anything else is refused", async () => {
+  const sheets = fakeSheets({ [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  const g = guardSheets(sheets, buildWritePolicy({ ...DEFAULTS, metaTab: "Registry" }));
+  await g.batchUpdateCells(SALES, "Home-owners", [{ kind: "cell", row: 2, col: 23, value: "x", bg: BLUE, note: "n" }]);
+  const refuse = (id, tab, op) => assert.rejects(async () => g.batchUpdateCells(id, tab, [op]), /not allowed|outside|header|unknown|unexpected/);
+  await refuse(SALES, "Home-owners", { kind: "cell", row: 2, col: 22, bg: YELLOW });          // column W
+  await refuse(SALES, "Home-owners", { kind: "cell", row: 1, col: 23, bg: YELLOW });          // header row
+  await refuse(SALES, "Home-owners", { kind: "rowbg", row: 2, c1: 0, c2: 23, bg: YELLOW });   // whole row
+  await refuse(SALES, "Home-owners", { kind: "headernote", row: 1, col: 0, note: "x" });      // header note only on the OS sheet
+  await refuse(SALES, "Other tab", { kind: "cell", row: 2, col: 23, bg: BLUE });
+  await refuse(SALES, "Home-owners", { kind: "deleteRow", row: 2 });
+  await refuse(SALES, "Home-owners", { kind: "cell", row: 2, col: 23, bg: BLUE, textFormat: { bold: true } });
+  await refuse("another", "Home-owners", { kind: "cell", row: 2, col: 23, bg: BLUE });
+  await g.batchUpdateCells(META, "Registry", [{ kind: "headernote", row: 1, col: 0, note: HEADER_NOTE }, { kind: "rowbg", row: 2, c1: 0, c2: 14, bg: BLUE }]);
+  await refuse(META, "Registry", { kind: "headernote", row: 1, col: 3, note: "x" });
+  await refuse(META, "Registry", { kind: "cell", row: 2, col: 15, bg: BLUE });                // column P
+});
+
+test("read-back compares colour and note, not only the value", async () => {
+  const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  const noColour = { ...t.sheets, batchUpdateCells: async (id, tab, ops) => t.sheets.batchUpdateCells(id, tab, ops.map((o) => (id === SALES ? { ...o, bg: undefined } : o))) };
+  Object.defineProperty(noColour, "requestCount", { get: () => 0 });
+  await assert.rejects(() => t.run({ sheets: noColour }), (e) => e.code === "readback_mismatch");
 });
 
 test("run is idempotent: a second run (and a --full re-run) plans and writes nothing", async () => {
@@ -215,11 +292,11 @@ test("dry-run writes nothing, saves no state", async () => {
 
 test("read-back mismatch: retried once, then fails loudly", async () => {
   const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
-  const bad = { ...t.sheets, batchUpdateValues: async (id, data) => { t.sheets.writes.push({ id, range: data[0].range }); return {}; } }; // silently drops writes
+  const bad = { ...t.sheets, batchUpdateCells: async (id, tab, ops) => { if (id !== SALES) return t.sheets.batchUpdateCells(id, tab, ops); t.sheets.writes.push({ id, range: "dropped" }); return {}; } }; // silently drops writes
   Object.defineProperty(bad, "requestCount", { get: () => 0 });
   await assert.rejects(() => t.run({ sheets: bad }), (e) => e.code === "readback_mismatch");
   assert.equal(t.io.readState().leads_cursor, null, "cursor not advanced after a failed write");
-  assert.equal(t.sheets.writes.filter((w) => w.id === SALES).length, 2, "one write plus one retry");
+  assert.equal(t.sheets.writes.filter((w) => w.id === SALES && w.range === "dropped").length, 2, "one write plus one retry");
 });
 
 test("unmatched click ids stay pending and are retried when the sheet row appears", async () => {

@@ -10,6 +10,7 @@ import { useVersionSkewReload } from "@/hooks/useVersionSkewReload";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 import { ConnectionFailed } from "@/components/ConnectionFailed";
 import { ReleaseUpdateBanner } from "@/components/ReleaseUpdateBanner";
+import { SessionHandoffContext } from "@/lib/session-contexts";
 import { isSessionUnavailable, subscribeSessionUnavailable } from "@/lib/session-identity";
 import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
@@ -19,7 +20,7 @@ import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { t } = useLanguage();
-  const { role, userEmail, authLoading, authError, handleLogout } = useAuthRedirect();
+  const { role, userEmail, authLoading, authError, handleLogout, handoff } = useAuthRedirect();
   useVersionSkewReload();
   // Published by src/lib/session-identity.ts when any page's session read stays
   // unavailable after its retries: the page would otherwise sit on "loading"
@@ -84,7 +85,9 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               fallback={<div className="flex items-center justify-center h-64 text-muted-foreground text-sm">{t("common.loading")}</div>}
             >
               <DashboardErrorBoundary>
-                {children}
+                <SessionHandoffContext.Provider value={handoff}>
+                  {children}
+                </SessionHandoffContext.Provider>
               </DashboardErrorBoundary>
             </Suspense>
           )}

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { readSessionIdentity } from "@/lib/session-identity";
+import { readSessionIdentity, type SessionIdentity } from "@/lib/session-identity";
+import { createSessionHandoff } from "@/lib/session-handoff";
 
 /**
  * useAuthRedirect — DashboardLayout 的鉴权 + 角色解析 + 重定向副作用集中点
@@ -26,6 +27,9 @@ export function useAuthRedirect() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState(false);
+  // The identity this layout has just proved live, offered once to the page that
+  // mounts next so its role guard need not prove it a second time (S22).
+  const [handoff] = useState(() => createSessionHandoff<SessionIdentity>());
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +89,7 @@ export function useAuthRedirect() {
         }
         setAuthError(false);
         const data = outcome.identity;
+        handoff.offer(data);
         setUserId(data.userId);
         setUserEmail(data.email);
         const r = data.role || "sales";
@@ -134,5 +139,6 @@ export function useAuthRedirect() {
     authLoading,
     authError,
     handleLogout,
+    handoff,
   };
 }

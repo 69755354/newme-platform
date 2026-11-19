@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { readSessionIdentity } from "@/lib/session-identity";
 import { onFetchFailure } from "@/lib/fetch-interruption";
 
 /* ─── Types ─── */
@@ -94,7 +93,7 @@ export default function PaymentTracker() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
-  const { loading: roleLoading, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
+  const { loading: roleLoading, role, userId: identityUserId } = useRequireRole(["admin", "boss", "operator", "sales"]);
 
   const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
     paid:     { label: t("analytics.paid"),       bg: "bg-emerald-500/10", text: "text-emerald-400", dot: "bg-emerald-500" },
@@ -105,18 +104,12 @@ export default function PaymentTracker() {
   };
 
   useEffect(() => {
-    if (roleLoading) return;
-    // GET /api/auth/me rather than the getCurrentUser() server action: an
-    // action id changes with every release, so a tab opened before a deploy
-    // never got its user id here and the tracker stayed empty.
-    let cancelled = false;
-    readSessionIdentity().then((outcome) => {
-      if (cancelled || outcome.status !== "active") return;
-      setUserId(outcome.identity.userId);
-      setUserRole(role);
-    });
-    return () => { cancelled = true; };
-  }, [roleLoading, role]);
+    if (roleLoading || !identityUserId) return;
+    // The identity comes from useRequireRole (S22): inside the analytics page it
+    // is the page's own answer, so this panel no longer asks /api/auth/me itself.
+    setUserId(identityUserId);
+    setUserRole(role);
+  }, [roleLoading, role, identityUserId]);
 
   useEffect(() => {
     if (!userRole) return;

@@ -1,6 +1,6 @@
 # Guarded S25 database-batch provisioning
 
-Applies `20261119150000_whatsapp_history_backfill.sql` (OS fix S25, WhatsApp coexistence history backfill:
+Applies `20261119400000_whatsapp_history_backfill.sql` (OS fix S25, WhatsApp coexistence history backfill:
 one defaulted `backfilled` column on `whatsapp_message_events`, one server-only contacts table and two service-role
 routines) to a
 production database that already carries every earlier deferred migration, including both S16
@@ -37,13 +37,12 @@ CI gate, like the other suffixes.
    S25 migration file) through the normal `contract_verified` flow. It installs the new operations.
 2. Merge the S25 application branch. From that main commit run
    `newme-deploy db-transition <sha> <run-id> s25-db-plan`, check that the plan lists only
-   `20261119150000`, then `s25-db-provision`.
+   `20261119400000`, then `s25-db-provision`.
 3. Release the application with `contract_verified` and the full required list.
 
-The switch accepts the migration only while no later-numbered migration is in the live release. Its version (20261119150000) is
-deliberately lower than S23 (20261119200000) and S24 (20261119300000), so the S23 and S24 gates still accept it as part of the
-live prefix; provision S25 before the S23 and S24 migrations are applied. If either of those is applied first, renumber the
-S25 migration after them and ship a new switch version.
+The switch accepts the migration only as the LAST deferred entry. S21, S23 and S24 have the smaller versions
+(20261119100000, 20261119200000, 20261119300000), so their migrations must be recorded before this one; if another deferred
+migration merges after S25 instead, ship a new switch version.
 
 ## If the migration changes
 

@@ -1,6 +1,6 @@
 /**
  * Exact additive suffix only; never weakens the existing strict-prefix gate.
- * Provisions 20261119150000_whatsapp_history_backfill.sql (OS fix S25, WhatsApp coexistence history backfill: one defaulted
+ * Provisions 20261119400000_whatsapp_history_backfill.sql (OS fix S25, WhatsApp coexistence history backfill: one defaulted
  * boolean column on whatsapp_message_events, one server-only contacts table and two service-role routines) on a live
  * release that already carries every earlier deferred migration, the same way check-s21-db-batch-provisioning.mjs
  * did for S21.
@@ -18,8 +18,8 @@ import { readLiveMode, readReleaseManifest } from "./check-release-phase.mjs";
 
 export const S25_EVENTS = Object.freeze([
   Object.freeze({
-    "version": "20261119150000",
-    "file": "20261119150000_whatsapp_history_backfill.sql",
+    "version": "20261119400000",
+    "file": "20261119400000_whatsapp_history_backfill.sql",
     "sha256": "e94c432f3169a61114421287f8aedb873777ec26dda82bbd32e11660d798f7f5"
   }),
 ]);

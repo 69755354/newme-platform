@@ -41,8 +41,8 @@ function fromGit(spec){
 }
 
 test('the S25 provisioning gate pins exactly one reviewed migration and its posture predicate',()=>{
-  assert.deepEqual(S25_EVENTS.map(x=>x.version),['20261119150000']);
-  assert.deepEqual(S25_EVENTS.map(x=>x.file),['20261119150000_whatsapp_history_backfill.sql']);
+  assert.deepEqual(S25_EVENTS.map(x=>x.version),['20261119400000']);
+  assert.deepEqual(S25_EVENTS.map(x=>x.file),['20261119400000_whatsapp_history_backfill.sql']);
   assert.equal(S25_EVENTS[0].sha256,'e94c432f3169a61114421287f8aedb873777ec26dda82bbd32e11660d798f7f5');
   assert.deepEqual(S25_PREDICATE_NAMES,['s25-whatsapp-history-backfill-present']);
   assert.match(S25_POSTURE[0],/backfilled/);

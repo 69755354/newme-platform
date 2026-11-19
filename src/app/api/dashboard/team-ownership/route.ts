@@ -5,6 +5,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { getCached, setCache } from "@/lib/api-cache.mjs";
 import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import { LEAD_METRIC_COLUMNS, summarizeLeads, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
@@ -36,7 +37,9 @@ export async function GET(request: Request) {
     .select("id, full_name, role")
     .in("role", ["admin", "sales", "boss", "operator"])
     .eq("is_active", true);
+  // People view for management leaves out the QA / release-acceptance accounts.
   if (!isManagement) profilesQuery = profilesQuery.eq("id", user.id);
+  else profilesQuery = excludeSystemAccountsQuery(profilesQuery);
   const { data: profiles } = await profilesQuery;
 
   if (!profiles) return NextResponse.json({ users: [] });

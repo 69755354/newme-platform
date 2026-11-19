@@ -393,7 +393,8 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       .from("profiles")
       .select("id,email,role,full_name,is_active");
     const filteredCandidateQuery = filterLeadTransferCandidateQuery(
-      candidateQuery as never
+      candidateQuery as never,
+      { hideSystemAccounts: true },
     ) as typeof candidateQuery;
     filteredCandidateQuery.then(({ data }) => {
       if (data) setSalesUsers(data.map((user) => ({

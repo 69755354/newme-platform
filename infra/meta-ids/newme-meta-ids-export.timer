@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily NewMe Meta ID registry export (02:10 Asia/Dubai, right after the 01:30 backup push)
+# STATUS: template, not installed. Install only after META_IDS_EXPORT_TOKEN is set on the app and in
+# /etc/newme/meta-ids-export.env; see docs/meta-ids-export.md.
+
+[Timer]
+OnCalendar=*-*-* 02:10:00 Asia/Dubai
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

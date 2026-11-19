@@ -125,7 +125,7 @@ test("history has no lead, Meta feedback or alert side effects: it only calls th
   const lib = read("src/lib/whatsapp-history.mjs").replace(/\/\/.*$/gm, "");
   for (const forbidden of ["record_whatsapp_ad_event", "whatsapp_capi_events", "graph.facebook", "fetch(", ".from(\"leads\")", "referral", "ctwa_clid"]) assert.equal(lib.includes(forbidden), false, forbidden);
   // SQL: the history writer inserts events (and an empty conversation) only.
-  const sql = read("supabase/migrations/20261119400000_whatsapp_history_backfill.sql").split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
+  const sql = read("supabase/migrations/20261119150000_whatsapp_history_backfill.sql").split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   const fn = sql.slice(sql.indexOf("function public.record_whatsapp_history_messages"), sql.indexOf("function public.record_whatsapp_synced_contacts"));
   assert.match(fn, /insert into public\.whatsapp_message_events/);
   assert.match(fn, /true\)\s*on conflict \(waba_id, message_id\) do nothing/);
@@ -149,8 +149,8 @@ test("the webhook routes history only after the live paths, the monitor ignores 
   assert.match(route, /history_write_failed/);
   assert.match(read("src/app/api/cron/check-whatsapp-followups/route.ts"), /\.eq\("backfilled", false\)/);
   assert.match(read("src/app/api/meta/whatsapp-webhook/route.ts"), /whatsapp\/webhook\/route/);
-  assert.equal(read("supabase/migrations/20261119400000_whatsapp_history_backfill.sql").includes("create or replace function public.record_whatsapp_ad_event"), false);
-  assert.match(read("supabase/migrations/20261119400000_whatsapp_history_backfill.sql"), /add column if not exists backfilled boolean not null default false/);
+  assert.equal(read("supabase/migrations/20261119150000_whatsapp_history_backfill.sql").includes("create or replace function public.record_whatsapp_ad_event"), false);
+  assert.match(read("supabase/migrations/20261119150000_whatsapp_history_backfill.sql"), /add column if not exists backfilled boolean not null default false/);
 });
 
 const require = createRequire(import.meta.url);

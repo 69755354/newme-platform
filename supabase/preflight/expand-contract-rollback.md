@@ -106,7 +106,7 @@ Contract phase — these thirteen files, in order, pushed only after §4 step 6 
 20261112100100_notification_warning_type.sql
 20261118200000_whatsapp_ctwa_leads.sql
 20261119100000_whatsapp_followup_monitor.sql
-20261119400000_whatsapp_history_backfill.sql
+20261119150000_whatsapp_history_backfill.sql
 ```
 
 ### How the split is executed: a manifest, not a moved file
@@ -1033,7 +1033,7 @@ select count(*) from supabase_migrations.schema_migrations
 -- which allows the CAPI delivery event without enabling automatic replay
 select version from supabase_migrations.schema_migrations
  order by version desc limit 1;
--- expect 20261119400000
+-- expect 20261119150000
 ```
 
 `sudo /usr/local/sbin/newme-deploy db-transition <release-sha>

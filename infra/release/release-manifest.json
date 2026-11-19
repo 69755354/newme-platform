@@ -240,6 +240,12 @@
       "version": "20261118200000",
       "file": "20261118200000_whatsapp_ctwa_leads.sql",
       "sha256": "ec95ce21ec6ddbb938b250287893dcc5eeef8c95dda29359ca6a15ab9352100d"
+    },
+    {
+      "$comment": "Opportunities and visit reports (S23): three new tables with row-level security and no client writes, workflow routines for plan approval, submission, review and overdue reminders. Additive; inert until the pages are used and the overdue route is enabled.",
+      "version": "20261119200000",
+      "file": "20261119200000_opportunities_and_visit_reports.sql",
+      "sha256": "ec1d74ac099997aa0f214b922f6f7c835df77cfa64a18e93b311e9b2eae1bd07"
     }
   ],
   "companions": [
@@ -580,6 +586,11 @@
           "name": "s18-whatsapp-ctwa-leads-present",
           "expect": true,
           "sql": "SELECT (SELECT count(*)=3 AND bool_and(c.relrowsecurity) AND bool_and(NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE')) AND bool_and(NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE')) FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN ('whatsapp_conversations','whatsapp_message_events','whatsapp_capi_events') AND c.relkind='r') AND (SELECT count(*)=1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.record_whatsapp_ad_event(jsonb,boolean)') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) AND (SELECT count(*)=5 FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name IN ('ctwa_clid','wa_first_inbound_at','wa_first_reply_at','wa_ad_headline','wa_ad_source_url'))"
+        },
+        {
+          "name": "s23-opportunities-visit-reports-present",
+          "expect": true,
+          "sql": "SELECT (SELECT count(*)=3 AND bool_and(c.relrowsecurity) AND bool_and(NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE')) AND bool_and(NOT has_table_privilege('authenticated',c.oid,'INSERT,UPDATE,DELETE')) AND bool_and(has_table_privilege('service_role',c.oid,'SELECT')) FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN ('opportunity_stages','opportunities','visit_reports') AND c.relkind='r') AND (SELECT count(*)=4 FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('visit_report_set_plan_approval','visit_report_submit','visit_report_review','flag_overdue_visit_reports') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) AND EXISTS (SELECT 1 FROM public.opportunity_stages WHERE key='won') AND has_column_privilege('service_role','public.visit_reports','result','UPDATE') AND NOT has_column_privilege('service_role','public.visit_reports','plan_approval','UPDATE') AND NOT has_column_privilege('service_role','public.visit_reports','review_status','UPDATE')"
         }
       ]
     }

@@ -91,7 +91,7 @@ phase):
 20260817230000_lead_rebalance_plan_idempotency.sql
 ```
 
-Contract phase — these eleven files, in order, pushed only after §4 step 6 passes:
+Contract phase — these twelve files, in order, pushed only after §4 step 6 passes:
 
 ```contract
 20260818000000_money_direct_write_contract_phase.sql
@@ -105,6 +105,7 @@ Contract phase — these eleven files, in order, pushed only after §4 step 6 pa
 20261112100000_notification_constraints_and_lead_owner_contracts.sql
 20261112100100_notification_warning_type.sql
 20261118200000_whatsapp_ctwa_leads.sql
+20261119200000_opportunities_and_visit_reports.sql
 ```
 
 ### How the split is executed: a manifest, not a moved file
@@ -1031,7 +1032,7 @@ select count(*) from supabase_migrations.schema_migrations
 -- which allows the CAPI delivery event without enabling automatic replay
 select version from supabase_migrations.schema_migrations
  order by version desc limit 1;
--- expect 20261118200000
+-- expect 20261119200000
 ```
 
 `sudo /usr/local/sbin/newme-deploy db-transition <release-sha>

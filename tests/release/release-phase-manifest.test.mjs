@@ -65,7 +65,7 @@ test("the committed manifest describes this tree", () => {
   // disabled-pilot provisioning. No historical migration is renumbered.
   const pending = cliFiles.filter((file) => file.slice(0, 14) > manifest.production_stamp);
   assert.equal(manifest.required_for_app.length + manifest.deferred_contract.length, pending.length);
-  assert.equal(manifest.deferred_contract.length, 12);
+  assert.equal(manifest.deferred_contract.length, 13);
   assert.equal(manifest.deferred_contract[4].file, "20261023123323_meta_ads_atomic_window.sql");
   assert.equal(manifest.deferred_contract[5].file, "20261025151000_website_capi_delivery_event.sql");
   assert.equal(manifest.deferred_contract[6].file, "20261025180000_meta_crm_lead_stage_events.sql");

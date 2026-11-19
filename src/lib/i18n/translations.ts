@@ -1964,7 +1964,7 @@ export const translations = {
       saveDraft: "Save as note draft",
       draftSaved: "Saved to notes",
       draftError: "Could not save, try again",
-
+    },
     // ── S23 opportunities and visit reports (2026-11-19) — separate block at the end of the language ──
     opportunities: {
       title: "Opportunities",
@@ -3997,7 +3997,7 @@ export const translations = {
       saveDraft: "保存为备注草稿",
       draftSaved: "已存入备注",
       draftError: "保存失败，请重试",
-
+    },
     // ── S23 商机与拜访报告（2026-11-19）— 独立区块，放在语言末尾 ──
     opportunities: {
       title: "商机",

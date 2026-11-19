@@ -1076,3 +1076,24 @@ attestation sealed the bundle below. Meta callback end-to-end acceptance is stil
 claimed.
 
 <!-- postdeploy-acceptance-sha256:c72e2ce211b4a356b269e28dbb0c3bf4d69c87c5808dedb292e5237be6d81f47 -->
+
+## OS fix S18 WhatsApp ad leads technical acceptance (2026-11-19)
+
+Release `eb54afae1d0fb51406e589df3a334ef16abffdcb` (OS fix stream S18, PR #526:
+click-to-WhatsApp ad click id and ad id stored, lead matched or created, Meta
+Conversions API feedback queue, lead ad panel and marketing export, migration
+`20261118200000`) passed candidate CI `44426658532`. The migration was applied before the
+release through the protected `s18-db-plan` / `s18-db-provision` switch (one deferred
+migration, exact SQL hash, all posture checks including
+`s18-whatsapp-ctwa-leads-present` OK) after a fresh encrypted production database backup.
+The release was deployed through the protected coordinator at `2026-11-19T00:15:32Z`,
+replacing the finalized release `08a61b9c`. The database phase stayed strict with 11
+deferred migrations present (`contract_verified`). Canonical production acceptance verified
+all four roles, eight browser sessions and bound artifacts. All fixture objects were
+cleaned, with zero residuals and exact KPI restoration. Performance measured p75 55 ms /
+p95 79 ms, within policy. The delayed verification passed at `2026-11-19T00:32:49Z`;
+canonical attestation sealed the bundle below. The company WhatsApp number is not yet
+onboarded to Cloud API, so Meta click-id delivery and callback end-to-end acceptance are
+still NOT claimed.
+
+<!-- postdeploy-acceptance-sha256:c469936fe173be2dca65afe386807382830bad34a36617ca3376e638b7121926 -->

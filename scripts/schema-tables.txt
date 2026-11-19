@@ -17,6 +17,7 @@ lead_alerts
 lead_assignment_state
 lead_documents
 lead_files
+lead_followup_state
 lead_milestones
 leads
 lead_workflow_stages

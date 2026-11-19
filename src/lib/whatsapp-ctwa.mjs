@@ -1,9 +1,10 @@
 // Click-to-WhatsApp (CTWA) ad attribution parsing. Pure functions shared by the
 // webhook route, the sender and node:test.
 //
-// Metadata only: the customer's phone number (needed to match or create the lead,
-// exactly as the CRM already stores it) and the ad referral ids. Chat text, ad
-// body text and media links are never copied out of the webhook body.
+// What is kept: the customer's phone number (needed to match or create the lead, exactly as the
+// CRM already stores it), the ad referral ids and, since S21, the text of text messages (`body`).
+// Media, reactions and other message kinds keep only a kind marker (`body_kind`). Ad body text,
+// captions and media links are never copied out of the webhook body.
 import { isWhatsAppEventFresh } from "./whatsapp-pilot.mjs";
 
 const CTWA_CLID = /^[A-Za-z0-9_-]{10,512}$/;
@@ -14,6 +15,21 @@ const clip = (value, max) => {
   const text = value.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
   return text ? text.slice(0, max) : null;
 };
+
+const MEDIA_TYPES = new Set(["image", "video", "audio", "document", "sticker", "location", "contacts"]);
+export const MAX_MESSAGE_BODY = 4096;
+
+/** The text of a text message, control characters removed (line breaks and tabs kept), at most 4096 characters. */
+export function messageBody(message) {
+  if (message?.type !== "text" || typeof message?.text?.body !== "string") return null;
+  const text = message.text.body.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim();
+  return text ? text.slice(0, MAX_MESSAGE_BODY) : null;
+}
+
+/** text = body kept, media = marker only, other = marker only (reactions, buttons, orders and so on). */
+export function messageBodyKind(type) {
+  return type === "text" ? "text" : MEDIA_TYPES.has(type) ? "media" : "other";
+}
 
 /** Meta's click id is a url-safe token; anything else is treated as absent. */
 export function normalizeCtwaClid(raw) {
@@ -53,7 +69,7 @@ function cleanReferral(raw) {
 /**
  * Read every approved-channel message from a verified webhook body.
  * Fields: waba_id, phone_number_id, channel_id, customer_phone (digits), direction,
- * source, message_id, message_type, occurred_at, profile_name, referral.
+ * source, message_id, message_type, body, body_kind, occurred_at, profile_name, referral.
  */
 export function extractWhatsAppAdEvents(payload, channels, now = Date.now()) {
   if (payload?.object !== "whatsapp_business_account" || !Array.isArray(payload.entry)) throw new Error("invalid_whatsapp_payload");
@@ -99,6 +115,8 @@ export function extractWhatsAppAdEvents(payload, channels, now = Date.now()) {
           source: change.field,
           message_id: message.id,
           message_type: message.type,
+          body: messageBody(message),
+          body_kind: messageBodyKind(message.type),
           occurred_at: new Date(time).toISOString(),
           profile_name: inbound ? names.get(customer) ?? null : null,
           referral,

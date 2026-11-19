@@ -696,6 +696,13 @@ jobs:
           createdb --template history newme_whatsapp_ctwa_test
           PGDATABASE=newme_whatsapp_ctwa_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s18-whatsapp-ctwa.sql
 
+      # S21 conversation text, S18 review corrections and the follow-up state writer, on a copy of
+      # the replayed `history` database. The script rolls its scenarios back.
+      - name: WhatsApp conversation text and follow-up state (S21)
+        run: |
+          createdb --template history newme_whatsapp_followup_test
+          PGDATABASE=newme_whatsapp_followup_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s21-followup-monitor.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

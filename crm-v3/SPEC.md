@@ -31,6 +31,11 @@
 - S18（PR #526）：WhatsApp「点击进 WhatsApp」广告的点击编号 ctwa_clid 入库并自动建/对线索，回传 Conversions API for Business Messaging。webhook 现有 `src/app/api/whatsapp/webhook/route.ts`，别名 `src/app/api/meta/whatsapp-webhook/route.ts`；线索详情面板 `src/app/(dashboard)/leads/[id]/LeadWhatsAppAdPanel.tsx`；市场导出 `src/app/api/leads/whatsapp-ads/export/route.ts`；迁移 `20261118200000_whatsapp_ctwa_leads.sql`。
 - 供应链：glob/minimatch 已降为中危、picomatch 公告撤回，S17 登记的三条高危例外过期移除，登记表恢复为空。
 
+## 2026-11-19 S19–S21 发布批次：编号总表、跟进监控
+
+- 发布批次 1（已上线 100006be）：Meta 编号总表导出 `src/app/api/export/meta-ids/route.ts`、每日取数与 NAS 上传脚本 `infra/meta-ids/newme-meta-ids-export.sh`、`infra/nas/newme-nas-upload.sh`；测试账号对真人不可见（`src/lib/system-accounts.mjs`）；数据导入门禁操作与 S21 开关。
+- S21 应用：WhatsApp 对话正文入库、首次响应/联系次数/跟进状态：线索页卡片 `src/app/(dashboard)/leads/[id]/LeadFollowupCard.tsx`、接口 `src/app/api/leads/[id]/followup/route.ts`、定时接口 `src/app/api/cron/check-whatsapp-followups/route.ts`（默认关闭）；迁移 `20261119100000_whatsapp_followup_monitor.sql`。
+
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 

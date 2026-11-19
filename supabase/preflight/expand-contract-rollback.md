@@ -91,7 +91,7 @@ phase):
 20260817230000_lead_rebalance_plan_idempotency.sql
 ```
 
-Contract phase — these thirteen files, in order, pushed only after §4 step 6 passes:
+Contract phase — these fifteen files, in order, pushed only after §4 step 6 passes:
 
 ```contract
 20260818000000_money_direct_write_contract_phase.sql
@@ -107,6 +107,7 @@ Contract phase — these thirteen files, in order, pushed only after §4 step 6 
 20261118200000_whatsapp_ctwa_leads.sql
 20261119100000_whatsapp_followup_monitor.sql
 20261119200000_opportunities_and_visit_reports.sql
+20261119300000_lead_dispatch_and_review.sql
 20261119400000_whatsapp_history_backfill.sql
 ```
 

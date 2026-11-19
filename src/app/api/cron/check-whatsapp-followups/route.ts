@@ -87,7 +87,9 @@ async function handle(request: Request) {
         if (lead.archived || lead.final_status) { summary.skipped_closed += 1; continue; }
         const conversationIds = conversationsByLead.get(lead.id) ?? [];
         const { data: events, error: eventError } = await supabaseAdmin.from("whatsapp_message_events")
-          .select("direction, occurred_at").in("conversation_id", conversationIds).order("occurred_at").limit(MAX_EVENTS_PER_LEAD);
+          .select("direction, occurred_at").in("conversation_id", conversationIds)
+          // S25: history imported by the one-time sync is context only; it never drives first-response or silence alerts.
+          .eq("backfilled", false).order("occurred_at").limit(MAX_EVENTS_PER_LEAD);
         if (eventError) { summary.failed += 1; continue; }
         summary.scanned += 1;
         const result = evaluateFollowup({

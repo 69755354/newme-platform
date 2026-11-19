@@ -44,6 +44,7 @@ import {
   wonLeadValue,
   type MetricLead,
 } from "@/lib/lead-metrics.mjs";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -141,11 +142,13 @@ export async function GET(request: Request) {
   const adSpendPromise = supabase.from("ad_spend").select("campaign_name, amount, spend_date").order("spend_date", { ascending: true });
 
   // ── 3d. Sales profiles ──
-  const salesProfilesPromise = supabase
-    .from("profiles")
-    .select("id, full_name, email, role")
-    .in("role", ["sales", "admin"])
-    .eq("is_active", true);
+  const salesProfilesPromise = excludeSystemAccountsQuery(
+    supabase
+      .from("profiles")
+      .select("id, full_name, email, role")
+      .in("role", ["sales", "admin"])
+      .eq("is_active", true),
+  );
 
   // ── 3g. Payments for trends ──
   let trendsPaymentsQuery = supabase

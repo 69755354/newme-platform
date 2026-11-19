@@ -64,7 +64,8 @@ export async function GET(request: Request) {
     .from("profiles")
     .select("id,email,role,full_name,is_active");
   const salesUsersPromise = filterLeadTransferCandidateQuery(
-    candidateQuery as never
+    candidateQuery as never,
+    { hideSystemAccounts: true, viewerId: userId },
   ) as typeof candidateQuery;
   const [
     { data: leads, error: leadsErr, total: leadsTotal, truncated: leadsTruncated },

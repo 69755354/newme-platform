@@ -2,6 +2,7 @@
 import { dubaiDateKey, dubaiMonthBounds, dubaiMonthKey } from '@/lib/dubai-time.mjs';
 import { NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase-server';
+import { excludeSystemAccountsQuery } from '@/lib/system-accounts.mjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,10 +72,12 @@ export async function GET(request: Request) {
         .gte('won_at', monthStart.toISOString())
         .lt('won_at', monthEnd.toISOString()),
       // Q4: Sales Profiles
-      supabase
-        .from('profiles')
-        .select('id, full_name')
-        .eq('role', 'sales'),
+      excludeSystemAccountsQuery(
+        supabase
+          .from('profiles')
+          .select('id, full_name')
+          .eq('role', 'sales'),
+      ),
       // Q5: All Leads
       supabase
         .from('leads')

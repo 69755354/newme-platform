@@ -4,6 +4,7 @@ import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import { LEAD_METRIC_COLUMNS, summarizeLeads, type MetricLead } from "@/lib/lead-metrics.mjs";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,12 @@ export async function GET(request: NextRequest) {
   try {
     if (isCEO) {
       // ── CEO view: all sales reps ──
-      const { data: salesReps } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, role")
-        .in("role", ["sales", "admin"]);
+      const { data: salesReps } = await excludeSystemAccountsQuery(
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, role")
+          .in("role", ["sales", "admin"]),
+      );
 
       const reps = salesReps ?? [];
 

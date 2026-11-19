@@ -1097,3 +1097,15 @@ onboarded to Cloud API, so Meta click-id delivery and callback end-to-end accept
 still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:c469936fe173be2dca65afe386807382830bad34a36617ca3376e638b7121926 -->
+
+## OS fix S19-S21 release bundle 1 technical acceptance (2026-11-19)
+
+Release `100006be5ff9b1f410e19ce505e8385de9420889` (S19 hide QA and release-acceptance accounts, S19 Meta ID export, S20 data-import gate operations, S21 provisioning switch; no migration) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T13:36:34Z`, replacing the finalized release `eb54afae`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 308 ms / p95 1052 ms, within policy. The delayed verification passed at `2026-11-19T13:53:42Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:9bf49d7f1f721ace6900c02548b149699a6e57b966526fcfa694266acc57b3a7 -->

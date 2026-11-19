@@ -200,6 +200,19 @@ test("creating twice is idempotent; a different request with the same name is a 
   assert.equal((await json(different)).error, "duplicate");
 });
 
+test("a retry naming another owner or close reason is a conflict, not an identical retry", async () => {
+  setup("operator", OPERATOR);
+  assert.equal((await opportunities.POST(post("/api/opportunities", { ...NEW_OPP, owner_id: SALES1 }))).status, 201);
+  const sameAgain = await opportunities.POST(post("/api/opportunities", { ...NEW_OPP, owner_id: SALES1 }));
+  assert.equal(sameAgain.status, 200);
+  assert.equal((await json(sameAgain)).duplicate, true);
+  const otherOwner = await opportunities.POST(post("/api/opportunities", { ...NEW_OPP, owner_id: SALES2 }));
+  assert.equal(otherOwner.status, 409);
+  const otherReason = await opportunities.POST(post("/api/opportunities", { ...NEW_OPP, owner_id: SALES1, closed_reason: "lost to competitor" }));
+  assert.equal(otherReason.status, 409);
+  assert.equal(state.db.tables.opportunities.length, 1);
+});
+
 test("invalid input answers 422 with the field codes and writes nothing", async () => {
   setup("sales", SALES1);
   const response = await opportunities.POST(post("/api/opportunities", { ...NEW_OPP, stage: "quotation_sent", quote_amount_aed: -5, quotation_link: "http://x" }));

@@ -52,7 +52,10 @@ export async function POST(request: NextRequest) {
     if (lookupError) throw lookupError;
     const same = existing && SAME_KEYS.every((key) => !(key in value) || (existing as Record<string, unknown>)[key] === value[key]
       || (key === "quote_amount_aed" && Number((existing as Record<string, unknown>)[key]) === value[key]));
-    if (same) return respond({ data: existing, duplicate: true });
+    // The effective owner and the close reason are persisted inputs too: a retry that names another owner or reason is a conflict.
+    const sameOwner = existing && (existing as Record<string, unknown>).owner_id === owner;
+    const sameReason = existing && (!("closed_reason" in value) || ((existing as Record<string, unknown>).closed_reason ?? null) === (value.closed_reason ?? null));
+    if (same && sameOwner && sameReason) return respond({ data: existing, duplicate: true });
     throw new ApiFailure(409, "duplicate");
   });
 }

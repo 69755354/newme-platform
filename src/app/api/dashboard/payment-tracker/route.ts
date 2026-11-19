@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
 import { countsAsCash } from "@/lib/payment-state.mjs";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 /**
  * GET /api/dashboard/payment-tracker
@@ -156,11 +157,13 @@ export async function GET(request: NextRequest) {
 
     // ─── Step 3: Per-rep collection ───
     // Get all sales profiles
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, full_name, role")
-      .in("role", ["sales", "admin", "boss"])
-      .eq("is_active", true);
+    const { data: profiles } = await excludeSystemAccountsQuery(
+      supabase
+        .from("profiles")
+        .select("id, full_name, role")
+        .in("role", ["sales", "admin", "boss"])
+        .eq("is_active", true),
+    );
 
     const repMap: Record<string, { full_name: string; signed: number; collected: number; overdue: number }> = {};
     for (const p of profiles || []) {

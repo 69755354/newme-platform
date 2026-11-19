@@ -7,6 +7,7 @@ import {
   RequestAuthError,
   requestAuthErrorResponse,
 } from "@/lib/request-auth-context"
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs"
 
 const PAGE_SIZE = 20
 
@@ -28,7 +29,10 @@ export async function GET(request: Request) {
     if (cached) return respond(cached)
 
     const [profilesResult, tasksResult] = await Promise.all([
-      supabase.from("profiles").select("id, full_name").order("full_name"),
+      excludeSystemAccountsQuery(
+        supabase.from("profiles").select("id, full_name"),
+        { viewerId: userId },
+      ).order("full_name"),
       (async () => {
         let q = supabase
           .from("tasks")

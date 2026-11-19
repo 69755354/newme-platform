@@ -124,8 +124,10 @@ export async function POST(request: NextRequest) {
       const repsQuery = supabase
         .from("profiles")
         .select("id, full_name, email, role, is_active");
+      // Real leads are never rebalanced onto QA / release-acceptance accounts.
       const eligibleRepsQuery = filterLeadTransferCandidateQuery(
-        repsQuery as never
+        repsQuery as never,
+        { hideSystemAccounts: true },
       ) as typeof repsQuery;
       eligibleRepsQuery.order("id", { ascending: true });
       const { data: salesReps, error: salesRepsErr } = await eligibleRepsQuery;

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { AUDIT_ACTIONS, writeAuditLog } from "@/lib/audit-log";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 // ─── Auth check ───
 async function checkRole(request: NextRequest): Promise<NextResponse | { role: string; userId: string }> {
@@ -44,10 +45,16 @@ export async function GET(request: NextRequest) {
   const role = await checkRole(request);
   if (role instanceof NextResponse) return role;
 
-  const { data, error } = await supabaseAdmin
+  // QA and release-acceptance accounts are not people: the team page and the user
+  // list leave them out (src/lib/system-accounts.mjs). The signed-in account keeps
+  // its own row, and ?includeSystem=1 shows everything. Same for admin and boss.
+  const includeSystem = new URL(request.url).searchParams.get("includeSystem") === "1";
+  const userQuery = supabaseAdmin
     .from("profiles")
-    .select("id, email, full_name, role, is_active, last_active_at, force_password_change")
-    .order("full_name", { ascending: true });
+    .select("id, email, full_name, role, is_active, last_active_at, force_password_change");
+  const { data, error } = await (
+    includeSystem ? userQuery : excludeSystemAccountsQuery(userQuery, { viewerId: role.userId })
+  ).order("full_name", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });

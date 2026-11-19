@@ -78,6 +78,7 @@ for (const entry of ["action", "route"]) {
         "@/lib/audit-log": { AUDIT_ACTIONS: { USER_CREATED: "user_created", ROLE_ASSIGNED: "role_assigned" }, writeAuditLog: async (entry) => { audit.push(entry); } },
         "@/lib/action-auth-context": { getActionAuthContext: async () => ({ role: "admin", user: { id: "7c4f1a2e-1111-4111-8111-111111111111" } }) },
         "@/lib/lead-reassignment.mjs": {},
+        "@/lib/system-accounts.mjs": await import("../../src/lib/system-accounts.mjs"),
         "@/lib/member-lead-handover.mjs": await import("../../src/lib/member-lead-handover.mjs"),
         "@/lib/notifications": { getAdminUserIds: async () => [], createNotificationsBulk: async () => {} },
         "@/lib/supabase-server": { createServerSupabase: async () => ({

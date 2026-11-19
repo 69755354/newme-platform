@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { EXCLUDE_SYNTHETIC_QA_FILTER } from "@/lib/lead-metrics.mjs";
 import { createServerSupabase } from "@/lib/supabase-server";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 export interface WeeklyReviewRow {
   user_id: string;
@@ -192,6 +193,7 @@ export async function GET(req: NextRequest) {
     // L2 per-sales rollup
     let profilesQuery = supabase.from("profiles").select("id, full_name, role");
     if (isSalesScope) profilesQuery = profilesQuery.eq("id", user.id);
+    else profilesQuery = excludeSystemAccountsQuery(profilesQuery);
     const { data: profilesAll } = await profilesQuery;
     const salesMap = new Map<string, string>();
     const roleMap = new Map<string, string>();

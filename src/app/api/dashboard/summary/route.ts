@@ -36,6 +36,7 @@ import {
   type MetricLead,
   EXCLUDE_SYNTHETIC_QA_FILTER,
 } from "@/lib/lead-metrics.mjs";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -106,10 +107,12 @@ export async function GET(request: Request) {
 
   // ── 3. Sales users ──
   const salesUsersPromise = isManagement
-    ? supabase
-        .from("profiles")
-        .select("id,email,role,full_name")
-        .in("role", ["admin", "sales", "operator", "boss"])
+    ? excludeSystemAccountsQuery(
+        supabase
+          .from("profiles")
+          .select("id,email,role,full_name")
+          .in("role", ["admin", "sales", "operator", "boss"]),
+      )
     : Promise.resolve({ data: [] as any[], error: null });
 
   // ── 4a. Leads — every counted (non-archived) lead, narrow columns, paged ──

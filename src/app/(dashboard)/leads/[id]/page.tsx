@@ -29,6 +29,7 @@ import LeadFollowupCard from "./LeadFollowupCard";
 
 import LeadOpportunitiesCard from "./LeadOpportunitiesCard";
 import LeadVisitsCard from "./LeadVisitsCard";
+import LeadDispatchCard from "./LeadDispatchCard";
 import LeadSalesProcess from "./LeadSalesProcess";
 import LeadTimeline from "./LeadTimeline";
 import LeadFoldingPanel from "./LeadFoldingPanel";
@@ -593,6 +594,7 @@ export default function LeadDetailPage() {
 
           <LeadOpportunitiesCard lead={lead} t={t} lang={lang} role={salesRole} />
           <LeadVisitsCard lead={lead} t={t} role={salesRole} />
+          <LeadDispatchCard lead={lead} t={t} role={salesRole} />
         </aside>
 
         <main className="min-w-0 space-y-3">

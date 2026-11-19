@@ -134,9 +134,9 @@ test("migration contract: rollback declaration, definer entry guard, pinned sear
 
 test("the release manifest, the schema list and the CI step carry the S23 batch", () => {
   const manifest = JSON.parse(read("infra/release/release-manifest.json"));
-  const entry = manifest.deferred_contract.at(-1);
+  const entry = manifest.deferred_contract.find((m) => m.version === "20261119200000");
   assert.equal(entry.file, "20261119200000_opportunities_and_visit_reports.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-1).name, "s23-opportunities-visit-reports-present");
+  assert.equal(manifest.posture.deferred_contract.predicates.some((p) => p.name === "s23-opportunities-visit-reports-present"), true);
   const tables = read("scripts/schema-tables.txt").split("\n");
   for (const table of ["opportunities", "opportunity_stages", "visit_reports"]) assert.ok(tables.includes(table), table);
   assert.match(read(".github/workflows/ci.yml"), /tests\/database\/s23-opportunities-visits\.sql/);

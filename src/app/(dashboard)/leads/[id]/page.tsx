@@ -26,6 +26,9 @@ import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
 import LeadFollowupCard from "./LeadFollowupCard";
+
+import LeadOpportunitiesCard from "./LeadOpportunitiesCard";
+import LeadVisitsCard from "./LeadVisitsCard";
 import LeadDispatchCard from "./LeadDispatchCard";
 import LeadSalesProcess from "./LeadSalesProcess";
 import LeadTimeline from "./LeadTimeline";
@@ -588,6 +591,9 @@ export default function LeadDetailPage() {
           />
           <LeadWhatsAppAdPanel lead={lead} t={t} />
           <LeadFollowupCard lead={lead} t={t} />
+
+          <LeadOpportunitiesCard lead={lead} t={t} lang={lang} role={salesRole} />
+          <LeadVisitsCard lead={lead} t={t} role={salesRole} />
           <LeadDispatchCard lead={lead} t={t} role={salesRole} />
         </aside>
 

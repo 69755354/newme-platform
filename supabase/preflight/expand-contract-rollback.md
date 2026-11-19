@@ -106,6 +106,7 @@ Contract phase — these thirteen files, in order, pushed only after §4 step 6 
 20261112100100_notification_warning_type.sql
 20261118200000_whatsapp_ctwa_leads.sql
 20261119100000_whatsapp_followup_monitor.sql
+20261119200000_opportunities_and_visit_reports.sql
 20261119300000_lead_dispatch_and_review.sql
 ```
 

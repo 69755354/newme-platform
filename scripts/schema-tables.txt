@@ -27,6 +27,8 @@ lead_workflow_stages
 meta_crm_stage_events
 meta_tokens
 notifications
+opportunities
+opportunity_stages
 payment_allocations
 payments
 products
@@ -40,6 +42,7 @@ user_features
 user_session_daily
 v_lead_trace
 v_risk_pool
+visit_reports
 whatsapp_capi_events
 whatsapp_conversations
 whatsapp_message_events

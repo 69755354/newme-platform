@@ -240,6 +240,12 @@
       "version": "20261118200000",
       "file": "20261118200000_whatsapp_ctwa_leads.sql",
       "sha256": "ec95ce21ec6ddbb938b250287893dcc5eeef8c95dda29359ca6a15ab9352100d"
+    },
+    {
+      "$comment": "WhatsApp conversation text and follow-up monitor (S21): two nullable message columns, one server-only state table, one service-role routine and the replaced S18 writer. Inert until the follow-up cron entry is installed.",
+      "version": "20261119100000",
+      "file": "20261119100000_whatsapp_followup_monitor.sql",
+      "sha256": "1e649a0c6dbc4117980a1c0942bbb067c45bb0f78146b3e7949a5de747e1a50b"
     }
   ],
   "companions": [
@@ -580,6 +586,11 @@
           "name": "s18-whatsapp-ctwa-leads-present",
           "expect": true,
           "sql": "SELECT (SELECT count(*)=3 AND bool_and(c.relrowsecurity) AND bool_and(NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE')) AND bool_and(NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE')) FROM pg_class c WHERE c.relnamespace='public'::regnamespace AND c.relname IN ('whatsapp_conversations','whatsapp_message_events','whatsapp_capi_events') AND c.relkind='r') AND (SELECT count(*)=1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.record_whatsapp_ad_event(jsonb,boolean)') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) AND (SELECT count(*)=5 FROM information_schema.columns WHERE table_schema='public' AND table_name='leads' AND column_name IN ('ctwa_clid','wa_first_inbound_at','wa_first_reply_at','wa_ad_headline','wa_ad_source_url'))"
+        },
+        {
+          "name": "s21-whatsapp-followup-monitor-present",
+          "expect": true,
+          "sql": "SELECT (SELECT count(*)=2 FROM information_schema.columns WHERE table_schema='public' AND table_name='whatsapp_message_events' AND column_name IN ('body','body_kind')) AND (SELECT c.relrowsecurity AND NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('service_role',c.oid,'SELECT') FROM pg_class c WHERE c.oid=to_regclass('public.lead_followup_state')) AND (SELECT count(*)=1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.upsert_lead_followup_state(uuid,timestamptz,timestamptz,integer,integer,timestamptz,text,boolean,text,uuid[],text,text)') AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) AND (SELECT count(*)=1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.record_whatsapp_ad_event(jsonb,boolean)') AND p.prosecdef AND p.prosrc LIKE '%body_kind%' AND p.prosrc LIKE '%S21 (S18 review, item 1)%' AND has_function_privilege('service_role',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE'))"
         }
       ]
     }

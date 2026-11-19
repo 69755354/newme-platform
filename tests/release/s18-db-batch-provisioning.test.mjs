@@ -19,10 +19,12 @@ const pinned=S18_EVENTS.map(({version,file,sha256})=>({version,file,sha256}));
 //  (1) switch only: the manifest has no S18 entry yet (this branch on its own);
 //  (2) after the S18 branch is merged: the manifest already ends with the S18 entry.
 const live=structuredClone(manifest);
+// Later additive suffixes (a deferred entry plus a posture predicate, appended after S18) belong to the
+// live release's future, not to S18: cut everything from S18 on.
+const predAt=manifest.posture.deferred_contract.predicates.findIndex(x=>S18_PREDICATE_NAMES.includes(x.name));
 if(at>=0){
-  if(at!==live.deferred_contract.length-N)throw new Error('the S18 migration must be the LAST deferred entry');
-  live.deferred_contract.splice(-N);
-  live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.filter(x=>!S18_PREDICATE_NAMES.includes(x.name));
+  live.deferred_contract.splice(at);
+  live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.slice(0,predAt);
 }
 const sqls=inTree?urls.map(url=>fs.readFileSync(url,'utf8')):null;
 const candidate=structuredClone(live);
@@ -60,7 +62,7 @@ test('the S18 provisioning gate pins exactly one reviewed migration and its post
 
 // Always runs (the repository forbids new skipped tests). The switch is released on its own
 // before the migration: then the file is not in the tree and the manifest must not name it yet.
-test('the S18 migration, when present in the tree, matches the pinned hash, is the last deferred entry and carries the exact predicate',()=>{
+test('the S18 migration, when present in the tree, matches the pinned hash, keeps its entry and carries the exact predicate',()=>{
   if(noneInTree){
     assert.equal(at,-1,'the manifest lists the S18 migration but its file is not in the tree');
     assert.equal(manifest.posture.deferred_contract.predicates.some(x=>S18_PREDICATE_NAMES.includes(x.name)),false);
@@ -68,8 +70,8 @@ test('the S18 migration, when present in the tree, matches the pinned hash, is t
   }
   assert.ok(inTree,'the S18 migration file is part of the tree');
   S18_EVENTS.forEach((event,i)=>assert.equal(hashed(sqls[i]),event.sha256));
-  assert.deepEqual(manifest.deferred_contract.slice(at).map(({version,file,sha256})=>({version,file,sha256})),pinned);
-  assert.deepEqual(manifest.posture.deferred_contract.predicates.slice(-N),S18_PREDICATES.map(x=>({...x})));
+  assert.deepEqual(manifest.deferred_contract.slice(at,at+N).map(({version,file,sha256})=>({version,file,sha256})),pinned);
+  assert.deepEqual(manifest.posture.deferred_contract.predicates.slice(predAt,predAt+N),S18_PREDICATES.map(x=>({...x})));
 });
 
 test('state 1 (switch only): the live manifest is untouched by S18 and the derived candidate passes',()=>{

@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useContext, useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { readSessionIdentity } from "@/lib/session-identity";
+import { readSessionIdentity, type SessionOutcome } from "@/lib/session-identity";
+import { PageIdentityContext, SessionHandoffContext } from "@/lib/session-contexts";
+import { identityFromPage } from "@/lib/page-identity";
 
 const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
 
@@ -22,6 +24,11 @@ const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
  * `unavailable` and publishes it through the session reader's shared
  * "unavailable" state, which the dashboard layout renders as the common
  * "connection failed · retry" view in place of the page.
+ *
+ * Speed (S22): the identity is looked for in this order -- the page above
+ * already resolved it (PageIdentityContext, no request); the layout read it a
+ * moment ago and hands it to the first page (SessionHandoffContext, no
+ * request); otherwise a live read as before. See src/lib/session-handoff.ts.
  */
 export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
   const router = useRouter();
@@ -29,16 +36,23 @@ export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
   const [blocked, setBlocked] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [role, setRole] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const pageIdentity = useContext(PageIdentityContext);
+  const handoff = useContext(SessionHandoffContext);
 
   // Stabilize array reference to prevent infinite re-renders
   const rolesRef = useRef(allowedRoles);
   const rolesKey = JSON.stringify(allowedRoles);
 
   useEffect(() => {
+    if (pageIdentity) return;
     let cancelled = false;
 
     async function check() {
-      const outcome = await readSessionIdentity();
+      const handed = handoff?.take() ?? null;
+      const outcome: SessionOutcome = handed
+        ? { status: "active", identity: handed }
+        : await readSessionIdentity();
       if (cancelled) return;
 
       if (outcome.status === "unauthenticated") {
@@ -52,6 +66,7 @@ export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
 
       const userRole = outcome.identity.role ?? null;
       setRole(userRole);
+      setUserId(outcome.identity.userId ?? null);
       setLoading(false);
 
       if (!userRole || !rolesRef.current.includes(userRole)) {
@@ -67,5 +82,9 @@ export function useRequireRole(allowedRoles: string[] = MANAGEMENT_ROLES) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rolesKey, router]);
 
-  return { loading, role, blocked, unavailable };
+  const inherited = identityFromPage(pageIdentity, allowedRoles);
+  if (inherited) {
+    return { loading: false, role: inherited.role, userId: inherited.userId, blocked: inherited.blocked, unavailable: false };
+  }
+  return { loading, role, userId, blocked, unavailable };
 }

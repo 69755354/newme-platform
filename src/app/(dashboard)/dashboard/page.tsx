@@ -19,6 +19,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { dubaiMonthElapsedPct, dubaiMonthKey, recentDubaiMonthKeys } from "@/lib/dubai-time.mjs";
 import { summarizeLeads, type LeadSummary } from "@/lib/lead-metrics.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { startEarlyFetch } from "@/lib/early-fetch";
 
 /* ─── Types ─── */
 interface Lead {
@@ -166,7 +167,11 @@ export default function DashboardPage() {
   }, [weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
 
   useEffect(() => {
-    if (!userRole || (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart > weeklyReviewEnd))) {
+    // S22: this used to wait for the summary to supply `userRole`, which put the
+    // weekly review one full round trip behind it. The server decides what the
+    // caller may see (and answers the same for every role it served before), so
+    // the request goes out together with the summary.
+    if (weeklyReviewRange === "custom" && (!weeklyReviewStart || !weeklyReviewEnd || weeklyReviewStart > weeklyReviewEnd)) {
       return;
     }
     let cancelled = false;
@@ -191,7 +196,15 @@ export default function DashboardPage() {
       .catch(() => { if (!cancelled) setWeeklyReviewData(null); })
       .finally(() => undefined);
     return () => { cancelled = true; };
-  }, [userRole, weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
+  }, [weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
+
+  // S22: the alert banner is mounted only once the summary has rendered the
+  // page, so its request used to start a full round trip after the summary
+  // finished. It goes out at mount, together with the summary, and the panel
+  // takes that request over (once; a month change does not start another).
+  useEffect(() => {
+    startEarlyFetch("/api/alerts");
+  }, []);
 
   // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {

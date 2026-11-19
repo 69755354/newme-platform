@@ -130,10 +130,42 @@ function isSessionBoundaryState(value: unknown): value is SessionBoundaryState {
   ].includes(value);
 }
 
-/** Resolve one request-bound client for auth, authorization, and RLS queries. */
-export async function getRequestAuthContext(
+/**
+ * Resolve one request-bound client for auth, authorization, and RLS queries.
+ *
+ * S22: the answer is remembered for the lifetime of the Request object it was
+ * asked about, so a handler that goes through more than one helper that needs
+ * the caller (each used to repeat the identity lookup, the session-boundary
+ * check and the profile read: three round trips to Supabase) pays for them
+ * once. This is request-scoped, not a cache: the memo is keyed by the Request
+ * itself, dies with it, and is never shared between requests or users. A
+ * refusal is remembered the same way, so the same request cannot be refused and
+ * then served. `allowForcedPasswordChange` changes the verdict, so it is part
+ * of the key.
+ */
+const requestAuthMemo = new WeakMap<Request, Map<boolean, Promise<RequestAuthContext>>>();
+
+export function getRequestAuthContext(
   request: Request,
   options: RequestAuthOptions = {},
+): Promise<RequestAuthContext> {
+  const forced = options.allowForcedPasswordChange === true;
+  let perRequest = requestAuthMemo.get(request);
+  if (!perRequest) {
+    perRequest = new Map();
+    requestAuthMemo.set(request, perRequest);
+  }
+  let answer = perRequest.get(forced);
+  if (!answer) {
+    answer = resolveRequestAuthContext(request, options);
+    perRequest.set(forced, answer);
+  }
+  return answer;
+}
+
+async function resolveRequestAuthContext(
+  request: Request,
+  options: RequestAuthOptions,
 ): Promise<RequestAuthContext> {
   const requestId = crypto.randomUUID();
   const deadline = Date.now() + AUTH_TIMEOUT_MS;

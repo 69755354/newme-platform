@@ -14,7 +14,12 @@ owned `0600` file outside Git. A personal Bitwarden session is unnecessary.
 {"action":"accept","release_sha":"<40 lowercase hex>"}
 {"action":"attest","release_sha":"<40 lowercase hex>"}
 {"action":"finalize","release_sha":"<40 lowercase hex>","acceptance_sha256":"<64 lowercase hex>","closure_sha":"<40 lowercase hex>","final_run_id":"<positive integer string>"}
+{"action":"finalize","release_sha":"<40 lowercase hex>","acceptance_sha256":"<64 lowercase hex>","closure_sha":"<40 lowercase hex>","final_run_id":"<positive integer string>","final_sha":"<40 lowercase hex>"}
 ```
+
+`final_sha` is the main SHA the release-final run was dispatched on. Omit it
+when that is the closure commit itself; a bridge that forwards it maps it to the
+optional sixth `newme-deploy finalize` argument.
 
 The controlled recovery actions `accept-recover`, `accept-abort`,
 `attest-recover`, and `attest-abort` use only `action` and `release_sha`.
@@ -54,7 +59,8 @@ does not authorize a request; log reads require the registered signing key.
 Follow [the canonical acceptance runbook](../infra/release/postdeploy-acceptance.md):
 deploy leaves `awaiting_uat`; `accept` produces the real ready evidence bundle;
 `attest` verifies and seals it as `acceptance_verified`; the TASKBOARD-only
-direct-child closure, successful exact-closure final CI and `finalize` are all
+direct-child closure record, a successful final CI run at that record or at a
+later main head reached only through non-runtime commits, and `finalize` are all
 required for `complete`. A successful gateway response does not replace those
 checks. The canonical coordinator retains its production lock and recovery rules.
 

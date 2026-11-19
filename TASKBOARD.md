@@ -1169,3 +1169,23 @@ p75 49 ms / p95 62 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:be14b911c3868950e5deeb1bf6d9e02415f83a0dbfb30e73c1e05c68d5226664 -->
+
+## Release closure tolerates non-runtime commits before final CI (2026-11-20)
+
+Release-gate fix. The closure record (`closure_sha`) must still be the release
+SHA's single direct child changing only TASKBOARD.md and appending exactly one
+marker for the attested digest. The release-final run may now be dispatched on
+a later main head (`final_sha`, defaulting to `closure_sha`) provided every
+commit in `closure_sha..final_sha` is a non-merge commit changing only
+`TASKBOARD.md`, root `*.md`, `docs/**`, `.claude/**`, or `crm-v3/SPEC.md`, and
+the closure's marker still appears exactly once at `final_sha`. Any commit
+touching `src/`, `supabase/`, `scripts/`, `infra/`, `.github/`, `tests/`,
+`public/`, `package.json` or `package-lock.json` still consumes the slot.
+`ci.yml` gains the optional `final_sha` input and binds `GITHUB_SHA` to it;
+`newme-deploy finalize` accepts an optional sixth `<final-run-sha>`, requires it
+to equal canonical main, and records `final_sha` / `final_ci_head_sha` in the
+evidence; the live-release supersession rule refuses deployment while a closure
+is still reachable through non-runtime commits. Finalize uses the deployed
+release's own checker, so only releases cut after this change benefit. Release
+closure suite 26/26, supersession 12/12, finalizer 8/8; full-suite failures are
+identical to unmodified main (6 environment-dependent tests).

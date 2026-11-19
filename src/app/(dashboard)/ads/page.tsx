@@ -43,7 +43,7 @@ interface RoiData {
   spend_days_old: number | null;
   summary: { total_spend: number | null; total_leads: number; cpl: number | null } | null;
   weekly_breakdown: Array<RoiRow & { week_start: string; week_end: string }>;
-  ad_breakdown: Array<RoiRow & { ad: string; ad_id: string | null }>;
+  ad_breakdown: Array<RoiRow & { ad: string; ad_id: string | null; spend_ambiguous?: boolean }>;
 }
 
 const WINDOW_OPTIONS = [7, 30, 90, 0] as const; // 0 = all time (leads only; spend follows 90 days)
@@ -67,6 +67,8 @@ export default function AdsPage() {
   const [viewMode, setViewMode] = useState<"source" | "campaign" | "adset" | "ad">("source");
   const [days, setDays] = useState<number>(30);
   const [roi, setRoi] = useState<RoiData | null>(null);
+  const [roiLoading, setRoiLoading] = useState(false);
+  const [roiError, setRoiError] = useState(false);
 
   useEffect(() => {
     if (roleLoading) return;
@@ -98,13 +100,19 @@ export default function AdsPage() {
   useEffect(() => {
     if (roleLoading || !role || !["admin", "boss"].includes(role)) return;
     let active = true;
+    // The previous window's figures must not stay on screen under the new window's label.
+    setRoi(null);
+    setRoiError(false);
+    setRoiLoading(true);
     (async () => {
       try {
         const res = await fetch(`/api/dashboard/ads-roi?days=${days === 0 ? 90 : days}`);
-        if (!res.ok) return;
+        if (!res.ok) throw new Error("ads-roi failed");
         const json = await res.json();
-        if (active) setRoi(json as RoiData);
-      } catch { /* the leads tables still work without spend */ }
+        if (active) { setRoi(json as RoiData); setRoiLoading(false); }
+      } catch (err) {
+        if (active) { console.error("Failed to fetch ads ROI:", err); setRoi(null); setRoiError(true); setRoiLoading(false); }
+      }
     })();
     return () => { active = false; };
   }, [roleLoading, role, days]);
@@ -185,6 +193,8 @@ export default function AdsPage() {
             : t("ads.noSpendBanner")}
         </div>
       )}
+      {roiLoading && <p className="text-xs text-muted-foreground">{t("common.loading")}</p>}
+      {roiError && <p className="text-xs text-red-400">{t("common.loadFailedRetry")}</p>}
       {roi && (
         <p className="text-xs text-muted-foreground">{t("ads.dataUpdated")}: {roi.data_last_updated ?? "—"}</p>
       )}
@@ -323,7 +333,7 @@ export default function AdsPage() {
                   {roi.ad_breakdown.map((a) => (
                     <tr key={`${a.ad_id ?? ""}|${a.ad}`} className="border-b border-border/20">
                       <td className="py-2 px-4 max-w-[220px] truncate">{a.ad}</td>
-                      <td className="text-right py-2 px-3">{fmtAED(a.spend)}</td>
+                      <td className="text-right py-2 px-3">{a.spend_ambiguous && a.spend === null ? "?" : fmtAED(a.spend)}</td>
                       <td className="text-right py-2 px-3">{a.leads}</td>
                       <td className="text-right py-2 px-3 font-medium">{fmtAED(a.cpl)}</td>
                     </tr>

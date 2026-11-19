@@ -4,7 +4,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import {
-  adLabel, attributionGroup, buildAdNameMap, costPerLead, dubaiWeekStartKey, isAdLead, resolveAdsWindow,
+  adLabel, attributionGroup, buildAdBreakdown, buildAdNameMap, costPerLead, dubaiWeekStartKey, isAdLead, resolveAdsWindow,
   spendFreshness, weeklyLeadCost,
 } from "../../src/lib/ads-leads.mjs";
 import { defaultWindow } from "../../src/lib/meta-ads-insights.mjs";
@@ -129,4 +129,71 @@ test("the daily ads-sync cron: route is flag-gated and secret-gated, schedule ro
   assert.deepEqual([row.install, row.dubaiTime, row.idempotent], ["after-flag", "06:20", true]);
   assert.ok(row.why.length > 40);
   assert.match(read("infra/cron/newme-cron-ads-sync.timer"), /OnCalendar=\*-\*-\* 06:20:00 Asia\/Dubai/);
+});
+
+test("per-ad leads are keyed by ad id: same name on two ids stays two rows, a renamed ad stays one", () => {
+  const leads = [
+    { ad_id: "1", ad_name: "Villa", created_at: "2026-11-01T08:00:00Z" },
+    { ad_id: "2", ad_name: "Villa", created_at: "2026-11-02T08:00:00Z" },
+    { ad_id: "2", ad_name: "Villa", created_at: "2026-11-03T08:00:00Z" },
+    { ad_id: "3", ad_name: "Old name", created_at: "2026-11-01T08:00:00Z" },
+    { ad_id: "3", ad_name: "New name", created_at: "2026-11-05T08:00:00Z" },
+  ];
+  const spend = [{ ad_name: "Villa", amount: 90 }, { ad_name: "Old name", amount: 10 }, { ad_name: "New name", amount: 20 }];
+  const rows = buildAdBreakdown(spend, leads);
+  const by = (id) => rows.find((r) => r.ad_id === id);
+  assert.equal(by("1").leads, 1);
+  assert.equal(by("2").leads, 2);
+  assert.equal(by("3").leads, 2, "renamed ad is one row");
+  assert.equal(by("3").spend, 30, "spend under both of its names is attributed to it");
+  assert.equal(by("3").cpl, 15);
+  // "Villa" spend cannot be owned by one id: not guessed
+  assert.equal(by("1").spend, null);
+  assert.equal(by("1").cpl, null);
+  assert.equal(by("1").spend_ambiguous, true);
+  assert.equal(by("2").spend, null);
+  const amb = rows.find((r) => r.spend_ambiguous && r.ad_id === null);
+  assert.equal(amb.spend, 90);
+  assert.equal(amb.cpl, null);
+  assert.equal(amb.leads, 0);
+});
+
+test("per-ad spend with a unique name owner attributes; no owner stays its own spend-only row", () => {
+  const rows = buildAdBreakdown(
+    [{ ad_name: "Solo", amount: 50 }, { ad_name: "Ghost", amount: 7 }, { ad_name: "Solo", amount: null }],
+    [{ ad_id: "9", ad_name: "Solo" }, { ad_id: "9", ad_name: "Solo" }],
+  );
+  const solo = rows.find((r) => r.ad_id === "9");
+  assert.deepEqual([solo.spend, solo.leads, solo.cpl, solo.spend_ambiguous], [50, 2, 25, false]);
+  const ghost = rows.find((r) => r.ad === "Ghost");
+  assert.deepEqual([ghost.ad_id, ghost.spend, ghost.leads, ghost.cpl], [null, 7, 0, null]);
+  assert.match(read("src/app/api/dashboard/ads-roi/route.ts"), /buildAdBreakdown\(/);
+});
+
+test("a null ad_spend amount is unknown, not zero: week spend and cost per lead stay null", () => {
+  const leads = [{ created_at: "2026-11-10T08:00:00Z" }];
+  const allNull = weeklyLeadCost([{ spend_date: "2026-11-09", amount: null }, { spend_date: "2026-11-10", amount: undefined }], leads);
+  assert.equal(allNull[0].spend, null);
+  assert.equal(allNull[0].cpl, null);
+  const mixed = weeklyLeadCost([{ spend_date: "2026-11-09", amount: null }, { spend_date: "2026-11-10", amount: 40 }], leads);
+  assert.equal(mixed[0].spend, 40);
+  assert.equal(mixed[0].cpl, 40);
+  assert.equal(weeklyLeadCost([{ spend_date: "2026-11-09", amount: 0 }], leads)[0].spend, 0, "a real zero stays zero");
+});
+
+test("the cron sync retries once with the system user token, via nextTokenSource, from page one", () => {
+  const route = read("src/app/api/cron/ads-sync/route.ts");
+  assert.match(route, /nextTokenSource\(choice, \{ envToken \}\)/);
+  assert.match(route, /refusal\.kind === "token_invalid"/);
+  assert.match(route, /MAX_CREDENTIAL_ATTEMPTS/);
+  assert.match(route, /insights\.length = 0;\s*after = null;\s*pages = 0;/);
+  assert.match(route, /ADS_SYNC_CRON_ENABLED !== "true"/);
+});
+
+test("the ads page clears ROI on a window change and shows an error on a failed fetch", () => {
+  const page = read("src/app/(dashboard)/ads/page.tsx");
+  assert.match(page, /setRoi\(null\);\s*setRoiError\(false\);\s*setRoiLoading\(true\)/);
+  assert.match(page, /if \(!res\.ok\) throw new Error/);
+  assert.match(page, /catch \(err\) \{[^}]*setRoi\(null\); setRoiError\(true\)/);
+  assert.match(page, /\{roiError && /);
 });

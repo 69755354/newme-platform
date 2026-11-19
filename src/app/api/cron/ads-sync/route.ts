@@ -17,6 +17,7 @@ import {
   defaultWindow,
   insightsUrl,
   mapInsights,
+  nextTokenSource,
   normaliseAccountId,
 } from "@/lib/meta-ads-insights.mjs";
 import { atomicWriteError, atomicWriteResult } from "@/lib/meta-ads-write.mjs";
@@ -25,6 +26,7 @@ export const dynamic = "force-dynamic";
 
 const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || "v22.0";
 const MAX_PAGES = 40;
+const MAX_CREDENTIAL_ATTEMPTS = 2;
 
 type GraphPage = {
   data?: unknown[];
@@ -57,34 +59,52 @@ async function handle(request: Request) {
     .from("meta_tokens").select("access_token, expires_at").eq("id", 1).maybeSingle();
   if (secretError) return NextResponse.json({ error: "token_lookup_failed" }, { status: 500 });
   const envToken = process.env.META_SYSTEM_USER_TOKEN;
-  const choice = chooseTokenSource({ tokenRow: secret, envToken });
+  let choice = chooseTokenSource({ tokenRow: secret, envToken });
   if (choice.kind === "none") return NextResponse.json({ error: choice.reason }, { status: 409 });
-  const credential = choice.kind === "env" ? (envToken as string) : (secret!.access_token as string);
+  let credential = choice.kind === "env" ? (envToken as string) : (secret!.access_token as string);
 
   // Every page is read before the database is touched, so a Graph failure halfway cannot delete rows it has
   // no replacement for.
+  // A stored OAuth token Meta has revoked while expires_at is still in the future is preferred by
+  // chooseTokenSource(); like the admin route, retry once from page one with the system user token.
   const insights: unknown[] = [];
   let after: string | null = null;
   let pages = 0;
-  while (pages < MAX_PAGES) {
-    const url = insightsUrl({ accountId: account, since, until, graphVersion: GRAPH_VERSION, after });
-    let payload: GraphPage | null = null;
-    try {
-      const resp = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${credential}` } });
-      payload = await resp.json();
-      if (!resp.ok || payload?.error) {
-        const refusal = classifyGraphError(payload, resp.status) as { kind: string; status: number };
-        logger.error({ operation: "cron_ads_sync", graph_kind: refusal.kind, since, until }, "[AdsSync] insights refused");
-        return NextResponse.json({ error: refusal.kind, window: { since, until } }, { status: refusal.status });
+  let refusal: { kind: string; status: number } | null = null;
+  for (let attempt = 0; attempt < MAX_CREDENTIAL_ATTEMPTS; attempt += 1) {
+    insights.length = 0;
+    after = null;
+    pages = 0;
+    refusal = null;
+    while (pages < MAX_PAGES) {
+      const url = insightsUrl({ accountId: account, since, until, graphVersion: GRAPH_VERSION, after });
+      let payload: GraphPage | null = null;
+      try {
+        const resp = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${credential}` } });
+        payload = await resp.json();
+        if (!resp.ok || payload?.error) {
+          refusal = classifyGraphError(payload, resp.status) as { kind: string; status: number };
+          break;
+        }
+      } catch (e) {
+        logger.error({ err: e, operation: "cron_ads_sync" }, "[AdsSync] insights unreachable");
+        return NextResponse.json({ error: "graph_unreachable", window: { since, until } }, { status: 502 });
       }
-    } catch (e) {
-      logger.error({ err: e, operation: "cron_ads_sync" }, "[AdsSync] insights unreachable");
-      return NextResponse.json({ error: "graph_unreachable", window: { since, until } }, { status: 502 });
+      if (Array.isArray(payload?.data)) insights.push(...payload.data);
+      pages += 1;
+      after = payload?.paging?.cursors?.after && payload?.paging?.next ? payload.paging.cursors.after : null;
+      if (!after) break;
     }
-    if (Array.isArray(payload?.data)) insights.push(...payload.data);
-    pages += 1;
-    after = payload?.paging?.cursors?.after && payload?.paging?.next ? payload.paging.cursors.after : null;
-    if (!after) break;
+    if (!refusal) break;
+    const alternative = refusal.kind === "token_invalid" ? nextTokenSource(choice, { envToken }) : { kind: "none" };
+    if (alternative.kind !== "env") break;
+    logger.warn({ operation: "cron_ads_sync" }, "[AdsSync] stored credential rejected, retrying with the system user token");
+    choice = { ...choice, kind: "env", reason: "oauth_token_rejected_env_retry" };
+    credential = envToken as string;
+  }
+  if (refusal) {
+    logger.error({ operation: "cron_ads_sync", graph_kind: refusal.kind, since, until }, "[AdsSync] insights refused");
+    return NextResponse.json({ error: refusal.kind, window: { since, until } }, { status: refusal.status });
   }
   if (pages >= MAX_PAGES && after) return NextResponse.json({ error: "window_too_large_for_pagination" }, { status: 400 });
 

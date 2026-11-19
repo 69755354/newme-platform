@@ -128,7 +128,10 @@ export function weeklyLeadCost(spendRows, leads) {
   const weeks = new Map();
   const slot = (k) => { if (!weeks.has(k)) weeks.set(k, { week_start: k, spend: null, leads: 0 }); return weeks.get(k); };
   for (const row of spendRows || []) {
-    const amount = Number(row?.amount);
+    // A null/blank amount is unknown, not zero: Number(null) is 0, so test before converting.
+    const raw = row?.amount;
+    if (raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "")) continue;
+    const amount = Number(raw);
     const k = dubaiWeekStartKey(row?.spend_date);
     if (!k || !Number.isFinite(amount)) continue;
     const w = slot(k); w.spend = (w.spend ?? 0) + amount;
@@ -146,4 +149,87 @@ export function weeklyLeadCost(spendRows, leads) {
       leads: w.leads,
       cpl: costPerLead(w.spend, w.leads),
     }));
+}
+
+const round2 = (n) => Math.round(n * 100) / 100;
+
+/** Name key used to join ad_spend (which has no ad_id column) to leads. */
+export function adNameKey(name) {
+  const n = clean(name);
+  if (!n) return "";
+  return n.toLowerCase().replace(/\s+/g, " ").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, "-");
+}
+
+/**
+ * Per-ad leads and spend.
+ * Leads are counted per ad_id (the name only labels), so two ad ids sharing a name stay two rows and a renamed
+ * ad stays one. A lead with no ad_id is counted under its name. ad_spend has no ad_id, so spend is joined by
+ * name: a spend name that exactly one ad id has ever carried is attributed to that ad; one carried by several
+ * ad ids is ambiguous and is NOT guessed. It is reported on its own row (spend_ambiguous) and the ads that
+ * could own it show unknown spend and no cost per lead.
+ * spendRows: {ad_name, amount}; leads: {ad_id, ad_name, created_at}.
+ */
+export function buildAdBreakdown(spendRows, leads, names = buildAdNameMap(leads)) {
+  const rows = new Map(); // key -> { label, ad_id, leads, spend, ambiguous }
+  const idNames = new Map(); // ad_id -> Set of name keys any of its leads carried (+ latest known name)
+  const nameOwners = new Map(); // name key -> Set of ad_ids that carry it
+  const slot = (key, init) => { if (!rows.has(key)) rows.set(key, { leads: 0, spend: null, ambiguous: false, ...init }); return rows.get(key); };
+  const addName = (id, name) => {
+    const k = adNameKey(name);
+    if (!k) return;
+    if (!idNames.has(id)) idNames.set(id, new Set());
+    idNames.get(id).add(k);
+    if (!nameOwners.has(k)) nameOwners.set(k, new Set());
+    nameOwners.get(k).add(id);
+  };
+
+  for (const lead of leads || []) {
+    const id = clean(lead?.ad_id);
+    const own = clean(lead?.ad_name);
+    if (id) {
+      addName(id, own);
+      slot(`id:${id}`, { label: null, ad_id: id }).leads += 1;
+    } else if (own) {
+      slot(`name:${adNameKey(own)}`, { label: own, ad_id: null }).leads += 1;
+    }
+  }
+  for (const [id] of idNames) addName(id, names.get(id));
+  for (const r of rows.values()) if (r.ad_id) r.label = adLabel(r.ad_id, names.get(r.ad_id));
+
+  const addSpend = (r, amount) => { r.spend = (r.spend ?? 0) + amount; };
+  for (const row of spendRows || []) {
+    const spendName = clean(row?.ad_name);
+    const k = adNameKey(spendName);
+    if (!k) continue;
+    const raw = row?.amount;
+    const known = !(raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "")) && Number.isFinite(Number(raw));
+    const amount = known ? Number(raw) : null;
+    const owners = [...(nameOwners.get(k) || [])];
+    if (owners.length === 1) {
+      const r = rows.get(`id:${owners[0]}`);
+      if (amount !== null) addSpend(r, amount);
+    } else if (owners.length > 1) {
+      const r = slot(`ambiguous:${k}`, { label: spendName, ad_id: null, ambiguous: true });
+      if (amount !== null) addSpend(r, amount);
+      for (const id of owners) rows.get(`id:${id}`).tainted = true;
+    } else {
+      const r = slot(`name:${k}`, { label: spendName, ad_id: null });
+      if (amount !== null) addSpend(r, amount);
+    }
+  }
+
+  return [...rows.values()]
+    .map((r) => {
+      const unknown = r.tainted === true || r.ambiguous;
+      const spend = r.tainted ? null : r.spend;
+      return {
+        ad: r.label,
+        ad_id: r.ad_id,
+        spend: spend === null ? null : round2(spend),
+        leads: r.leads,
+        cpl: unknown ? null : costPerLead(spend ?? undefined, r.leads),
+        spend_ambiguous: unknown,
+      };
+    })
+    .sort((a, b) => (b.spend ?? -Infinity) - (a.spend ?? -Infinity) || b.leads - a.leads);
 }

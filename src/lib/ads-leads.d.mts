@@ -30,3 +30,9 @@ export function weeklyLeadCost(
   spendRows: Array<{ spend_date?: string | null; amount?: unknown }>,
   leads: Array<{ created_at?: string | null }>,
 ): Array<{ week_start: string; week_end: string; spend: number | null; leads: number; cpl: number | null }>;
+export function adNameKey(name: unknown): string;
+export function buildAdBreakdown(
+  spendRows: Array<{ ad_name?: string | null; amount?: unknown }>,
+  leads: Array<{ ad_id?: string | null; ad_name?: string | null; created_at?: string | null }>,
+  names?: Map<string, string>,
+): Array<{ ad: string; ad_id: string | null; spend: number | null; leads: number; cpl: number | null; spend_ambiguous: boolean }>;

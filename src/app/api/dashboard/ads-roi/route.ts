@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import { EXCLUDE_SYNTHETIC_QA_FILTER, sourceQualityBreakdown, type MetricLead } from "@/lib/lead-metrics.mjs";
-import { adLabel, buildAdNameMap, costPerLead, resolveAdsWindow, spendFreshness, weeklyLeadCost } from "@/lib/ads-leads.mjs";
+import { adLabel, buildAdBreakdown, buildAdNameMap, costPerLead, resolveAdsWindow, spendFreshness, weeklyLeadCost } from "@/lib/ads-leads.mjs";
 
 function numericAmount(value: number | null): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -145,39 +145,8 @@ export async function GET(request: Request) {
       })
       .sort((a, b) => (b.spend ?? -Infinity) - (a.spend ?? -Infinity) || b.leads - a.leads);
 
-    // --- 4. Per ad: by ad id when the lead has one (the name only labels it); spend joins by ad name ---
-    const spendByAd: Record<string, number> = {};
-    const leadsByAd: Record<string, number> = {};
-    const adDisplay: Record<string, { label: string; ad_id: string | null }> = {};
-    for (const row of adSpend) {
-      if (!row.ad_name) continue;
-      const k = normalizeCampaign(row.ad_name);
-      const amount = numericAmount(row.amount);
-      if (amount !== null) spendByAd[k] = (spendByAd[k] || 0) + amount;
-      if (!adDisplay[k]) adDisplay[k] = { label: row.ad_name, ad_id: null };
-    }
-    for (const lead of metaLeads) {
-      const id = lead.ad_id || null;
-      const name = lead.ad_name || (id ? adNames.get(id) : undefined) || null;
-      if (!id && !name) continue;
-      const k = name ? normalizeCampaign(name) : `ad-${id}`;
-      if (!adDisplay[k]) adDisplay[k] = { label: name ? adLabel(id, name) : adLabel(id, null), ad_id: id };
-      else if (id && !adDisplay[k].ad_id) adDisplay[k] = { label: adLabel(id, name || adDisplay[k].label), ad_id: id };
-      leadsByAd[k] = (leadsByAd[k] || 0) + 1;
-    }
-    const adBreakdown = Array.from(new Set([...Object.keys(spendByAd), ...Object.keys(leadsByAd)]))
-      .map((k) => {
-        const spend = spendByAd[k] ?? null;
-        const leads = leadsByAd[k] || 0;
-        return {
-          ad: adDisplay[k].label,
-          ad_id: adDisplay[k].ad_id,
-          spend: spend === null ? null : Math.round(spend * 100) / 100,
-          leads,
-          cpl: costPerLead(spend ?? undefined, leads),
-        };
-      })
-      .sort((a, b) => (b.spend ?? -Infinity) - (a.spend ?? -Infinity) || b.leads - a.leads);
+    // --- 4. Per ad: leads by ad id (the name only labels); spend joins by name, ambiguous names are flagged, not guessed ---
+    const adBreakdown = buildAdBreakdown(adSpend, metaLeads, adNames);
 
     // --- 5. Per Dubai ISO week ---
     const weeklyBreakdown = weeklyLeadCost(adSpend, metaLeads);

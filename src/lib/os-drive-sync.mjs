@@ -175,10 +175,12 @@ export function locateSalesColumns(phoneCol, clidCol, cfg = DEFAULTS) {
 
 /**
  * leads: [{lead_ref, phone, ctwa_clid, created_at}] (OS side). Returns
- * {writes:[{row, value, previous, lead_ref}], unchanged, unmatched:[{lead_ref, reason}], ambiguous:[{lead_ref, rows}], overwrites, conflicts}.
+ * {writes:[{row, value, lead_ref}], unchanged, unmatched:[{lead_ref, reason}], ambiguous:[{lead_ref, rows}], manual:[{lead_ref, row}], conflicts}.
+ * A cell is written only when it is empty or still holds the value this program wrote earlier for that lead (owned[lead_ref]);
+ * anything else was typed by a person: skipped and reported, never overwritten.
  * Only ever plans a cell in the clid column of a data row; rows that do not match are reported, never created.
  */
-export function planCtwaColumnX(phoneCol, clidCol, leads, cfg = DEFAULTS) {
+export function planCtwaColumnX(phoneCol, clidCol, leads, cfg = DEFAULTS, owned = {}) {
   const headerRow = locateSalesColumns(phoneCol, clidCol, cfg);
   const byKey = new Map();
   for (let r = headerRow + 1; r < phoneCol.length; r++) {
@@ -198,18 +200,18 @@ export function planCtwaColumnX(phoneCol, clidCol, leads, cfg = DEFAULTS) {
     if (seen.ctwa_clid !== lead.ctwa_clid) conflicts++;
     if (Date.parse(lead.created_at ?? "") < Date.parse(seen.created_at ?? "")) perPhone.set(key, lead);
   }
-  const writes = []; const ambiguous = []; let unchanged = 0; let overwrites = 0;
+  const writes = []; const ambiguous = []; let unchanged = 0; const manual = [];
   for (const [key, lead] of perPhone) {
     const rows = [...(byKey.get(key) ?? [])];
     if (rows.length === 0) { unmatched.push({ lead_ref: lead.lead_ref, reason: "no_row" }); continue; }
     if (rows.length > 1) { ambiguous.push({ lead_ref: lead.lead_ref, rows: rows.length }); continue; }
     const row = rows[0]; const current = cell(clidCol[row]).trim();
     if (current === lead.ctwa_clid) { unchanged++; continue; }
-    if (current) overwrites++;
-    writes.push({ row: row + 1, value: lead.ctwa_clid, previous: cell(clidCol[row]), lead_ref: lead.lead_ref });
+    if (current && current !== owned[lead.lead_ref]) { manual.push({ lead_ref: lead.lead_ref, row: row + 1 }); continue; }
+    writes.push({ row: row + 1, value: lead.ctwa_clid, lead_ref: lead.lead_ref });
   }
   writes.sort((a, b) => a.row - b.row);
-  return { writes, unchanged, unmatched, ambiguous, overwrites, conflicts };
+  return { writes, unchanged, unmatched, ambiguous, manual, conflicts };
 }
 
 // ---------- caps and verification ----------
@@ -232,13 +234,14 @@ export function diffReadBack(expected, actual) {
 // ---------- state ----------
 export function emptyState() {
   return { version: 1, leads_cursor: null, events_cursor: null, pending_ctwa: {}, last_ok_at: null, last_run_at: null,
-    consecutive_failures: 0, nas_uploaded: {} };
+    consecutive_failures: 0, nas_uploaded: {}, x_written: {} };
 }
 export function normalizeState(raw) {
   const base = emptyState();
   if (!raw || typeof raw !== "object") return base;
   return { ...base, ...raw, pending_ctwa: raw.pending_ctwa && typeof raw.pending_ctwa === "object" ? raw.pending_ctwa : {},
-    nas_uploaded: raw.nas_uploaded && typeof raw.nas_uploaded === "object" ? raw.nas_uploaded : {} };
+    nas_uploaded: raw.nas_uploaded && typeof raw.nas_uploaded === "object" ? raw.nas_uploaded : {},
+    x_written: raw.x_written && typeof raw.x_written === "object" ? raw.x_written : {} };
 }
 /** Query lower bound: cursor minus the overlap, so a late-committing row is never skipped. Null = full read. */
 export function sinceFromCursor(cursor, overlapSeconds = DEFAULTS.overlapSeconds) {

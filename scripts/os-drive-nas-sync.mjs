@@ -174,11 +174,11 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   const titles = { meta: await sheets.getFirstSheetTitle(cfg.metaSheetId) };
   const grids = await loadSheetGrids(sheets, cfg, titles, { needSales: ctwaLeads.length > 0 });
   const planA = planMetaIdsUpsert(grids.meta, osRows);
-  const planB = grids.sales ? planCtwaColumnX(grids.sales.phoneCol, grids.sales.clidCol, ctwaLeads, cfg)
-    : { writes: [], unchanged: 0, unmatched: [], ambiguous: [], overwrites: 0, conflicts: 0 };
+  const planB = grids.sales ? planCtwaColumnX(grids.sales.phoneCol, grids.sales.clidCol, ctwaLeads, cfg, state.x_written)
+    : { writes: [], unchanged: 0, unmatched: [], ambiguous: [], manual: [], conflicts: 0 };
   Object.assign(summary, {
     meta_updates: planA.updates.length, meta_appends: planA.appends.length, meta_unchanged: planA.unchanged, meta_duplicate_keys: planA.duplicateSheetKeys,
-    x_writes: planB.writes.length, x_overwrites: planB.overwrites, x_unchanged: planB.unchanged, x_unmatched: planB.unmatched.length, x_ambiguous: planB.ambiguous.length,
+    x_writes: planB.writes.length, x_manual_skipped: planB.manual.length, x_unchanged: planB.unchanged, x_unmatched: planB.unmatched.length, x_ambiguous: planB.ambiguous.length,
   });
   const planned = planA.updates.length + planA.appends.length + planB.writes.length;
   summary.planned_writes = planned;
@@ -213,8 +213,10 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
     const data = planB.writes.map((w) => ({ range: `${a1Tab(cfg.salesTab)}!${cfg.clidColumn}${w.row}`, values: [[w.value]] }));
     await guarded.batchUpdateValues(cfg.salesSheetId, data);
     await verifyAndRetry(guarded, cfg.salesSheetId, data, (bad) => guarded.batchUpdateValues(cfg.salesSheetId, bad));
-    for (const w of planB.writes) changes.push({ ts, sheet: "home_owners_x", action: "write", row: w.row, lead_ref: w.lead_ref, value: w.value, previous: w.previous });
+    for (const w of planB.writes) changes.push({ ts, sheet: "home_owners_x", action: "write", row: w.row, lead_ref: w.lead_ref, value: w.value });
   }
+
+  for (const w of planB.writes) state.x_written[w.lead_ref] = w.value;
 
   // 4. NAS spool + upload (a failed upload is retried next run, it never blocks the cursor)
   let nasError = null;
@@ -254,8 +256,8 @@ export async function runReconcile({ osReader, sheets, io, cfg = DEFAULTS, now =
   if (nightly) meta.nas_file = nightly.name;
   let x = null;
   if (grids.sales) {
-    const p = planCtwaColumnX(grids.sales.phoneCol, grids.sales.clidCol, ctwa, cfg);
-    x = { os_leads_with_click_id: ctwa.length, already_in_sheet: p.unchanged, would_write: p.writes.length, unmatched: p.unmatched.length, ambiguous: p.ambiguous.length, overwrites: p.overwrites };
+    const p = planCtwaColumnX(grids.sales.phoneCol, grids.sales.clidCol, ctwa, cfg, io.readState().x_written);
+    x = { os_leads_with_click_id: ctwa.length, already_in_sheet: p.unchanged, would_write: p.writes.length, unmatched: p.unmatched.length, ambiguous: p.ambiguous.length, manual_value_skipped: p.manual.length };
   }
   const state = io.readState();
   const ageMin = state.last_ok_at ? Math.round((now() - Date.parse(state.last_ok_at)) / 60_000) : null;

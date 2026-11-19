@@ -136,8 +136,12 @@ test("planCtwaColumnX: matches by phone, reports unmatched and ambiguous, never 
   const P = g.map((r) => r[15]); const X = g.map((r) => r[23]);
   const leads = [1, 2, 3, 4, 5].map((n) => ({ lead_ref: `r${n}`, phone: `+97150000000${n}`, ctwa_clid: `CLID_${n}_abcdefghij`, created_at: "2026-11-19" }));
   const p = planCtwaColumnX(P, X, leads);
-  assert.deepEqual(p.writes.map((w) => [w.row, w.lead_ref]), [[2, "r1"], [3, "r2"]]);
-  assert.equal(p.overwrites, 1); assert.equal(p.unchanged, 1);
+  assert.deepEqual(p.writes.map((w) => [w.row, w.lead_ref]), [[2, "r1"]]);
+  assert.deepEqual(p.manual, [{ lead_ref: "r2", row: 3 }], "a value typed by a person is skipped, never overwritten");
+  assert.equal(p.unchanged, 1);
+  const owned = planCtwaColumnX(P, X, leads, DEFAULTS, { r2: "OLD" });
+  assert.deepEqual(owned.writes.map((w) => w.lead_ref), ["r1", "r2"], "a value this program wrote earlier may be updated");
+  assert.equal(owned.manual.length, 0);
   assert.deepEqual(p.ambiguous.map((a) => a.lead_ref), ["r3"]);
   assert.deepEqual(p.unmatched, [{ lead_ref: "r5", reason: "no_row" }]);
   assert.throws(() => planCtwaColumnX(["x", "+971500000001"], ["y", ""], leads), /refusing/);
@@ -159,6 +163,20 @@ test("run: writes Meta IDs rows and column X only, nothing else changes, reads b
   const jsonl = readFileSync(t.io.changesFile("20261120").file, "utf8");
   assert.ok(!jsonl.includes("+9715") && !jsonl.includes("0500000"), "no phone numbers in the NAS records");
   assert.equal(jsonl.trim().split("\n").length, 3);
+});
+
+test("run: a human-typed X value is left alone and reported; our own earlier value is updated", async () => {
+  const sales = salesGrid([sRow("+971500000001", "typed-by-hand"), sRow("+971500000002")]);
+  const leads = [lead(1), lead(2)];
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: sales });
+  const r = await t.run();
+  assert.equal(r.summary.x_manual_skipped, 1); assert.equal(r.summary.x_writes, 1);
+  assert.equal(sales[1][23], "typed-by-hand"); assert.equal(sales[2][23], "CLID_2_abcdefghij");
+  assert.ok(!readFileSync(t.io.changesFile("20261120").file, "utf8").includes("typed-by-hand"), "no old values in NAS records");
+  leads[1].ctwa_clid = "CLID_2_changedvalue"; leads[1].updated_at = "2026-11-20T07:00:00.000Z";
+  const r2 = await t.run();
+  assert.equal(r2.summary.x_writes, 1); assert.equal(sales[2][23], "CLID_2_changedvalue");
+  assert.equal(sales[1][23], "typed-by-hand");
 });
 
 test("run is idempotent: a second run (and a --full re-run) plans and writes nothing", async () => {

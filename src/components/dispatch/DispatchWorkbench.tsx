@@ -15,7 +15,8 @@ interface Row {
   lead_id: string; status: string; missing_fields: string[]; phone_flag: string; routing_note: string | null; admin_note: string | null;
   release_reason: string | null; lead: LeadFacts | null; allowed_actions: string[]; duplicate: DuplicateInfo | null;
 }
-interface QueueBody { status: string; counts: Record<string, number>; data: Row[]; pagination: { total: number; has_more: boolean } }
+interface QueueBody { status: string; counts: Record<string, number>; data: Row[]; pagination: { limit: number; offset: number; total: number; has_more: boolean } }
+const PAGE_SIZE = 50;
 // An action opens a small form for its reason; these run at once.
 const IMMEDIATE = new Set(["confirm_phone", "revoke_release", "reevaluate"]);
 
@@ -42,22 +43,27 @@ export default function DispatchWorkbench({ t }: { t: Translate }) {
   const [text, setText] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((n) => n + 1), []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const result = await callApi<QueueBody>(`/api/dispatch/queue?status=${status}&limit=50`);
+      const result = await callApi<QueueBody>(`/api/dispatch/queue?status=${status}&limit=${PAGE_SIZE}&offset=${offset}`);
       if (cancelled) return;
       if (result.status === 503) { setState("unavailable"); return; }
       if (!result.ok) { setState("error"); return; }
       setCounts(result.body.counts ?? {});
       setRows(result.body.data ?? []);
+      setTotal(result.body.pagination?.total ?? 0);
+      setHasMore(Boolean(result.body.pagination?.has_more));
       setState("ready");
     })();
     return () => { cancelled = true; };
-  }, [status, reloadKey]);
+  }, [status, offset, reloadKey]);
 
   const finish = async (call: () => Promise<{ ok: boolean; status: number; body: { error?: string } }>) => {
     setBusy(true); setMessage("");
@@ -105,7 +111,7 @@ export default function DispatchWorkbench({ t }: { t: Translate }) {
     <div className="space-y-3" data-testid="dispatch-workbench">
       <div className="flex flex-wrap items-center gap-2">
         {DISPATCH_STATUSES.map((name) => (
-          <button key={name} type="button" onClick={() => { setStatus(name); setOpen(null); setState("loading"); }}
+          <button key={name} type="button" onClick={() => { if (name === status) return; setStatus(name); setOffset(0); setOpen(null); setState("loading"); }}
             className={`${buttonClass} ${status === name ? "bg-muted font-medium" : ""}`} data-testid={`dispatch-tab-${name}`}>
             {t(`dispatch.status.${name}`)} <span className="ml-1 text-muted-foreground">{counts[name] ?? 0}</span>
           </button>
@@ -156,6 +162,15 @@ export default function DispatchWorkbench({ t }: { t: Translate }) {
           </li>
         )) : null}
       </ul>
+      {state === "ready" && (offset > 0 || hasMore) ? (
+        <div className="flex items-center gap-2 text-xs" data-testid="dispatch-pagination">
+          <button type="button" className={buttonClass} disabled={offset === 0} data-testid="dispatch-prev"
+            onClick={() => { setOpen(null); setState("loading"); setOffset(Math.max(0, offset - PAGE_SIZE)); }}>{t("dispatch.prev")}</button>
+          <span className="text-muted-foreground">{t("dispatch.pageRange").replace("{from}", String(offset + 1)).replace("{to}", String(offset + rows.length)).replace("{total}", String(total))}</span>
+          <button type="button" className={buttonClass} disabled={!hasMore} data-testid="dispatch-next"
+            onClick={() => { setOpen(null); setState("loading"); setOffset(offset + PAGE_SIZE); }}>{t("dispatch.next")}</button>
+        </div>
+      ) : null}
     </div>
   );
 }

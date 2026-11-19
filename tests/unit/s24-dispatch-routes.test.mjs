@@ -43,7 +43,11 @@ function makeDb({ fail, rpcResult } = {}) {
   const tables = seedTables();
   const log = [];
   const rpcCalls = [];
-  const matches = (row, filters) => filters.every(([op, col, val]) => {
+  const matches = (row, filters, table) => filters.every(([op, col, val]) => {
+    if (col.startsWith("leads.")) { // embedded inner join on the lead of a dispatch state row
+      const lead = tables.leads.find((l) => l.id === row.lead_id);
+      return Boolean(lead) && op === "eq" && lead[col.slice(6)] === val;
+    }
     if (op === "eq") return row[col] === val;
     if (op === "in") return val.includes(row[col]);
     return true;
@@ -52,7 +56,7 @@ function makeDb({ fail, rpcResult } = {}) {
     log.push({ table: q.table, op: q.op, columns: q.columns, filters: q.filters, range: q.range, head: q.head });
     const injected = fail?.(q);
     if (injected) return { data: null, error: injected };
-    const hit = (tables[q.table] ?? []).filter((r) => matches(r, q.filters));
+    const hit = (tables[q.table] ?? []).filter((r) => matches(r, q.filters, q.table));
     if (q.head) return { data: null, error: null, count: hit.length };
     // the database returns only the selected columns
     const names = q.columns && q.columns !== "*" ? q.columns.split(",").map((c) => c.trim()) : null;
@@ -183,6 +187,20 @@ test("the queue answers counts for all seven states and the rows of one state", 
     assert.deepEqual(row.allowed_actions, ["mark_test", "note", "reevaluate"]);
     assert.equal("notes" in row.lead, false, "free-text customer notes are not returned");
   }
+});
+
+test("the queue leaves archived leads out of the rows and the counts, and keeps the response shape", async () => {
+  setup("admin", OPERATOR);
+  state.db.tables.leads.find((l) => l.id === L(3)).archived = true; // archived by /api/leads/archive
+  const body = await json(await queue.GET(get("/api/dispatch/queue?status=unassigned")));
+  assert.equal(body.counts.unassigned, 0);
+  assert.equal(body.data.length, 0);
+  assert.equal(body.pagination.total, 0);
+  const other = await json(await queue.GET(get("/api/dispatch/queue?status=duplicate_review")));
+  assert.equal(other.counts.duplicate_review, 1);
+  assert.equal("leads" in other.data[0], false, "the join column is not leaked into the rows");
+  const filters = state.db.log.filter((e) => e.table === "lead_dispatch_state").map((e) => JSON.stringify(e.filters));
+  assert.ok(filters.every((f) => f.includes("leads.archived")), "every state query filters archived leads");
 });
 
 test("the queue defaults to the first attention state, validates the filter and caps the page size", async () => {

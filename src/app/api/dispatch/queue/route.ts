@@ -8,6 +8,8 @@ import { ATTENTION_STATUSES, DISPATCH_STATUSES, allowedActions } from "@/lib/lea
 
 export const dynamic = "force-dynamic";
 const STATE_COLUMNS = "lead_id, status, missing_fields, phone_norm, phone_flag, routing_note, admin_note, release_reason, evaluated_at, updated_at";
+// Archived leads (leads.archived, set by /api/leads/archive) leave the queue and the counts: inner join + filter.
+const LIVE_JOIN = "leads!inner(archived)";
 
 export async function GET(request: NextRequest) {
   return handle(request, "dispatch_queue", async ({ context, respond }) => {
@@ -19,16 +21,17 @@ export async function GET(request: NextRequest) {
     const { limit, offset } = pageParams(url);
 
     const countResults = await Promise.all(DISPATCH_STATUSES.map(async (name) => {
-      const { count, error } = await supabaseAdmin.from("lead_dispatch_state").select("lead_id", { count: "exact", head: true }).eq("status", name);
+      const { count, error } = await supabaseAdmin.from("lead_dispatch_state").select(`lead_id, ${LIVE_JOIN}`, { count: "exact", head: true }).eq("status", name).eq("leads.archived", false);
       if (error) throw error;
       return [name, count ?? 0] as const;
     }));
     const counts = Object.fromEntries(countResults);
 
-    const { data: states, error } = await supabaseAdmin.from("lead_dispatch_state").select(STATE_COLUMNS)
-      .eq("status", status).order("updated_at", { ascending: false }).order("lead_id").range(offset, offset + limit - 1);
+    const { data: states, error } = await supabaseAdmin.from("lead_dispatch_state").select(`${STATE_COLUMNS}, ${LIVE_JOIN}`)
+      .eq("status", status).eq("leads.archived", false).order("updated_at", { ascending: false }).order("lead_id").range(offset, offset + limit - 1);
     if (error) throw error;
-    const rows = (states ?? []) as Array<Record<string, unknown> & { lead_id: string }>;
+    // the join exists only for the filter; keep the response shape unchanged
+    const rows = ((states ?? []) as Array<Record<string, unknown> & { lead_id: string }>).map((row) => { const rest = { ...row }; delete rest.leads; return rest; });
     const leadIds = rows.map((row) => row.lead_id);
 
     const reviews = new Map<string, Record<string, unknown>>();

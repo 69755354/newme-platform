@@ -12,6 +12,7 @@ import {
 import {
   buildMetaIdRows, buildMetaIdsCsv, canExportMetaIds, extractExportToken, tokenMatches,
 } from "@/lib/meta-ids-export.mjs";
+import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
 
 export const dynamic = "force-dynamic";
 const PAGE = 1000;
@@ -83,14 +84,18 @@ export async function GET(request: NextRequest) {
       const slice = leads.slice(i, i + 200);
       const formIds = slice.filter((l) => l.meta_leadgen_id).map((l) => l.id);
       const waIds = slice.filter((l) => l.ctwa_clid).map((l) => l.id);
+      // Each batch can hold more events than the PostgREST row cap (1000): page with a stable order.
+      const readEvents = (table: "meta_crm_stage_events" | "whatsapp_capi_events", ids: unknown[]) => fetchAllRows((from: number, to: number, withCount: boolean) =>
+        supabaseAdmin.from(table).select("id, lead_id, event_name, status, created_at, delivered_at", withCount ? { count: "exact" } : undefined)
+          .in("lead_id", ids).order("created_at", { ascending: true }).order("id", { ascending: true }).range(from, to));
       if (formIds.length) {
-        const { data, error } = await supabaseAdmin.from("meta_crm_stage_events").select("lead_id, event_name, status, created_at, delivered_at").in("lead_id", formIds);
-        if (error) throw new Error("form_event_query_failed");
+        const { data, error, truncated } = await readEvents("meta_crm_stage_events", formIds);
+        if (error || truncated) throw new Error("form_event_query_failed");
         formEvents.push(...((data ?? []) as Row[]));
       }
       if (waIds.length) {
-        const { data, error } = await supabaseAdmin.from("whatsapp_capi_events").select("lead_id, event_name, status, created_at, delivered_at").in("lead_id", waIds);
-        if (error) throw new Error("whatsapp_event_query_failed");
+        const { data, error, truncated } = await readEvents("whatsapp_capi_events", waIds);
+        if (error || truncated) throw new Error("whatsapp_event_query_failed");
         whatsappEvents.push(...((data ?? []) as Row[]));
       }
     }

@@ -110,6 +110,7 @@ function loadRoute({ db, env = {}, auth, limit } = {}) {
       RequestAuthError: class extends Error {}, requestAuthErrorResponse: () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
     },
     "@/lib/meta-ids-export.mjs": require("../../src/lib/meta-ids-export.mjs"),
+    "@/lib/fetch-all-rows.mjs": require("../../src/lib/fetch-all-rows.mjs"),
   };
   const saved = process.env.META_IDS_EXPORT_TOKEN;
   if ("META_IDS_EXPORT_TOKEN" in env) process.env.META_IDS_EXPORT_TOKEN = env.META_IDS_EXPORT_TOKEN; else delete process.env.META_IDS_EXPORT_TOKEN;
@@ -209,6 +210,51 @@ test("route: over the row limit gives 413 with a narrow-the-range hint; exactly 
   assert.match(body.error, /since/); assert.match(body.error, /缩小/);
   const exact = await loadRoute({ db: fakeDb({ total: 20_000 }), env: { META_IDS_EXPORT_TOKEN: TOKEN } }).GET(req(`?token=${TOKEN}&format=json`));
   assert.equal(exact.status, 200);
+});
+
+// A database that, like PostgREST, never returns more than ROW_CAP rows per request.
+function cappedDb({ leadCount, eventsPerLead, table = "meta_crm_stage_events", ROW_CAP = 1000 }) {
+  const leads = Array.from({ length: leadCount }, (_, i) => ({
+    ...FORM_LEAD, id: `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`, ...(table === "whatsapp_capi_events" ? { meta_leadgen_id: null, ctwa_clid: `ctwa${i}` } : { meta_leadgen_id: `lg${i}` }), created_at: "2026-11-18T10:00:00Z",
+  }));
+  const events = leads.flatMap((l, li) => Array.from({ length: eventsPerLead }, (_, k) => ({
+    id: `e-${String(li).padStart(5, "0")}-${k}`, lead_id: l.id, event_name: `Ev${k}`, status: "delivered",
+    created_at: `2026-11-18T11:0${k}:00Z`, delivered_at: `2026-11-18T12:0${k}:00Z`,
+  })));
+  return { from: (name) => {
+    const st = { ids: null, range: null, order: [], count: false };
+    const q = { select: (_c, opt) => { st.count = Boolean(opt?.count); return q; }, not: () => q, or: () => q, gte: () => q,
+      in: (_c, ids) => { st.ids = new Set(ids); return q; },
+      order: (c) => { st.order.push(c); return q; }, range: (a, b) => { st.range = [a, b]; return q; },
+      then: (res, rej) => Promise.resolve((() => {
+        if (name === "leads") { const [a, b] = st.range; return { data: leads.slice(a, b + 1), error: null }; }
+        if (name !== table) return { data: [], count: 0, error: null };
+        let rows = events.filter((e) => !st.ids || st.ids.has(e.lead_id));
+        const count = rows.length;
+        if (st.order.includes("id")) rows = [...rows].sort((x, y) => (x.id < y.id ? -1 : 1));
+        else rows = [...rows].reverse(); // unspecified order: the cap keeps an arbitrary slice
+        const [a, b] = st.range ?? [0, ROW_CAP - 1];
+        return { data: rows.slice(a, Math.min(b + 1, a + ROW_CAP)), ...(st.count ? { count } : {}), error: null };
+      })()).then(res, rej) };
+    return q;
+  } };
+}
+
+test("route: 200 leads x 6 form events (1200 rows, above the 1000-row cap) are all exported", async () => {
+  const res = await loadRoute({ db: cappedDb({ leadCount: 200, eventsPerLead: 6 }), env: { META_IDS_EXPORT_TOKEN: TOKEN } }).GET(req(`?token=${TOKEN}&format=json`));
+  const body = await res.json();
+  assert.equal(res.status, 200); assert.equal(body.count, 200);
+  for (const row of body.rows) {
+    assert.equal(row.feedback_events.split(";").length, 6, row.lead_ref);
+    assert.equal(row.last_feedback_at, "2026-11-18T16:05:00+04:00", row.lead_ref);
+  }
+});
+
+test("route: the same holds for WhatsApp events past the row cap", async () => {
+  const res = await loadRoute({ db: cappedDb({ leadCount: 200, eventsPerLead: 6, table: "whatsapp_capi_events" }), env: { META_IDS_EXPORT_TOKEN: TOKEN } }).GET(req(`?token=${TOKEN}&format=json`));
+  const body = await res.json();
+  assert.equal(body.count, 200);
+  for (const row of body.rows) assert.equal(row.feedback_events.split(";").length, 6, row.lead_ref);
 });
 
 test("proxy lets this path through without a session (token callers have none)", () => {

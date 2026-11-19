@@ -30,6 +30,7 @@ tail -c +4 "$W/out.csv" > "$W/body.csv"   # skip the 3-byte UTF-8 byte-order mar
 head -1 "$W/body.csv" | grep -q '^lead_ref,source,meta_id_type,meta_id,' || { echo "unexpected export content" >&2; exit 1; }
 mv "$W/out.csv" "$FINAL"
 echo "saved $FINAL ($(stat -c %s "$FINAL") bytes, $(($(wc -l < "$FINAL") - 1)) data lines)"
-"$NAS_UPLOAD" "$FINAL" "$NAS_DIR"
+# the dated file is regenerated on same-day reruns: always overwrite the NAS copy
+"$NAS_UPLOAD" --overwrite "$FINAL" "$NAS_DIR"
 find "$OUT_DIR" -maxdepth 1 -name 'meta-ids-*.csv' -mtime "+$KEEP_DAYS" -delete
 date -u +%FT%TZ > "$OUT_DIR/last-ok"

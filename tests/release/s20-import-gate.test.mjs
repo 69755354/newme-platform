@@ -320,6 +320,25 @@ test("a side effect the program did not announce is caught after the write and r
   assert.ok(w.calls().includes("rollback"));
 });
 
+test("a failed post-commit count read still rolls back, records the run and fails the command", async () => {
+  const w = world();
+  const planHash = await planned(w);
+  let thrown = false;
+  const counts = async () => {
+    const current = w.readDb().counts;
+    if (!thrown && current.leads > BASE_COUNTS.leads) { thrown = true; throw Object.assign(new Error("connection terminated"), { code: "ECONNRESET" }); }
+    return { ...current };
+  };
+  await assert.rejects(() => w.run("data-import-apply", applyWords(planHash, w.bundleHash()), { db: { ...w.deps.db, counts } }), /rolled back \(post-commit verification failed/);
+  assert.equal(thrown, true);
+  assert.ok(w.calls().includes("rollback"));
+  assert.deepEqual(w.readDb().counts, BASE_COUNTS);
+  const runs = fs.readdirSync(path.join(w.stateDir, "runs"));
+  const record = JSON.parse(fs.readFileSync(path.join(w.stateDir, "runs", runs[0], "run.json"), "utf8"));
+  assert.equal(record.state, "failed_rolled_back");
+  assert.notEqual(record.state, "started");
+});
+
 test("when the rollback itself cannot restore the baseline the run says so loudly", async () => {
   const broken = FAKE_ROLLBACK.replace("db.counts = { ...manifest.before };", "db.counts = { ...db.counts };");
   const w = world({ bundle: { ...BASE_BUNDLE, sneakNotifications: 1 }, rollbackProgram: broken });

@@ -394,10 +394,16 @@ async function planOrApply(ctx, isApply) {
   }
   if (result.status !== 0) failures.push(`the import program exited with ${result.status}`);
   if (manifest && manifest.committed !== true) failures.push("the import did not commit");
-  const after = await db.counts();
-  const touched = judgeSideEffects(before, after);
+  // A failed read after the commit (connection lost, timeout) must take the same rollback path as a mismatch.
+  let after = null;
+  try {
+    after = await db.counts();
+  } catch (error) {
+    failures.push(`post-commit verification failed (${error?.code ?? "database error"})`);
+  }
+  const touched = after ? judgeSideEffects(before, after) : [];
   if (touched.length) failures.push(`side-effect tables changed: ${touched.join(", ")}`);
-  if (manifest?.committed === true) {
+  if (after && manifest?.committed === true) {
     if (after.leads !== before.leads + (manifest.inserted_leads?.length ?? -1)) failures.push("lead total does not equal before plus inserted");
     if (after.leads_unarchived !== summary.expected_unarchived_after) failures.push("unarchived lead count differs from the plan");
   }

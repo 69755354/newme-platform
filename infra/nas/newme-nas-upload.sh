@@ -3,7 +3,9 @@
 # Same approach as newme-nas-push.sh (which only pushes the newest backup): credentials come from
 # /etc/newme/nas-push.env (root 0600) and travel only inside curl config files, never argv; an upload is
 # skipped when the NAS already holds the same size, and verified by size afterwards.
-# Usage: newme-nas-upload.sh <local-file> <remote-dir under /newme-os-backup>
+# Usage: newme-nas-upload.sh [--overwrite] <local-file> <remote-dir under /newme-os-backup>
+# --overwrite (or NAS_UPLOAD_OVERWRITE=1): never skip; always upload over the NAS copy and verify the size.
+# For files that are regenerated under the same name (the dated Meta ID export); backups keep the default skip.
 # Exit 0 uploaded or already present; 1 any failure (systemd OnFailure alerts); 2 bad usage or config.
 set -euo pipefail
 umask 077
@@ -11,8 +13,10 @@ ENV_FILE=${NAS_ENV_FILE:-/etc/newme/nas-push.env}
 SCHEME=${NAS_SCHEME:-http}
 ROOT=/newme-os-backup
 
+OVERWRITE=${NAS_UPLOAD_OVERWRITE:-0}
+if [ "${1:-}" = "--overwrite" ]; then OVERWRITE=1; shift; fi
 LOCAL=${1:-}; REMOTE_DIR=${2:-}
-if [ -z "$LOCAL" ] || [ -z "$REMOTE_DIR" ]; then echo "usage: $0 <local-file> <remote-dir>" >&2; exit 2; fi
+if [ -z "$LOCAL" ] || [ -z "$REMOTE_DIR" ]; then echo "usage: $0 [--overwrite] <local-file> <remote-dir>" >&2; exit 2; fi
 if [ ! -f "$LOCAL" ] || [ -L "$LOCAL" ]; then echo "not a regular file: $LOCAL" >&2; exit 2; fi
 NAME=$(basename "$LOCAL")
 case "$NAME" in *[!A-Za-z0-9._-]*|.*) echo "unsafe file name" >&2; exit 2 ;; esac
@@ -42,7 +46,7 @@ remote_size() {
   curl -sS -m 30 -K "$W/info.conf" | python3 -c 'import sys,json;d=json.load(sys.stdin);f=(d.get("data",{}).get("files") or [{}])[0];print((f.get("additional") or {}).get("size",-1))'
 }
 
-if [ "$(remote_size 2>/dev/null || echo -1)" = "$SIZE" ]; then echo "skip $NAME (already on NAS, $SIZE bytes)"; exit 0; fi
+if [ "$OVERWRITE" != "1" ] && [ "$(remote_size 2>/dev/null || echo -1)" = "$SIZE" ]; then echo "skip $NAME (already on NAS, $SIZE bytes)"; exit 0; fi
 
 printf 'url = "%s?_sid=%s"\nform = "api=SYNO.FileStation.Upload"\nform = "version=2"\nform = "method=upload"\nform = "path=%s"\nform = "create_parents=true"\nform = "overwrite=true"\nform = "file=@%s;filename=%s"\n' \
   "$BASE" "$SID" "$REMOTE_DIR" "$LOCAL" "$NAME" > "$W/upload.conf"

@@ -92,6 +92,34 @@ test("upload: sends the file, then skips when the NAS already holds the same siz
   } finally { nas.server.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
 });
 
+test("upload: --overwrite replaces an equal-length file with different content; default still skips", async () => {
+  const nas = fakeNas(); const port = await listen(nas.server); const t = setup();
+  try {
+    writeNasEnv(t.envFile, port);
+    const file = path.join(t.dir, "meta-ids-20261119.csv");
+    const remote = "/newme-os-backup/exports/meta-ids-20261119.csv";
+    const env = { NAS_ENV_FILE: t.envFile };
+    fs.writeFileSync(file, "lead_ref,stage\r\nNM-1,new\r\n");
+    assert.equal((await run("bash", [UPLOAD, file, "/newme-os-backup/exports"], env)).code, 0);
+    fs.writeFileSync(file, "lead_ref,stage\r\nNM-1,won\r\n"); // same length, new content
+    const kept = await run("bash", [UPLOAD, file, "/newme-os-backup/exports"], env);
+    assert.match(kept.stdout, /skip /);
+    assert.match(nas.files.get(remote).toString(), /NM-1,new/);
+    const flag = await run("bash", [UPLOAD, "--overwrite", file, "/newme-os-backup/exports"], env);
+    assert.equal(flag.code, 0, flag.stderr);
+    assert.match(flag.stdout, /uploaded /);
+    assert.match(nas.files.get(remote).toString(), /NM-1,won/);
+    fs.writeFileSync(file, "lead_ref,stage\r\nNM-1,lost\r\n");
+    const viaEnv = await run("bash", [UPLOAD, file, "/newme-os-backup/exports"], { ...env, NAS_UPLOAD_OVERWRITE: "1" });
+    assert.equal(viaEnv.code, 0, viaEnv.stderr);
+    assert.match(nas.files.get(remote).toString(), /NM-1,lost/);
+  } finally { nas.server.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test("daily export asks the uploader to overwrite the dated file", () => {
+  assert.match(fs.readFileSync(EXPORT, "utf8"), /"\$NAS_UPLOAD" --overwrite "\$FINAL" "\$NAS_DIR"/);
+});
+
 test("upload: size mismatch after upload fails", async () => {
   const nas = fakeNas({ corruptSize: true }); const port = await listen(nas.server); const t = setup();
   try {
@@ -135,7 +163,7 @@ test("daily export: fetches with the token in a header (not the URL), stores a d
   const t = setup(); const out = path.join(t.dir, "out"); const calls = path.join(t.dir, "calls");
   try {
     fs.writeFileSync(t.envFile, `META_IDS_EXPORT_TOKEN=${TOKEN}\nMETA_IDS_EXPORT_URL=http://127.0.0.1:${appPort}/api/export/meta-ids\n`, { mode: 0o600 });
-    const fakeUpload = path.join(t.dir, "upload.sh"); fs.writeFileSync(fakeUpload, `#!/bin/bash\necho "$1 $2" >> ${calls}\n`, { mode: 0o755 });
+    const fakeUpload = path.join(t.dir, "upload.sh"); fs.writeFileSync(fakeUpload, `#!/bin/bash\necho "$1 $2 $3" >> ${calls}\n`, { mode: 0o755 });
     const r = await run("bash", [EXPORT], { META_IDS_ENV_FILE: t.envFile, META_IDS_OUT_DIR: out, NAS_UPLOAD_SCRIPT: fakeUpload });
     assert.equal(r.code, 0, r.stderr);
     assert.equal(seen[0].auth, `Bearer ${TOKEN}`);
@@ -143,7 +171,7 @@ test("daily export: fetches with the token in a header (not the URL), stores a d
     const files = fs.readdirSync(out).filter((f) => /^meta-ids-\d{8}\.csv$/.test(f));
     assert.equal(files.length, 1);
     assert.equal(fs.readFileSync(path.join(out, files[0]), "utf8"), CSV);
-    assert.match(fs.readFileSync(calls, "utf8"), /meta-ids-\d{8}\.csv \/newme-os-backup\/exports/);
+    assert.match(fs.readFileSync(calls, "utf8"), /--overwrite .*meta-ids-\d{8}\.csv \/newme-os-backup\/exports/);
     assert.ok(!(r.stdout + r.stderr).includes(TOKEN));
   } finally { app.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
 });

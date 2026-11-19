@@ -1,0 +1,24 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- decisions are loosely typed records shared with plain .mjs */
+export type DriveSyncRecord = Record<string, any>;
+export const SYNC_SOURCE: string;
+export const MIN_TOKEN_LENGTH: number;
+export const OWNED_FIELDS: readonly string[];
+export function norm(v: unknown): string;
+export function sha(s: string): string;
+export function fingerprintOf(master: string): string;
+export function maskId(v: unknown): string;
+export function normalizePhone(raw: unknown): { e164: string; digits: string } | null;
+export function phoneDigits(raw: unknown): string | null;
+export function emailKey(raw: unknown): string | null;
+export function parseSheetTime(raw: unknown): { iso: string | null; kind: string };
+export function tokenMatches(provided: unknown, expected: unknown): boolean;
+export function bearerToken(headers: Headers): string | null;
+export type DriveSyncConfig = { enabled: boolean; allowInsert: boolean; allowUnarchive: boolean; writeNextDate: boolean; maxChangesPerCall: number; maxWritesPerRun: number };
+export function resolveConfig(env?: Record<string, string | undefined>): DriveSyncConfig;
+export function rowHashOf(change: DriveSyncRecord): string;
+export function validateChange(c: unknown): string | null;
+export function buildIndexes(leads: DriveSyncRecord[]): DriveSyncRecord;
+export function matchLead(change: DriveSyncRecord, idx: DriveSyncRecord): DriveSyncRecord;
+export function decideChange(change: DriveSyncRecord, idx: DriveSyncRecord, cfg: DriveSyncConfig, claimed?: Map<string, string>): DriveSyncRecord;
+export function writeCost(d: DriveSyncRecord): number;
+export function planBatch(changes: DriveSyncRecord[], leads: DriveSyncRecord[], cfg: DriveSyncConfig): { decisions: { change: DriveSyncRecord; d: DriveSyncRecord }[]; counts: Record<string, number> };

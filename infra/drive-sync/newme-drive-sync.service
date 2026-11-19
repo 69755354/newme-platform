@@ -1,0 +1,20 @@
+[Unit]
+Description=NewMe Drive sheets -> OS sync (read-only toward Drive; plan or apply per DRIVE_SYNC_MODE)
+# STATUS: after-flag
+# install only together with DRIVE_SYNC_INGEST_ENABLED=true on the app, the token in /etc/newme/drive-sync.env and Sam's approval; see docs/s29-drive-to-os-sync.md
+After=network-online.target newme-platform.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=claude-ops
+WorkingDirectory=/opt/newme/current
+EnvironmentFile=/etc/newme/drive-sync.env
+ExecStart=/usr/bin/node /opt/newme/current/scripts/drive-to-os-sync.mjs --run-now
+TimeoutStartSec=900
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/newme/drive-sync
+Nice=10

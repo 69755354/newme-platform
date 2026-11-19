@@ -33,7 +33,9 @@ export async function GET(request: NextRequest) {
 
     type Row = Record<string, string | null>;
     const leads: Row[] = [];
-    for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+    let overflow = false;
+    // Fetch one row beyond MAX_ROWS so an oversized range is detected, never silently cut.
+    for (let offset = 0; offset <= MAX_ROWS; offset += PAGE) {
       let query = supabaseAdmin.from("leads")
         .select("id, phone, ctwa_clid, ad_id, created_at, stage, final_status")
         .not("ctwa_clid", "is", null);
@@ -42,8 +44,13 @@ export async function GET(request: NextRequest) {
       const { data, error } = await query.order("created_at", { ascending: false }).order("id", { ascending: true }).range(offset, offset + PAGE - 1);
       if (error) throw new Error("lead_query_failed");
       leads.push(...(data ?? []));
+      if (leads.length > MAX_ROWS) { overflow = true; break; }
       if ((data ?? []).length < PAGE) break;
     }
+    if (overflow) return respond({
+      error: `Too many leads for one export (more than ${MAX_ROWS}). Narrow the date range with from and to. 导出行数超过 ${MAX_ROWS} 条，请缩小 from 和 to 日期范围后重试。`,
+      max_rows: MAX_ROWS,
+    }, { status: 413 });
     const events: Row[] = [];
     for (let i = 0; i < leads.length; i += 200) {
       const ids = leads.slice(i, i + 200).map((lead) => lead.id);

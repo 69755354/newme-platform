@@ -19,11 +19,16 @@ export async function sendWhatsAppCapiEvents(db, { execute = false, limit = 50, 
     .order("created_at", { ascending: true }).limit(limit);
   if (queue.error) throw new Error("WhatsApp CAPI queue unavailable");
   const summary = { mode: execute ? "execute" : "dry_run", examined: 0, delivered: 0, failed: 0, busy: 0,
-    review_required: 0, errors: 0, exhausted: 0 };
+    review_required: 0, errors: 0, exhausted: 0, review_pending: 0 };
   // A failed event that used every attempt is never picked up again: surface it so the operator sees it.
   const exhausted = await db.from("whatsapp_capi_events").select("id").in("status", ["failed", "sending"]).gte("attempts", MAX_ATTEMPTS).limit(100);
   if (exhausted.error) throw new Error("WhatsApp CAPI queue unavailable");
   summary.exhausted = (exhausted.data || []).length;
+  // Events already moved to review_required are outside the queue query but still undelivered:
+  // count them so the read-only check and the exit status stay non-zero until an operator resolves them.
+  const parked = await db.from("whatsapp_capi_events").select("id").eq("status", "review_required").limit(100);
+  if (parked.error) throw new Error("WhatsApp CAPI queue unavailable");
+  summary.review_pending = (parked.data || []).length;
   for (const row of queue.data || []) {
     summary.examined++;
     if (!execute) continue;
@@ -78,7 +83,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
       const summary = await sendWhatsAppCapiEvents(db, { execute });
       console.log(JSON.stringify({ ...summary, ...(args.includes("--execute") && !configured ? { queue_only: "META_WA_DATASET_ID or token not set" } : {}) }));
-      if (summary.errors || summary.failed || summary.review_required || summary.exhausted) process.exitCode = 1;
+      if (summary.errors || summary.failed || summary.review_required || summary.exhausted || summary.review_pending) process.exitCode = 1;
     } catch {
       console.error("WhatsApp CAPI send did not complete; inspect aggregate queue health before retrying.");
       process.exitCode = 1;

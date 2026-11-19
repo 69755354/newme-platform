@@ -238,3 +238,28 @@ test("alias route shares the handler; META_APP_SECRET signs; history and sync fi
     assert.equal(rpcs.length, before); assert.equal(writes.length, writesBefore);
   } finally { process.env = saved; Date.now = savedClock; }
 });
+
+// ── S18 review: the ad path must never run when the pilot write is refused ──
+test("pilot write failure answers 503 and the ad path is not touched, on both paths; success still records", async () => {
+  const saved = { ...process.env }; const savedClock = Date.now;
+  let failPilot = false; const rpcs = [];
+  const admin = { from: () => ({ select: () => ({ eq: async () => ({ data: [channel], error: null }) }),
+    upsert: async () => ({ error: failPilot ? { code: "55000" } : null }) }),
+    rpc: async (n, a) => { rpcs.push([n, a]); return { data: {}, error: null }; } };
+  const mocks = { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"),
+    "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs") };
+  const real = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", mocks);
+  const alias = loadRoute("../../src/app/api/meta/whatsapp-webhook/route.ts", { ...mocks, "@/app/api/whatsapp/webhook/route": real });
+  try {
+    Date.now = () => now;
+    Object.assign(process.env, { WHATSAPP_PILOT_ENABLED: "true", WHATSAPP_APP_SECRET: "secret", WHATSAPP_PILOT_CONTACT_SALT: "salt" });
+    const referral = { source_type: "ad", source_id: "120210000000001", source_url: "https://fb.me/x", media_type: "image", ctwa_clid: "AfcT3sTcLiCkId_abc-123XYZ" };
+    const raw = JSON.stringify(payload("messages", [message("ad-x", "2026-10-19T01:00:00Z", { referral })]));
+    const post = (route) => route.POST(new Request("https://example.test", { method: "POST", body: raw,
+      headers: { "content-type": "application/json", "x-hub-signature-256": `sha256=${createHmac("sha256", "secret").update(raw).digest("hex")}` } }));
+    failPilot = true;
+    for (const route of [real, alias]) { assert.equal((await post(route)).status, 503); assert.equal(rpcs.length, 0); }
+    failPilot = false;
+    assert.equal((await post(real)).status, 200); assert.equal(rpcs.length, 1);
+  } finally { process.env = saved; Date.now = savedClock; }
+});

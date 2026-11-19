@@ -62,3 +62,35 @@ test("migration contract: definer entry guard, pinned search_path, service-only 
   assert.match(sql, /unique \(waba_id, customer_key\)/);
   assert.match(sql, /unique \(lead_id, event_name\)/);
 });
+
+test("export refuses to silently truncate: over MAX_ROWS gives 413 with a narrow-the-range hint; at the limit passes", async () => {
+  const ts = require("typescript");
+  const load = (db) => {
+    const out = ts.transpileModule(fs.readFileSync(new URL("../../src/app/api/leads/whatsapp-ads/export/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const exports = {};
+    const mocks = {
+      "next/server": { NextResponse: Object.assign(function (body, init) { return new Response(body, init); }, { json: (b, i) => Response.json(b, i) }) },
+      "@/lib/supabase-admin": { supabaseAdmin: db }, "@/lib/logger": { logger: { error() {} } },
+      "@/lib/request-auth-context": { applyRequestAuthCookies: (_c, r) => r, getRequestAuthContext: async () => ({ role: "admin" }), RequestAuthError: class extends Error {}, requestAuthErrorResponse: () => new Response("x", { status: 401 }) },
+      "@/lib/whatsapp-ad-export.mjs": require("../../src/lib/whatsapp-ad-export.mjs"),
+    };
+    new Function("require", "exports", out)((n) => mocks[n] ?? require(n), exports);
+    return exports;
+  };
+  const dbWith = (total) => ({ from: (table) => {
+    let range = [0, 0];
+    const q = { select: () => q, not: () => q, gte: () => q, lt: () => q, order: () => q, in: () => q,
+      range: (a, b) => { range = [a, b]; return q; },
+      then: (res, rej) => Promise.resolve(table === "leads"
+        ? { data: Array.from({ length: Math.max(0, Math.min(range[1] + 1, total) - range[0]) }, (_, i) => ({ id: `l${range[0] + i}`, phone: "1", ctwa_clid: "c", ad_id: "a", created_at: "2026-11-18T00:00:00Z", stage: "new", final_status: null })), error: null }
+        : { data: [], error: null }).then(res, rej) };
+    return q;
+  } });
+  const get = (db) => load(db).GET({ url: "https://example.test/api/leads/whatsapp-ads/export?format=json", headers: new Headers() });
+  const over = await get(dbWith(20_001));
+  assert.equal(over.status, 413);
+  const body = await over.json();
+  assert.match(body.error, /Narrow the date range/); assert.match(body.error, /缩小/);
+  const exact = await get(dbWith(20_000));
+  assert.equal(exact.status, 200); assert.equal((await exact.json()).count, 20_000);
+});

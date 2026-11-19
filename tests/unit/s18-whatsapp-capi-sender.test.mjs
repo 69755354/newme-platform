@@ -67,3 +67,17 @@ test("events that used every attempt are reported so the operator can alert on t
   const summary = await sendWhatsAppCapiEvents(fakeDb([], { exhausted: [{ id: "x" }, { id: "y" }] }), { clock: () => NOW });
   assert.equal(summary.exhausted, 2);
 });
+
+test("events already parked in review_required keep the read-only check non-zero", async () => {
+  const db = fakeDb([], {});
+  const base = db.from;
+  // The parked query is the one filtered with eq (status = review_required); give it rows.
+  const parked = [{ id: "p1" }];
+  const wrapped = { updates: db.updates, from: () => { const q = base(); const eq = q.eq; let isParked = false;
+    q.eq = (c, v) => { if (c === "status" && v === "review_required") isParked = true; return eq(c, v); };
+    const then = q.then; q.then = (res, rej) => isParked ? Promise.resolve({ data: parked, error: null }).then(res, rej) : then(res, rej); return q; } };
+  const summary = await sendWhatsAppCapiEvents(wrapped, { clock: () => NOW });
+  assert.equal(summary.review_pending, 1);
+  const src = (await import("node:fs")).readFileSync(new URL("../../scripts/whatsapp-capi-send.mjs", import.meta.url), "utf8");
+  assert.match(src, /summary\.review_pending\) process\.exitCode = 1/);
+});

@@ -72,6 +72,10 @@ export async function POST(request: Request) {
       });
       pilotFailed = Boolean(writeError);
     }
+    // The database privacy admission (stale maintenance, expiry, deletion cutoff) guards the pilot
+    // table only. When that write fails, collection is paused: answer 503 without touching the ad
+    // path, so no lead or feedback is created. Meta retries the whole delivery, nothing is lost.
+    if (pilotFailed) return reply({ error: "event_write_failed" }, 503);
     // Click-to-WhatsApp attribution: match or create the lead and keep the ad click id. It runs
     // for the same verified body, is idempotent per message id and customer phone, and a failure
     // makes Meta retry the whole delivery, so no ad lead is lost. Only ids and times are stored.
@@ -86,7 +90,6 @@ export async function POST(request: Request) {
         }
       } catch { adFailed = true; }
     }
-    if (pilotFailed) return reply({ error: "event_write_failed" }, 503);
     if (adFailed) return reply({ error: "ad_event_write_failed" }, 503);
     return reply({ received: true });
   } catch {

@@ -1121,3 +1121,15 @@ p75 95 ms / p95 319 ms, within policy. The delayed verification passed at `2026-
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:8976e5efc06c1bcdf2b6881656f464250d73a419e5071ce89322ae8efa15314e -->
+
+## OS fix S22 speed fixes technical acceptance (2026-11-19)
+
+Release `e84e7b84d844877970e02a2859e513f4d8101145` (S22 page speed fixes (batched requests, fewer repeated queries)) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T17:26:35Z`, replacing the finalized release `69161843`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 157 ms / p95 204 ms, within policy. The delayed verification passed at `2026-11-19T17:43:42Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:faf127793276a007c0e0ee666fd10d90213e9a06b1abb7ffa0fcd958d756589b -->

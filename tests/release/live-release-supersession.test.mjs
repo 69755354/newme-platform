@@ -32,6 +32,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isClosureDriftAllowedPath } from "../../scripts/check-release-closure.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const WRAPPER = path.join(ROOT, "infra/systemd/newme-deploy.sh");
 const FUNCTION_NAME = "verify_live_release_permits_new_release";
@@ -51,7 +53,15 @@ function extractSubshellFunction(file, name) {
   return lines.slice(start, end + 1).join("\n");
 }
 
-const FUNCTION = extractSubshellFunction(WRAPPER, FUNCTION_NAME);
+const PATH_RULE_NAME = "closure_drift_path_allowed";
+const REACHABLE_NAME = "live_release_closure_reachable";
+// The supersession function calls two helpers defined just above it; lift all
+// three so the executed rule is exactly the wrapper's.
+const FUNCTION = [
+  extractSubshellFunction(WRAPPER, PATH_RULE_NAME),
+  extractSubshellFunction(WRAPPER, REACHABLE_NAME),
+  extractSubshellFunction(WRAPPER, FUNCTION_NAME),
+].join("\n");
 const TMP = mkdtempSync(path.join(tmpdir(), "newme-live-release-"));
 
 function git(cwd, ...args) {
@@ -74,6 +84,7 @@ function git(cwd, ...args) {
 
 function commit(work, message, files) {
   for (const [name, contents] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(work, name)), { recursive: true });
     writeFileSync(path.join(work, name), contents);
   }
   git(work, "add", "-A");
@@ -84,10 +95,15 @@ function commit(work, message, files) {
 /**
  * One repository holding every shape the function has to tell apart:
  *
- *   base ── live ── closure            TASKBOARD.md only, one commit   (reachable)
- *             │  └─ source            a source path                   (consumed)
- *             │  └─ taskboardTwice    TASKBOARD.md only, two commits  (consumed)
- *             └─ (from base) sibling  does not contain live
+ *   base ── live ── closure              TASKBOARD.md only, one commit        (reachable)
+ *             │       ├─ closureThenDocs  then docs/, .claude/, CLAUDE.md     (reachable)
+ *             │       ├─ closureThenSrc   then docs/ then a source path       (consumed)
+ *             │       ├─ closureThenInfra then infra/ (.github/ likewise)     (consumed)
+ *             │       └─ closureThenMerge then a merge of two docs commits    (consumed)
+ *             │  └─ source               a source path                       (consumed)
+ *             │  └─ taskboardTwice       TASKBOARD.md only, two commits       (reachable)
+ *             │  └─ docsFirst            docs/ first, TASKBOARD.md second     (consumed)
+ *             └─ (from base) sibling     does not contain live
  */
 function buildRepository() {
   const work = path.join(TMP, "repo");
@@ -106,10 +122,35 @@ function buildRepository() {
   commit(work, "closure attempt", { "TASKBOARD.md": "board v1\n<!-- marker -->\n" });
   const taskboardTwice = commit(work, "second taskboard commit", { "TASKBOARD.md": "board v1\n<!-- marker -->\n<!-- again -->\n" });
 
+  git(work, "checkout", "--quiet", "-b", "docsFirst", live);
+  commit(work, "docs before the record", { "docs-note.md": "note\n" });
+  const docsFirst = commit(work, "record after docs", { "TASKBOARD.md": "board v1\n<!-- marker -->\n" });
+
+  git(work, "checkout", "--quiet", "-b", "closureThenDocs", closure);
+  commit(work, "docs chore", { "docs/runbook.md": "runbook\n", "CLAUDE.md": "@AGENTS.md\n" });
+  const closureThenDocs = commit(work, "agent config", { ".claude/settings.json": "{}\n", "TASKBOARD.md": "board v1\n<!-- marker -->\n| NEXT | TODO |\n" });
+
+  git(work, "checkout", "--quiet", "-b", "closureThenSrc", closureThenDocs);
+  const closureThenSrc = commit(work, "source after docs", { "src.txt": "code v3\n" });
+
+  git(work, "checkout", "--quiet", "-b", "closureThenInfra", closure);
+  const closureThenInfra = commit(work, "infra after closure", { "infra/x.sh": "#!/bin/sh\n" });
+
+  git(work, "checkout", "--quiet", "-b", "mergeRight", closure);
+  commit(work, "right docs", { "docs/right.md": "right\n" });
+  git(work, "checkout", "--quiet", "-b", "closureThenMerge", closure);
+  commit(work, "left docs", { "docs/left.md": "left\n" });
+  git(work, "merge", "--quiet", "--no-ff", "--no-edit", "mergeRight");
+  const closureThenMerge = git(work, "rev-parse", "HEAD");
+
   git(work, "checkout", "--quiet", "-b", "sibling", base);
   const sibling = commit(work, "unrelated line of history", { "src.txt": "code v9\n" });
 
-  return { mirror: path.join(work, ".git"), base, live, closure, source, taskboardTwice, sibling };
+  return {
+    mirror: path.join(work, ".git"),
+    base, live, closure, source, taskboardTwice, docsFirst,
+    closureThenDocs, closureThenSrc, closureThenInfra, closureThenMerge, sibling,
+  };
 }
 
 const REPO = buildRepository();
@@ -150,10 +191,51 @@ test("an attested live release whose closure slot was consumed is superseded, an
   assert.match(result.stdout, /superseded_status=acceptance_verified closure_slot=consumed commits_since=1$/m);
 });
 
-test("a taskboard-only closure that is no longer the single child is also consumed", () => {
-  const result = ask({ status: "acceptance_verified", candidate: REPO.taskboardTwice });
-  assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /closure_slot=consumed commits_since=2$/m);
+test("a closure record followed only by non-runtime commits is still reachable, so deploying over it is refused", () => {
+  for (const [name, candidate] of [["taskboardTwice", REPO.taskboardTwice], ["closureThenDocs", REPO.closureThenDocs]]) {
+    const result = ask({ status: "acceptance_verified", candidate });
+    assert.equal(result.code, 65, `${name}: ${result.stdout}`);
+    assert.match(result.stderr, /closure commit is still reachable; finalize it instead of deploying/, name);
+    assert.equal(result.stdout, "", name);
+  }
+});
+
+test("a runtime path, a merge, or a docs commit ahead of the record consumes the slot", () => {
+  for (const [name, candidate, commits] of [
+    ["closureThenSrc", REPO.closureThenSrc, 4],
+    ["closureThenInfra", REPO.closureThenInfra, 2],
+    ["closureThenMerge", REPO.closureThenMerge, 4],
+    ["docsFirst", REPO.docsFirst, 2],
+  ]) {
+    const result = ask({ status: "acceptance_verified", candidate });
+    assert.equal(result.code, 0, `${name}: ${result.stderr}`);
+    assert.match(result.stdout, new RegExp(`closure_slot=consumed commits_since=${commits}$`, "m"), name);
+  }
+});
+
+test("the shell drift allowlist agrees with isClosureDriftAllowedPath on a shared corpus", () => {
+  const corpus = [
+    "TASKBOARD.md", "CLAUDE.md", "AGENTS.md", "README.md", "docs/a.md", "docs/deep/b.svg", "docs/x.excalidraw",
+    ".claude/settings.json", ".claude/hooks/x.sh", "crm-v3/SPEC.md",
+    "src/a.ts", "src/a.md", "supabase/migrations/x.sql", "supabase/README.md", "scripts/x.mjs", "scripts/README.md",
+    "infra/x.sh", "infra/README.md", ".github/workflows/ci.yml", ".github/README.md", "tests/x.test.mjs",
+    "public/robots.txt", "node_modules/x/README.md", "package.json", "package-lock.json", "next.config.ts",
+    "tsconfig.json", "crm-v3/README.md", "crm-v3/ops/sync-metadata.json", "nested/x.md", "TASKBOARD.md.bak",
+    "docs/../src/a.ts", "./README.md", "docs/./a.md", "/docs/a.md", "docs/", "docs", ".claude", "..", ".",
+    "README.markdown", "x.MD", "docs/a.md ", " docs/a.md",
+  ];
+  const script = path.join(TMP, "paths.sh");
+  writeFileSync(script, `${FUNCTION}\nfor file in "$@"; do if ${PATH_RULE_NAME} "$file"; then echo "allow $file"; else echo "deny $file"; fi; done\n`);
+  const result = spawnSync("bash", [script, ...corpus], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const verdicts = result.stdout.split("\n").filter(Boolean);
+  assert.equal(verdicts.length, corpus.length);
+  for (const [index, file] of corpus.entries()) {
+    const expected = isClosureDriftAllowedPath(file) ? "allow" : "deny";
+    assert.equal(verdicts[index], `${expected} ${file}`, JSON.stringify(file));
+  }
+  assert.ok(corpus.some((file) => isClosureDriftAllowedPath(file)), "the corpus exercises the allow branch");
+  assert.ok(corpus.some((file) => !isClosureDriftAllowedPath(file)), "the corpus exercises the deny branch");
 });
 
 test("CONTROL: a still-reachable closure is refused, because that is the forgotten-finalize error", () => {
@@ -209,6 +291,10 @@ test("an expand transition is not a contract transition and gets the ordinary re
 test("the deploy preamble calls the function it defines, and keeps no second copy of the rule", () => {
   const wrapper = readFileSync(WRAPPER, "utf8").replaceAll("\r\n", "\n");
   assert.equal(wrapper.split(`${FUNCTION_NAME}() (`).length - 1, 1, "the function is defined once");
+  assert.equal(wrapper.split(`${PATH_RULE_NAME}() (`).length - 1, 1, "the path rule is defined once");
+  assert.equal(wrapper.split(`${REACHABLE_NAME}() (`).length - 1, 1, "the reachability rule is defined once");
+  assert.ok(wrapper.indexOf(`${PATH_RULE_NAME}() (`) < wrapper.indexOf(`${REACHABLE_NAME}() (`));
+  assert.ok(wrapper.indexOf(`${REACHABLE_NAME}() (`) < wrapper.indexOf(`${FUNCTION_NAME}() (`));
   const definition = wrapper.indexOf(`${FUNCTION_NAME}() (`);
   const call = wrapper.indexOf(`  ${FUNCTION_NAME} \\`);
   assert.ok(call > definition, "the call site must follow the definition");

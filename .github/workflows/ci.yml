@@ -19,7 +19,12 @@ on:
         default: ''
         type: string
       closure_sha:
-        description: Exact current main SHA whose only release diff is TASKBOARD.md (release_final only)
+        description: Exact closure record SHA, the release SHA's single direct child whose only diff is TASKBOARD.md (release_final only)
+        required: false
+        default: ''
+        type: string
+      final_sha:
+        description: Exact current main SHA this run is dispatched on; defaults to closure_sha, and may only be a later descendant whose intervening commits change non-runtime paths (release_final only)
         required: false
         default: ''
         type: string
@@ -411,18 +416,22 @@ jobs:
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
           CLOSURE_SHA: ${{ inputs.closure_sha }}
+          FINAL_SHA: ${{ inputs.final_sha }}
           ACCEPTANCE_DIGEST: ${{ inputs.acceptance_digest }}
         run: |
           set -Eeuo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "release_sha must be an exact 40-character SHA" >&2; exit 64; }
           [[ "$CLOSURE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "closure_sha must be an exact 40-character SHA" >&2; exit 64; }
+          FINAL_SHA="${FINAL_SHA:-$CLOSURE_SHA}"
+          [[ "$FINAL_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "final_sha must be an exact 40-character SHA" >&2; exit 64; }
           [[ "$ACCEPTANCE_DIGEST" =~ ^[0-9a-f]{64}$ ]] || { echo "acceptance_digest must be an exact SHA-256" >&2; exit 64; }
           [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "release-final must be dispatched on main" >&2; exit 1; }
-          [ "$CLOSURE_SHA" = "$GITHUB_SHA" ] || { echo "closure_sha is not the exact workflow SHA" >&2; exit 1; }
+          [ "$FINAL_SHA" = "$GITHUB_SHA" ] || { echo "final_sha (default closure_sha) is not the exact workflow SHA" >&2; exit 1; }
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] || { echo "checkout is not the exact workflow SHA" >&2; exit 1; }
           node scripts/check-release-closure.mjs \
             --release-sha "$RELEASE_SHA" \
             --closure-sha "$CLOSURE_SHA" \
+            --final-sha "$FINAL_SHA" \
             --acceptance-digest "$ACCEPTANCE_DIGEST"
 
       - name: Require completed taskboard

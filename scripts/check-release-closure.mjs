@@ -13,15 +13,28 @@
  *     --release-sha <40-lowercase-hex> \
  *     --closure-sha <40-lowercase-hex> \
  *     --acceptance-digest <64-lowercase-hex> \
+ *     [--final-sha <40-lowercase-hex>] \
  *     [--repo <git-worktree>] \
  *     [--run-id <id> --run-json-file <path> --jobs-json-file <path> \
  *      --workflow-json-file <path> --required-jobs-file <path>]
  *
- * The CLI is read-only. It exits 0 only when both names are existing commits,
+ * The CLI is read-only. It exits 0 only when every name is an existing commit,
  * closure is the single direct child of release, and that commit names exactly
  * one changed path: TASKBOARD.md. That file must contain exactly one marker naming
  * the canonically attested postdeploy bundle digest. Invalid input, an
  * indeterminate Git result, or a failed Git command is a refusal.
+ *
+ * The final SHA is the commit the release-final workflow was dispatched on (the
+ * head of main at that moment). It defaults to the closure SHA, which is the
+ * original single-slot rule. It may instead be a later descendant of the closure
+ * SHA, provided that every commit between them is a non-merge commit on a linear
+ * first-parent chain and changes nothing outside CLOSURE_DRIFT_ALLOWED_PATHS --
+ * documentation, agent configuration, and the taskboard. One unrelated
+ * documentation pull request landing between the closure record and the final
+ * CI run no longer consumes the release's closure slot; one commit touching
+ * src/, supabase/, scripts/, infra/, .github/, tests/, or package manifests still
+ * does, because then the final run no longer proves anything about the tree the
+ * release was cut from.
  */
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -29,6 +42,38 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const RELEASE_CLOSURE_ALLOWED_FILES = Object.freeze(["TASKBOARD.md"]);
+/**
+ * Paths that a commit between the closure record and the final-run SHA may
+ * change. Everything else is refused, and the denylist below is checked first so
+ * that a future widening of the allowlist cannot silently reach runtime paths.
+ * infra/systemd/newme-deploy.sh carries the same rule in shell
+ * (closure_drift_path_allowed) for the live-release supersession decision;
+ * tests/release/live-release-supersession.test.mjs proves the two agree.
+ */
+export const CLOSURE_DRIFT_ALLOWED_PATHS = Object.freeze([
+  "TASKBOARD.md",
+  "*.md (repository root only)",
+  "docs/**",
+  ".claude/**",
+  "crm-v3/SPEC.md",
+]);
+export const CLOSURE_DRIFT_DENIED_PREFIXES = Object.freeze([
+  "src/", "supabase/", "scripts/", "infra/", ".github/", "tests/", "public/", "node_modules/",
+]);
+export const CLOSURE_DRIFT_DENIED_FILES = Object.freeze(["package.json", "package-lock.json"]);
+
+export function isClosureDriftAllowedPath(file) {
+  if (typeof file !== "string" || file.length === 0) return false;
+  if (file.startsWith("/") || file.includes("\\") || file.includes("\0")) return false;
+  const segments = file.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) return false;
+  if (CLOSURE_DRIFT_DENIED_FILES.includes(file)) return false;
+  if (CLOSURE_DRIFT_DENIED_PREFIXES.some((prefix) => file.startsWith(prefix))) return false;
+  if (file === "TASKBOARD.md" || file === "crm-v3/SPEC.md") return true;
+  if (segments.length === 1 && file.endsWith(".md")) return true;
+  if (segments.length >= 2 && (segments[0] === "docs" || segments[0] === ".claude")) return true;
+  return false;
+}
 export const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/;
 export const ACCEPTANCE_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 export const ACCEPTANCE_MARKER_PATTERN = /<!-- postdeploy-acceptance-sha256:([0-9a-f]{64}) -->/g;
@@ -204,15 +249,113 @@ export function auditTaskboardClosureTransition(releaseText, closureText) {
 }
 
 /**
+ * Pure judgement over the commits between the closure record and the final-run
+ * SHA. Every measurement is supplied by the caller; an unmeasured claim refuses.
+ *
+ * Accepted shape: closure is an ancestor of final; closure..final is a linear
+ * chain of single-parent commits whose first parent is the closure and whose
+ * last member is the final SHA; each of those commits, and the cumulative diff,
+ * changes only CLOSURE_DRIFT_ALLOWED_PATHS; and the closure's acceptance marker
+ * still appears exactly once in the final SHA's TASKBOARD.md.
+ */
+export function auditClosureDrift({
+  closureSha,
+  finalSha,
+  acceptanceDigest,
+  closureIsFinalAncestor,
+  driftCommitCount,
+  driftCommits,
+  driftChangedFiles,
+  finalTaskboardText,
+}) {
+  const problems = [];
+  const closure = String(closureSha ?? "");
+  const final = String(finalSha ?? "");
+  const digest = String(acceptanceDigest ?? "");
+  if (!FULL_SHA_PATTERN.test(closure)) problems.push("closure SHA must be exactly 40 lowercase hexadecimal characters");
+  if (!FULL_SHA_PATTERN.test(final)) problems.push("final SHA must be exactly 40 lowercase hexadecimal characters");
+  if (final === closure) return problems;
+
+  if (typeof closureIsFinalAncestor !== "boolean") {
+    problems.push("closure-to-final ancestry was not measured as a boolean");
+  } else if (!closureIsFinalAncestor) {
+    problems.push("closure SHA is not an ancestor of final SHA");
+  }
+
+  if (!Array.isArray(driftCommits)) {
+    problems.push("closure-to-final commit chain was not measured as an array");
+    return problems;
+  }
+  if (!Number.isInteger(driftCommitCount) || driftCommitCount !== driftCommits.length) {
+    problems.push("closure-to-final commit count does not match the measured chain");
+  }
+  if (driftCommits.length === 0) {
+    problems.push("closure-to-final range is empty although final SHA differs from closure SHA");
+  }
+
+  let expectedParent = closure;
+  for (const [index, entry] of driftCommits.entries()) {
+    const sha = String(entry?.sha ?? "");
+    const label = FULL_SHA_PATTERN.test(sha) ? sha.slice(0, 12) : `#${index + 1}`;
+    if (!FULL_SHA_PATTERN.test(sha)) problems.push(`closure-to-final commit ${label} has an invalid SHA`);
+    const parents = Array.isArray(entry?.parents) ? entry.parents : null;
+    if (!parents) {
+      problems.push(`closure-to-final commit ${label} parents were not measured`);
+    } else if (parents.length !== 1) {
+      problems.push(`closure-to-final commit ${label} is a merge or root commit (${parents.length} parents); only a linear chain may follow the closure`);
+    } else if (parents[0] !== expectedParent) {
+      problems.push(`closure-to-final commit ${label} does not continue the linear chain from the closure SHA`);
+    }
+    expectedParent = sha;
+    const files = entry?.changedFiles;
+    if (!Array.isArray(files)) {
+      problems.push(`closure-to-final commit ${label} changed-file inventory was not measured`);
+      continue;
+    }
+    const outside = files.filter((file) => !isClosureDriftAllowedPath(file));
+    if (outside.length > 0) {
+      const printable = outside.map((file) => JSON.stringify(file)).join(", ");
+      problems.push(`closure-to-final commit ${label} changes paths outside the non-runtime allowlist: ${printable}`);
+    }
+  }
+  if (driftCommits.length > 0 && expectedParent !== final) {
+    problems.push("closure-to-final chain does not end at the final SHA");
+  }
+
+  if (!Array.isArray(driftChangedFiles)) {
+    problems.push("closure-to-final changed files were not measured as an array");
+  } else {
+    const outside = driftChangedFiles.filter((file) => !isClosureDriftAllowedPath(file));
+    if (outside.length > 0) {
+      const printable = outside.map((file) => JSON.stringify(file)).join(", ");
+      problems.push(`closure-to-final diff contains paths outside the non-runtime allowlist: ${printable}`);
+    }
+  }
+
+  if (typeof finalTaskboardText !== "string") {
+    problems.push("final SHA TASKBOARD.md content was not measured");
+  } else {
+    const matching = [...finalTaskboardText.matchAll(ACCEPTANCE_MARKER_PATTERN)].filter((match) => match[1] === digest);
+    if (matching.length !== 1) {
+      problems.push(`final SHA TASKBOARD.md must still carry the closure acceptance marker exactly once (found ${matching.length})`);
+    }
+  }
+  return problems;
+}
+
+/**
  * Pure judgement for unit tests and independent negative controls.
  *
  * `isAncestor` and `changedFiles` must be measured by the caller. Returning a
  * list, rather than a boolean, makes every refusal reproducible while keeping an
- * empty list as the sole passing state.
+ * empty list as the sole passing state. When `finalSha` is absent or equals
+ * `closureSha`, the original single-slot rule applies unchanged; otherwise the
+ * closure-to-final measurements are judged by auditClosureDrift.
  */
 export function auditReleaseClosure({
   releaseSha,
   closureSha,
+  finalSha,
   acceptanceDigest,
   isAncestor,
   directParent,
@@ -221,10 +364,16 @@ export function auditReleaseClosure({
   changedFiles,
   releaseTaskboardText,
   taskboardText,
+  closureIsFinalAncestor,
+  driftCommitCount,
+  driftCommits,
+  driftChangedFiles,
+  finalTaskboardText,
 }) {
   const problems = [];
   const release = String(releaseSha ?? "");
   const closure = String(closureSha ?? "");
+  const final = finalSha === undefined || finalSha === null ? closure : String(finalSha);
 
   if (!FULL_SHA_PATTERN.test(release)) {
     problems.push("release SHA must be exactly 40 lowercase hexadecimal characters");
@@ -235,6 +384,11 @@ export function auditReleaseClosure({
   const digest = String(acceptanceDigest ?? "");
   if (!ACCEPTANCE_DIGEST_PATTERN.test(digest)) {
     problems.push("acceptance digest must be exactly 64 lowercase hexadecimal characters");
+  }
+  if (!FULL_SHA_PATTERN.test(final)) {
+    problems.push("final SHA must be exactly 40 lowercase hexadecimal characters");
+  } else if (final === release) {
+    problems.push("final SHA must not be the release SHA");
   }
 
   if (typeof isAncestor !== "boolean") {
@@ -289,6 +443,18 @@ export function auditReleaseClosure({
     }
   }
   problems.push(...auditTaskboardClosureTransition(releaseTaskboardText, taskboardText));
+  if (FULL_SHA_PATTERN.test(final) && final !== closure) {
+    problems.push(...auditClosureDrift({
+      closureSha: closure,
+      finalSha: final,
+      acceptanceDigest: digest,
+      closureIsFinalAncestor,
+      driftCommitCount,
+      driftCommits,
+      driftChangedFiles,
+      finalTaskboardText,
+    }));
+  }
 
   return problems;
 }
@@ -297,8 +463,11 @@ export function auditReleaseClosure({
  * Pure judgement over the GitHub run used to close a release.
  *
  * This is deliberately a second claim from the release-candidate run. The run
- * and every required job are bound to `closureSha`; `releaseSha` is bound by the
- * release-to-closure judgement above and by the workflow step that invokes it.
+ * and every required job are bound to `finalSha`, the main head the release-final
+ * workflow was dispatched on (`closureSha` is accepted as the same value for the
+ * original single-slot flow); `releaseSha` and `closureSha` are bound by the
+ * release-to-closure and closure-to-final judgements above and by the workflow
+ * step that invokes them.
  */
 function timestampMillis(value) {
   if (typeof value !== "string" || !UTC_TIMESTAMP_PATTERN.test(value)) return null;
@@ -306,14 +475,14 @@ function timestampMillis(value) {
   return Number.isFinite(measured) ? measured : null;
 }
 
-export function auditFinalRequiredRun({ closureSha, runId, run, jobsResponse, manifest, workflow, now = new Date() }) {
+export function auditFinalRequiredRun({ finalSha, closureSha, runId, run, jobsResponse, manifest, workflow, now = new Date() }) {
   const problems = [];
   const refuse = (message) => problems.push(message);
-  const closure = String(closureSha ?? "");
+  const closure = String(finalSha ?? closureSha ?? "");
   const expectedRun = String(runId ?? "");
 
   if (!FULL_SHA_PATTERN.test(closure)) {
-    refuse("final run closure SHA must be exactly 40 lowercase hexadecimal characters");
+    refuse("final-run SHA must be exactly 40 lowercase hexadecimal characters");
   }
   if (!/^[1-9][0-9]*$/.test(expectedRun)) {
     refuse("final run ID must be a positive numeric GitHub Actions run ID");
@@ -372,7 +541,7 @@ export function auditFinalRequiredRun({ closureSha, runId, run, jobsResponse, ma
     refuse("final GitHub run payload is not an object");
   } else {
     if (String(run.id ?? "") !== expectedRun) refuse("final run is not the run ID named by the operator");
-    if (run.head_sha !== closure) refuse("final run head_sha is not the closure SHA");
+    if (run.head_sha !== closure) refuse("final run head_sha is not the final-run SHA");
     if (run.name !== manifest.workflow) refuse("final run used a different workflow");
     if (run.path !== manifest.workflow_path) refuse("final run used a different workflow path");
     if (run.workflow_id !== manifest.workflow_id) refuse("final run used a different workflow_id");
@@ -448,7 +617,7 @@ export function auditFinalRequiredRun({ closureSha, runId, run, jobsResponse, ma
 function parseArgs(argv) {
   const values = new Map();
   const finalRunFlags = ["--run-id", "--run-json-file", "--jobs-json-file", "--workflow-json-file", "--required-jobs-file"];
-  const allowed = new Set(["--release-sha", "--closure-sha", "--acceptance-digest", "--repo", ...finalRunFlags]);
+  const allowed = new Set(["--release-sha", "--closure-sha", "--final-sha", "--acceptance-digest", "--repo", ...finalRunFlags]);
 
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -479,6 +648,7 @@ function parseArgs(argv) {
   return {
     releaseSha: values.get("--release-sha"),
     closureSha: values.get("--closure-sha"),
+    finalSha: values.get("--final-sha") ?? values.get("--closure-sha"),
     acceptanceDigest: values.get("--acceptance-digest"),
     repo: path.resolve(values.get("--repo") ?? process.cwd()),
     finalRun: presentFinalFlags.length === 0
@@ -523,10 +693,11 @@ function requireCommit(repo, sha, label) {
 }
 
 /** Execute the read-only Git measurements used by the CLI. */
-export function inspectReleaseClosure({ releaseSha, closureSha, repo = process.cwd() }) {
+export function inspectReleaseClosure({ releaseSha, closureSha, finalSha = closureSha, repo = process.cwd() }) {
   const resolvedRepo = path.resolve(repo);
   requireCommit(resolvedRepo, releaseSha, "release");
   requireCommit(resolvedRepo, closureSha, "closure");
+  if (finalSha !== closureSha) requireCommit(resolvedRepo, finalSha, "final");
 
   const ancestry = runGit(
     resolvedRepo,
@@ -548,7 +719,8 @@ export function inspectReleaseClosure({ releaseSha, closureSha, repo = process.c
     { nulOutput: true },
   );
 
-  return {
+  const measured = {
+    finalSha,
     isAncestor: ancestry.status === 0,
     directParent: parents.length === 2 ? parents[1] : null,
     commitCount: /^\d+$/.test(countText) ? Number(countText) : null,
@@ -556,6 +728,42 @@ export function inspectReleaseClosure({ releaseSha, closureSha, repo = process.c
     changedFiles: diff.stdout,
     releaseTaskboardText: releaseTaskboard.stdout,
     taskboardText: taskboard.stdout,
+  };
+  if (finalSha === closureSha) return measured;
+
+  const finalAncestry = runGit(
+    resolvedRepo,
+    ["merge-base", "--is-ancestor", closureSha, finalSha],
+    { allowStatusOne: true },
+  );
+  const driftCountText = runGit(resolvedRepo, ["rev-list", "--count", `${closureSha}..${finalSha}`]).stdout.trim();
+  const chain = runGit(resolvedRepo, ["rev-list", "--reverse", "--parents", `${closureSha}..${finalSha}`]).stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.split(/\s+/));
+  const driftCommits = chain.map(([sha, ...commitParents]) => ({
+    sha,
+    parents: commitParents,
+    changedFiles: runGit(
+      resolvedRepo,
+      ["diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", sha, "--"],
+      { nulOutput: true },
+    ).stdout,
+  }));
+  const driftDiff = runGit(
+    resolvedRepo,
+    ["diff", "--name-only", "--no-renames", "-z", closureSha, finalSha, "--"],
+    { nulOutput: true },
+  );
+  const finalTaskboard = runGit(resolvedRepo, ["show", `${finalSha}:TASKBOARD.md`]);
+  return {
+    ...measured,
+    closureIsFinalAncestor: finalAncestry.status === 0,
+    driftCommitCount: /^\d+$/.test(driftCountText) ? Number(driftCountText) : null,
+    driftCommits,
+    driftChangedFiles: driftDiff.stdout,
+    finalTaskboardText: finalTaskboard.stdout,
   };
 }
 
@@ -566,7 +774,7 @@ export function main(argv = process.argv.slice(2)) {
   } catch (error) {
     console.error(`release closure: ${error.message}`);
     console.error(
-      "Usage: node scripts/check-release-closure.mjs --release-sha <40hex> --closure-sha <40hex> --acceptance-digest <64hex> [--repo <path>] [--run-id <id> --run-json-file <path> --jobs-json-file <path> --workflow-json-file <path> --required-jobs-file <path>]",
+      "Usage: node scripts/check-release-closure.mjs --release-sha <40hex> --closure-sha <40hex> --acceptance-digest <64hex> [--final-sha <40hex>] [--repo <path>] [--run-id <id> --run-json-file <path> --jobs-json-file <path> --workflow-json-file <path> --required-jobs-file <path>]",
     );
     return 64;
   }
@@ -574,6 +782,7 @@ export function main(argv = process.argv.slice(2)) {
   const shapeProblems = [];
   if (!FULL_SHA_PATTERN.test(claim.releaseSha)) shapeProblems.push("release SHA must be exactly 40 lowercase hexadecimal characters");
   if (!FULL_SHA_PATTERN.test(claim.closureSha)) shapeProblems.push("closure SHA must be exactly 40 lowercase hexadecimal characters");
+  if (!FULL_SHA_PATTERN.test(claim.finalSha)) shapeProblems.push("final SHA must be exactly 40 lowercase hexadecimal characters");
   if (!ACCEPTANCE_DIGEST_PATTERN.test(claim.acceptanceDigest)) shapeProblems.push("acceptance digest must be exactly 64 lowercase hexadecimal characters");
   if (shapeProblems.length > 0) {
     for (const problem of shapeProblems) console.error(`release closure: ${problem}`);
@@ -606,7 +815,7 @@ export function main(argv = process.argv.slice(2)) {
         return 1;
       }
       const finalProblems = auditFinalRequiredRun({
-        closureSha: claim.closureSha,
+        finalSha: claim.finalSha,
         runId: claim.finalRun.runId,
         run,
         jobsResponse,
@@ -618,11 +827,17 @@ export function main(argv = process.argv.slice(2)) {
         console.error(`release closure: refusing ${finalProblems.length} final CI problem(s)`);
         return 1;
       }
-      console.log(`release closure: final CI run ${claim.finalRun.runId} is green at closure SHA`);
+      console.log(`release closure: final CI run ${claim.finalRun.runId} is green at final-run SHA ${claim.finalSha}`);
     }
-    console.log(`release closure: OK release=${claim.releaseSha} closure=${claim.closureSha}`);
+    console.log(`release closure: OK release=${claim.releaseSha} closure=${claim.closureSha} final=${claim.finalSha}`);
     console.log(`release closure: acceptance=${claim.acceptanceDigest}`);
     console.log("release closure: changed files (1): TASKBOARD.md");
+    if (claim.finalSha !== claim.closureSha) {
+      const drift = measured.driftCommits ?? [];
+      const driftFiles = measured.driftChangedFiles ?? [];
+      console.log(`release closure: closure-to-final non-runtime commits (${drift.length}): ${drift.map((entry) => entry.sha.slice(0, 12)).join(", ")}`);
+      console.log(`release closure: closure-to-final changed files (${driftFiles.length}): ${driftFiles.join(", ")}`);
+    }
     return 0;
   } catch (error) {
     console.error(`release closure: ${error.message}`);

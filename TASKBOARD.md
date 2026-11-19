@@ -1169,3 +1169,15 @@ p75 49 ms / p95 62 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:be14b911c3868950e5deeb1bf6d9e02415f83a0dbfb30e73c1e05c68d5226664 -->
+
+## OS fix S25 provisioning switch technical acceptance (2026-11-19)
+
+Release `23d026eec138d6e9805cc70de7fbc1daa18e0cdb` (S25 database provisioning switch for WhatsApp history ingestion) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T22:48:20Z`, replacing the finalized release `c02bad70`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 77 ms / p95 118 ms, within policy. The delayed verification passed at `2026-11-19T23:05:27Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:d324c225693fcf4dbaedcc46a6145c10bb25699b0dcee44f0a225df5be78483d -->

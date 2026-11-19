@@ -1284,3 +1284,8 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `infra/nas/newme-nas-upload.sh` | 备份上传到 NAS 的主机脚本。 |
 
 验证边界：`scripts/check-published-credentials.mjs` 对本批次新增的测试夹具按文件和标识符逐条登记豁免并写明理由，规则本身未放宽。
+
+## 2026-11-20 S28 OS 到云盘表格与 NAS 的增量推送（第一版，默认关闭）
+
+- 工作程序 `scripts/os-drive-nas-sync.mjs`（每 5 分钟增量、`--reconcile` 每晚对账、`--dry-run` 只读演练）；纯函数 `src/lib/os-drive-sync.mjs`（电话规范化、按键对号入座、写入白名单、总闸、退避）；表格客户端 `src/lib/google-sheets-client.mjs`；单元模板 `infra/os-drive-sync/newme-os-drive-sync.service`、`infra/os-drive-sync/newme-os-drive-reconcile.service` 及对应定时器，开关 OS_DRIVE_SYNC_ENABLED 默认关；说明见 `docs/s28-drive-nas-sync.md`。
+- 只写两处：Meta 编号表（原地更新、追加、不删）与销售表 Home-owners 页 X 列的单个格子；每次写后读回核对；超过 200 格总闸一格不写；无数据库迁移。

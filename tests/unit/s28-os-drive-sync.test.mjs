@@ -1,0 +1,234 @@
+// S28: OS -> Google Sheets + NAS push. Fake Sheets grid and fake OS reader; no network, no disk outside a temp dir.
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { META_IDS_HEADER } from "../../src/lib/meta-ids-export.mjs";
+import { createSheetsClient } from "../../src/lib/google-sheets-client.mjs";
+import {
+  backoffDelayMs, buildWritePolicy, columnIndex, columnLetter, guardSheets, phoneKey, phoneKeysFromCell, planCtwaColumnX,
+  planMetaIdsUpsert, retryAfterMs, shouldAlert, sinceFromCursor, maskPhone, assertWithinCap, DEFAULTS,
+} from "../../src/lib/os-drive-sync.mjs";
+import { createIo, parseArgs, runReconcile, runSync } from "../../scripts/os-drive-nas-sync.mjs";
+
+const META = DEFAULTS.metaSheetId; const SALES = DEFAULTS.salesSheetId;
+const A1 = /^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/;
+
+/** In-memory spreadsheets. grids[id] = array of rows (strings). Records every write range. */
+function fakeSheets(grids, titles = { [META]: "Registry", [SALES]: "Home-owners" }) {
+  const writes = []; let requests = 0;
+  const parse = (range) => {
+    const bang = range.lastIndexOf("!"); const a1 = range.slice(bang + 1);
+    const m = a1.match(A1); const c1 = columnIndex(m[1]); const c2 = columnIndex(m[3] ?? m[1]);
+    const r1 = m[2] ? Number(m[2]) : 1; const r2 = m[3] !== undefined ? (m[4] ? Number(m[4]) : Infinity) : (m[2] ? r1 : Infinity);
+    return { c1, c2, r1, r2 };
+  };
+  const read = (id, range) => {
+    const { c1, c2, r1, r2 } = parse(range); const g = grids[id]; const out = [];
+    for (let r = r1; r <= Math.min(r2, g.length); r++) { const row = []; for (let c = c1; c <= c2; c++) row.push(g[r - 1]?.[c] ?? ""); while (row.length && row[row.length - 1] === "") row.pop(); out.push(row); }
+    return out;
+  };
+  const put = (id, range, values) => {
+    const { c1, r1 } = parse(range); const g = grids[id];
+    values.forEach((vals, i) => { while (g.length < r1 + i) g.push([]); vals.forEach((v, j) => { g[r1 + i - 1][c1 + j] = String(v); }); });
+  };
+  return {
+    writes, grids, get requestCount() { return requests; },
+    async getFirstSheetTitle(id) { requests++; return titles[id]; },
+    async getValues(id, range) { requests++; return read(id, range); },
+    async batchGetValues(id, ranges) { requests++; return ranges.map((r) => read(id, r)); },
+    async batchUpdateValues(id, data) { requests++; for (const d of data) { writes.push({ id, range: d.range }); put(id, d.range, d.values); } return {}; },
+    async appendValues(id, range, values) {
+      requests++; const g = grids[id]; const start = g.length + 1; values.forEach((v) => g.push([...v])); writes.push({ id, range: `append:${range}`, rows: values.length });
+      return { updates: { updatedRange: `'${titles[id]}'!A${start}:O${start + values.length - 1}` } };
+    },
+  };
+}
+const salesGrid = (rows) => [[...Array(15).fill("a"), "phone", ...Array(7).fill("b"), "meta_wa_ctwa_clid"].map((v, i) => (i === 15 ? "phone" : i === 23 ? "meta_wa_ctwa_clid" : v)), ...rows];
+const sRow = (phone, x = "", other = "keep") => { const r = Array(24).fill(""); r[0] = other; r[1] = other; r[15] = phone; r[23] = x; return r; };
+const metaGrid = (rows = []) => [[...META_IDS_HEADER], ...rows];
+const lead = (n, extra = {}) => ({ id: `0000000${n}-0000-0000-0000-000000000000`, phone: `+97150000000${n}`, ctwa_clid: `CLID_${n}_abcdefghij`, meta_leadgen_id: null, campaign_id: "c1", campaign_name: "C", adset_id: "", ad_id: "ad", ad_name: "AD",
+  created_at: "2026-11-19T10:00:00.000Z", updated_at: `2026-11-19T10:0${n}:00.000Z`, stage: "new", final_status: "", archived: false, ...extra });
+function reader(leads, { events = [] } = {}) {
+  return {
+    async leadsChangedSince(since) { return leads.filter((l) => !since || l.updated_at > since); },
+    async leadIdsWithEventsSince() { return events; },
+    async leadsByIds(ids) { return leads.filter((l) => ids.includes(l.id)); },
+    async eventsForLeads() { return { formEvents: [], whatsappEvents: [] }; },
+  };
+}
+function setup(leads, grids) {
+  const dir = mkdtempSync(join(tmpdir(), "s28-"));
+  const io = createIo(dir, join(dir, "meta-ids"));
+  const sheets = fakeSheets(grids);
+  const uploads = []; const nas = { upload: async (f) => { uploads.push(f); } };
+  const clock = { t: Date.parse("2026-11-20T08:00:00Z") };
+  const args = { dryRun: false, maxWrites: 200 };
+  const run = (extra = {}) => runSync({ osReader: reader(leads), sheets: extra.sheets ?? sheets, nas, io, args: { ...args, ...extra.args }, now: () => clock.t, log: () => {} });
+  return { dir, io, sheets, uploads, run, clock };
+}
+
+test("phone normalization handles sheet spellings", () => {
+  assert.equal(phoneKey("p:+971585677181"), "971585677181");
+  assert.equal(phoneKey("0585677181"), "971585677181");
+  assert.equal(phoneKey("585677181"), "971585677181");
+  assert.equal(phoneKey("00971 58 567 7181"), "971585677181");
+  assert.deepEqual(phoneKeysFromCell("0501234567 / +971509999999"), ["971501234567", "971509999999"]);
+  assert.equal(phoneKey("n/a"), null);
+  assert.equal(maskPhone("+971585677181"), "***7181");
+});
+
+test("column helpers and backoff", () => {
+  assert.equal(columnLetter(0), "A"); assert.equal(columnLetter(23), "X"); assert.equal(columnLetter(26), "AA");
+  assert.equal(columnIndex("X"), 23);
+  assert.ok(backoffDelayMs(0, { rand: () => 0 }) === 250 && backoffDelayMs(0, { rand: () => 1 }) === 500);
+  assert.equal(backoffDelayMs(20, { rand: () => 1 }), 30_000);
+  assert.equal(retryAfterMs("3"), 3000);
+  assert.equal(sinceFromCursor("2026-11-19T10:00:00.000Z", 120), "2026-11-19T09:58:00.000Z");
+  assert.equal(sinceFromCursor(null), null);
+  assert.ok(shouldAlert(3) && !shouldAlert(4) && shouldAlert(36) && !shouldAlert(1));
+  assert.throws(() => assertWithinCap(5, 4), /nothing was written/);
+});
+
+test("sheets client retries 429 and 503 with backoff and honours the request budget", async () => {
+  const sa = { client_email: "x@y", token_uri: "https://t", private_key: (await import("node:crypto")).generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }) };
+  const seq = [429, 503, 200, 200]; const sleeps = [];
+  const fetchImpl = async (url) => {
+    if (String(url) === "https://t") return { ok: true, status: 200, json: async () => ({ access_token: "tok" }) };
+    const status = seq.shift();
+    return { ok: status === 200, status, headers: { get: () => null }, json: async () => ({ values: [["a"]] }) };
+  };
+  const c = createSheetsClient({ serviceAccount: sa, fetchImpl, sleep: async (ms) => { sleeps.push(ms); }, rand: () => 0.5, maxRequests: 10 });
+  assert.deepEqual(await c.getValues("id", "A1"), [["a"]]);
+  assert.equal(sleeps.length, 2); assert.ok(sleeps[1] > sleeps[0]);
+  const tight = createSheetsClient({ serviceAccount: sa, fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ access_token: "t", values: [] }) }), maxRequests: 2 });
+  await tight.getValues("i", "A1");
+  await assert.rejects(() => tight.getValues("i", "A1"), /budget/);
+});
+
+test("guard: sales sheet accepts only single X cells below the header; no appends; unknown sheet blocked", async () => {
+  const sheets = fakeSheets({ [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  const g = guardSheets(sheets, buildWritePolicy({ ...DEFAULTS, metaTab: "Registry" }));
+  await g.batchUpdateValues(SALES, [{ range: "'Home-owners'!X2", values: [["z"]] }]);
+  for (const bad of ["'Home-owners'!W2", "'Home-owners'!X1", "'Home-owners'!A2", "'Home-owners'!X2:X3", "'Other'!X2", "'Home-owners'!P:P", "'Home-owners'!X:X", "'Home-owners'!A2:O2"]) {
+    await assert.rejects(async () => g.batchUpdateValues(SALES, [{ range: bad, values: [["z"]] }]), /not allowed|outside|header/, bad);
+  }
+  await assert.rejects(async () => g.appendValues(SALES, "'Home-owners'!A1", [["x"]]), /append/);
+  await assert.rejects(async () => g.batchUpdateValues("another-sheet", [{ range: "A2", values: [["x"]] }]), /not allowed/);
+  await assert.rejects(async () => g.batchUpdateValues(META, [{ range: "'Registry'!A1:O1", values: [[]] }]), /header/);
+  await g.batchUpdateValues(META, [{ range: "'Registry'!A2:O2", values: [["x"]] }]);
+});
+
+test("planMetaIdsUpsert: update in place, append new, never delete; header mismatch refuses", () => {
+  const row = { lead_ref: "aaa", source: "whatsapp", meta_id_type: "ctwa_clid", meta_id: "ID1", stage: "new", archived: "false" };
+  const existing = META_IDS_HEADER.map((k) => row[k] ?? "");
+  const stale = [...existing]; stale[10] = "old";
+  const orphan = META_IDS_HEADER.map((k) => ({ lead_ref: "zzz", meta_id_type: "leadgen", meta_id: "Q" }[k] ?? ""));
+  const p = planMetaIdsUpsert([[...META_IDS_HEADER], stale, orphan], [row, { ...row, lead_ref: "bbb", meta_id: "ID2" }]);
+  assert.equal(p.updates.length, 1); assert.equal(p.updates[0].row, 2); assert.equal(p.appends.length, 1);
+  assert.equal(JSON.stringify(p).includes("zzz"), false, "rows only in the sheet are left alone");
+  assert.throws(() => planMetaIdsUpsert([["wrong"]], [row]), /header/);
+});
+
+test("planCtwaColumnX: matches by phone, reports unmatched and ambiguous, never writes non-data rows", () => {
+  const g = salesGrid([sRow("p:+971500000001"), sRow("0500000002", "OLD"), sRow("+971500000003"), sRow("+971500000003"), sRow("+971500000004", "CLID_4_abcdefghij")]);
+  const P = g.map((r) => r[15]); const X = g.map((r) => r[23]);
+  const leads = [1, 2, 3, 4, 5].map((n) => ({ lead_ref: `r${n}`, phone: `+97150000000${n}`, ctwa_clid: `CLID_${n}_abcdefghij`, created_at: "2026-11-19" }));
+  const p = planCtwaColumnX(P, X, leads);
+  assert.deepEqual(p.writes.map((w) => [w.row, w.lead_ref]), [[2, "r1"], [3, "r2"]]);
+  assert.equal(p.overwrites, 1); assert.equal(p.unchanged, 1);
+  assert.deepEqual(p.ambiguous.map((a) => a.lead_ref), ["r3"]);
+  assert.deepEqual(p.unmatched, [{ lead_ref: "r5", reason: "no_row" }]);
+  assert.throws(() => planCtwaColumnX(["x", "+971500000001"], ["y", ""], leads), /refusing/);
+});
+
+test("run: writes Meta IDs rows and column X only, nothing else changes, reads back, spools to NAS", async () => {
+  const sales = salesGrid([sRow("p:+971500000001", "", "typed-by-sales"), sRow("+971500000009", "", "other-person")]);
+  const before = JSON.stringify(sales);
+  const t = setup([lead(1), lead(2)], { [META]: metaGrid(), [SALES]: sales });
+  const r = await t.run();
+  assert.equal(r.exitCode, 0); assert.equal(r.summary.meta_appends, 2); assert.equal(r.summary.x_writes, 1); assert.equal(r.summary.x_unmatched, 1);
+  assert.equal(t.sheets.grids[META].length, 3);
+  const diffCells = []; const b = JSON.parse(before);
+  sales.forEach((row, i) => row.forEach((v, j) => { if ((b[i]?.[j] ?? "") !== v) diffCells.push(`${columnLetter(j)}${i + 1}`); }));
+  assert.deepEqual(diffCells, ["X2"], "only column X of the matched row changed");
+  assert.equal(sales[1][0], "typed-by-sales");
+  for (const w of t.sheets.writes.filter((x) => x.id === SALES)) assert.match(w.range, /^'Home-owners'!X\d+$/);
+  assert.equal(t.uploads.length, 1);
+  const jsonl = readFileSync(t.io.changesFile("20261120").file, "utf8");
+  assert.ok(!jsonl.includes("+9715") && !jsonl.includes("0500000"), "no phone numbers in the NAS records");
+  assert.equal(jsonl.trim().split("\n").length, 3);
+});
+
+test("run is idempotent: a second run (and a --full re-run) plans and writes nothing", async () => {
+  const t = setup([lead(1), lead(2)], { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  await t.run(); const writesAfterFirst = t.sheets.writes.length;
+  const second = await t.run();
+  assert.equal(second.summary.planned_writes, 0); assert.equal(t.sheets.writes.length, writesAfterFirst);
+  const third = await t.run({ args: { full: true } });
+  assert.equal(third.summary.planned_writes, 0); assert.equal(t.sheets.writes.length, writesAfterFirst);
+  assert.equal(t.uploads.length, 1, "unchanged spool is not uploaded again");
+});
+
+test("incremental run only reads leads changed since the cursor and updates changed rows in place", async () => {
+  const leads = [lead(1, { updated_at: "2026-11-18T00:00:00.000Z" }), lead(2)];
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  await t.run();
+  leads[1].stage = "qualified"; leads[1].updated_at = "2026-11-20T07:00:00.000Z";
+  const r = await t.run();
+  assert.equal(r.summary.leads_examined, 1); assert.equal(r.summary.meta_updates, 1); assert.equal(r.summary.meta_appends, 0);
+  assert.equal(t.sheets.grids[META].length, 3);
+  assert.equal(t.sheets.grids[META][2][10], "qualified");
+});
+
+test("cap: more planned writes than --max-writes writes nothing and keeps the cursor", async () => {
+  const leads = [1, 2, 3].map((n) => lead(n));
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([]) });
+  await assert.rejects(() => t.run({ args: { maxWrites: 2 } }), (e) => e.code === "cap_exceeded");
+  assert.equal(t.sheets.writes.length, 0); assert.equal(t.io.readState().leads_cursor, null);
+});
+
+test("dry-run writes nothing, saves no state", async () => {
+  const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  const r = await t.run({ args: { dryRun: true } });
+  assert.equal(r.summary.planned_writes, 2); assert.equal(t.sheets.writes.length, 0); assert.equal(t.io.readState().last_ok_at, null);
+});
+
+test("read-back mismatch: retried once, then fails loudly", async () => {
+  const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  const bad = { ...t.sheets, batchUpdateValues: async (id, data) => { t.sheets.writes.push({ id, range: data[0].range }); return {}; } }; // silently drops writes
+  Object.defineProperty(bad, "requestCount", { get: () => 0 });
+  await assert.rejects(() => t.run({ sheets: bad }), (e) => e.code === "readback_mismatch");
+  assert.equal(t.io.readState().leads_cursor, null, "cursor not advanced after a failed write");
+  assert.equal(t.sheets.writes.filter((w) => w.id === SALES).length, 2, "one write plus one retry");
+});
+
+test("unmatched click ids stay pending and are retried when the sheet row appears", async () => {
+  const sales = salesGrid([]);
+  const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: sales });
+  await t.run();
+  assert.equal(Object.keys(t.io.readState().pending_ctwa).length, 1);
+  sales.push(sRow("+971500000001"));
+  const r = await t.run();
+  assert.equal(r.summary.x_writes, 1); assert.equal(sales[1][23], "CLID_1_abcdefghij");
+  assert.equal(Object.keys(t.io.readState().pending_ctwa).length, 0);
+});
+
+test("reconcile reports drift with counts only and exits non-zero", async () => {
+  const leads = [lead(1), lead(2)];
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  const opts = { osReader: reader(leads), sheets: t.sheets, io: t.io, now: () => t.clock.t };
+  assert.equal((await runReconcile(opts)).exitCode, 1, "empty sheet = drift");
+  await t.run();
+  const ok = await runReconcile(opts);
+  assert.equal(ok.exitCode, 0);
+  const text = readFileSync(ok.summary.report, "utf8");
+  assert.match(text, /missing_in_sheet: 0/); assert.ok(!text.includes("971500"));
+});
+
+test("parseArgs", () => {
+  assert.deepEqual(parseArgs(["--dry-run", "--max-writes", "5"]).maxWrites, 5);
+  assert.throws(() => parseArgs(["--bogus"]));
+  assert.throws(() => parseArgs(["--max-writes", "x"]));
+});

@@ -32,11 +32,13 @@ export async function GET(request: NextRequest) {
     const leadIds = rows.map((row) => row.lead_id);
 
     const reviews = new Map<string, Record<string, unknown>>();
-    if (status === "duplicate_review" && leadIds.length) {
-      const { data: pending, error: reviewError } = await supabaseAdmin.from("duplicate_reviews")
-        .select("id, lead_id, duplicate_of_lead_id, matched_on, candidate_ids, created_at").in("lead_id", leadIds).eq("decision", "pending");
+    if ((status === "duplicate_review" || status === "duplicate_not_dispatched") && leadIds.length) {
+      // the open review for a lead in review; the decision that closed it for a lead that is not dispatched
+      const wanted = status === "duplicate_review" ? ["pending"] : ["merged", "invalid"];
+      const { data: found, error: reviewError } = await supabaseAdmin.from("duplicate_reviews")
+        .select("id, lead_id, duplicate_of_lead_id, matched_on, candidate_ids, decision, notes, created_at").in("lead_id", leadIds).in("decision", wanted);
       if (reviewError) throw reviewError;
-      for (const review of (pending ?? []) as Array<Record<string, unknown> & { lead_id: string }>) reviews.set(review.lead_id, review);
+      for (const review of (found ?? []) as Array<Record<string, unknown> & { lead_id: string }>) reviews.set(review.lead_id, review);
     }
     const originalIds = [...reviews.values()].map((review) => review.duplicate_of_lead_id as string);
     const leads = await loadLeads([...leadIds, ...originalIds]);
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest) {
         lead: leads.get(row.lead_id) ?? null,
         allowed_actions: allowedActions(row as never),
         duplicate: review ? {
-          review_id: review.id, matched_on: review.matched_on, candidates: (review.candidate_ids as string[] | undefined)?.length ?? 1,
+          review_id: review.id, decision: review.decision, notes: review.notes ?? null, matched_on: review.matched_on, candidates: (review.candidate_ids as string[] | undefined)?.length ?? 1,
           original: leads.get(review.duplicate_of_lead_id as string) ?? null,
         } : null,
       };

@@ -18,6 +18,8 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
   // sales: /api/pipeline/list scopes the board to their own leads and the page
   // shows them only their KPI panel (no board, no writes); it is in SALES_NAV.
   "/pipeline": ["admin", "boss", "operator", "sales"],
+  // S24: the dispatch workbench and its APIs serve exactly the staff roles.
+  "/dispatch": ["admin", "boss", "operator"],
 };
 
 const PUBLIC_API_PATHS = new Set([
@@ -405,6 +407,7 @@ export const config = {
     "/ads/:path*",
     "/quotes/:path*",
     "/projects/:path*",
+    "/dispatch/:path*",
     "/products/:path*",
     // /cable-costing is an authenticated employee tool under src/app/(dashboard);
     // listing it keeps the edge checks (is_active revocation, forced-password-change

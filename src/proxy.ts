@@ -51,6 +51,8 @@ const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
   // Meta ID registry export: the handler authenticates itself (login role OR read-only export token); exact path only.
   // A forced-password session is still refused by the proxy; token callers carry no session at all.
   "/api/export/meta-ids",
+  // Drive -> OS sync ingest (S29): machine token (DRIVE_SYNC_INGEST_TOKEN) checked by the handler, off unless DRIVE_SYNC_INGEST_ENABLED=true; exact path only.
+  "/api/sync/drive-ingest",
 ]);
 const EXTERNAL_AUTHORIZED_API_PREFIXES = ["/api/cron/"];
 const AUTH_TIMEOUT_MS = 3_000;

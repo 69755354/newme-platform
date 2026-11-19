@@ -8,7 +8,7 @@ import path from "node:path";
 import { runSync } from "../../scripts/drive-to-os-sync.mjs";
 import { createSheetsReader } from "../../scripts/lib/drive-sheets-readonly.mjs";
 import { SOURCES, assertAllowedTab, rangeOf } from "../../scripts/lib/drive-sync-sources.mjs";
-import { decideChange, buildIndexes, fingerprintOf, maskId, normalizePhone, phoneDigits, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
+import { rowHashOf, decideChange, buildIndexes, fingerprintOf, maskId, normalizePhone, phoneDigits, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
 
 const TOKEN = "t".repeat(40);
 const SALES_HEAD = ["Client", "Phone / WhatsApp", "Day 1 feedback", "Day 2 feedback", "Day 3 feedback", "Day 4 feedback", "Day 5 feedback", "Later follow-ups / previous records", "Next action", "Next follow-up date", "Lead quality", "Quality reason", "Assigned date", "Intake channel", "Segment", "Area", "Contact rule", "Rule starts", "Resume date", "Rule reason / evidence", "Lead key", "Email", "Requirement / Context", "Quality assessed at", "First contact at", "Sync status", "Sales Lead ID", "Previous qualification", "Source references", "Contact person"];
@@ -215,4 +215,56 @@ test("the ingest route is gated: disabled by default, token before body, per-cal
   assert.ok(src.indexOf("cfg.enabled") < src.indexOf("consumeRateLimit(") && src.indexOf("consumeRateLimit(") < src.indexOf("tokenMatches(") && src.indexOf("tokenMatches(") < src.indexOf("request.json()"));
   assert.match(src, /maxChangesPerCall/); assert.match(src, /dry_run !== false/); assert.match(src, /maxWritesPerRun/);
   assert.equal(resolveConfig({}).enabled, false); assert.equal(resolveConfig({}).allowInsert, false);
+});
+
+test("review fix 1: the ingest path is an exact external-auth path in the proxy", () => {
+  const src = readFileSync(path.resolve(import.meta.dirname, "../../src/proxy.ts"), "utf8");
+  const set = src.slice(src.indexOf("EXTERNAL_AUTHORIZED_API_PATHS") >= 0 ? src.indexOf("EXTERNAL_AUTHORIZED_API_PATHS") : 0, src.indexOf("EXTERNAL_AUTHORIZED_API_PREFIXES"));
+  assert.match(set, /"\/api\/sync\/drive-ingest",/);
+  assert.ok(!/EXTERNAL_AUTHORIZED_API_PREFIXES = \[[^\]]*sync/.test(src), "exact path only, no prefix");
+});
+
+test("review fix 2: an insert carries every Drive-owned part, hash committed last", () => {
+  const cfg = resolveConfig({ DRIVE_SYNC_ALLOW_INSERT: "true" });
+  const c = { key: "WA-n1", sheet: "s", row: 3, insertable: true, identity: { fingerprint: fingerprintOf("WA-n1"), phone_digits: "971501119999" }, owned: { quality: "poor", quality_reason: "no budget", next_action: "call back", next_followup_date: "2026-11-25" }, followup_text: "Day 1 feedback: x", first_contact_at: "2026-11-20T08:00:00.000Z", contact_rule: "pause", contact_days_filled: 1 };
+  const d = decideChange(c, buildIndexes([]), cfg);
+  assert.equal(d.action, "insert"); assert.equal(d.set.next_action, "call back"); assert.equal(d.set.poor_reason, "no budget");
+  assert.equal(d.notes.length, 1); assert.equal(d.raw_patch.drive_sync.contact_rule, "pause"); assert.equal(d.raw_patch.drive_sync.first_contact_at, c.first_contact_at);
+  assert.equal(writeCost(d), 4);
+  const src = readFileSync(path.resolve(import.meta.dirname, "../../src/app/api/sync/drive-ingest/route.ts"), "utf8");
+  const ins = src.slice(src.indexOf('d.action === "insert"'), src.indexOf('d.action === "update"'));
+  assert.ok(ins.indexOf("row_hash: null") > 0 && ins.indexOf("upsertNote") < ins.indexOf("hash_commit_failed"));
+});
+
+test("review fix 3: activity write errors fail the row and the hash is committed last", () => {
+  const src = readFileSync(path.resolve(import.meta.dirname, "../../src/app/api/sync/drive-ingest/route.ts"), "utf8");
+  assert.match(src, /const \{ error \} = await supabaseAdmin\.from\("activities"\)\.insert/);
+  assert.match(src, /return !error;/); assert.match(src, /return !upErr;/);
+  const upd = src.slice(src.indexOf('d.action === "update"'), src.indexOf('d.action !== "noop"'));
+  assert.ok(upd.indexOf("note_failed") < upd.indexOf("hash_commit_failed") && upd.indexOf("sync_note_failed") < upd.indexOf("hash_commit_failed"));
+  assert.ok(upd.indexOf("applied.updated += 1") > upd.indexOf("hash_commit_failed"));
+});
+
+test("review fix 4: next follow-up date conflicts compare the lead column when it is written", () => {
+  const prev = { row_hash: "old", synced_at: "2026-11-10T00:00:00.000Z", next_followup_date: "2026-11-01" };
+  const l = lead({ drive_sync: prev, updated_at: "2026-11-15T00:00:00.000Z", next_followup_date: "2026-11-20" });
+  const c = { key: "k", sheet: "s", row: 1, identity: { phone_digits: "971501234567" }, owned: { next_followup_date: "2026-11-25" }, source_modified_at: "2026-11-12T00:00:00.000Z" };
+  const d = decideChange(c, buildIndexes([l]), resolveConfig({ DRIVE_SYNC_WRITE_NEXT_DATE: "true" }));
+  assert.deepEqual(d.conflicts, [{ field: "next_followup_date", winner: "os" }]); assert.equal(d.set.next_followup_date, undefined);
+  const same = decideChange({ ...c, owned: { next_followup_date: "2026-11-20" } }, buildIndexes([l]), resolveConfig({ DRIVE_SYNC_WRITE_NEXT_DATE: "true" }));
+  assert.deepEqual(same.fields, []);
+  assert.match(readFileSync(path.resolve(import.meta.dirname, "../../src/app/api/sync/drive-ingest/route.ts"), "utf8"), /next_action, next_followup_date, poor_reason/);
+});
+
+test("review fix 5: a newer Drive reason replaces an existing poor reason", () => {
+  const l = lead({ quality: "poor", poor_reason: "old reason", drive_sync: { row_hash: "old", synced_at: "2026-11-10T00:00:00.000Z" }, updated_at: "2026-11-01T00:00:00.000Z" });
+  const d = decideChange({ key: "k", sheet: "s", row: 1, identity: { phone_digits: "971501234567" }, owned: { quality_reason: "new reason" }, source_modified_at: "2026-11-18T00:00:00.000Z" }, buildIndexes([l]), resolveConfig({}));
+  assert.equal(d.set.poor_reason, "new reason");
+});
+
+test("review fix 6: first contact time and contact rule are part of the row hash", () => {
+  const base = { key: "k", owned: { quality: "good" }, followup_text: "x" };
+  const h = rowHashOf(base);
+  assert.notEqual(rowHashOf({ ...base, first_contact_at: "2026-11-20T08:00:00.000Z" }), h);
+  assert.notEqual(rowHashOf({ ...base, contact_rule: "pause" }), h);
 });

@@ -90,7 +90,7 @@ export function resolveConfig(env = process.env) {
 /** Hash of the Drive-owned content of one row. Unchanged hash = nothing new to apply (idempotency). */
 export function rowHashOf(change) {
   const o = change.owned ?? {};
-  return sha(JSON.stringify([o.quality ?? "", o.quality_reason ?? "", o.next_action ?? "", o.next_followup_date ?? "", change.followup_text ?? "", change.contact_note ?? ""]));
+  return sha(JSON.stringify([o.quality ?? "", o.quality_reason ?? "", o.next_action ?? "", o.next_followup_date ?? "", change.followup_text ?? "", change.contact_note ?? "", change.first_contact_at ?? "", change.contact_rule ?? ""]));
 }
 
 const nonEmpty = (v) => v !== null && v !== undefined && norm(v) !== "";
@@ -149,7 +149,11 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
     if (!change.insertable) return { action: "hold", reason: "not_in_os_match_only" };
     if (!cfg.allowInsert) return { action: "hold", reason: "insert_disabled", would: "insert" };
     if (!change.identity?.phone_digits && !change.identity?.email) return { action: "hold", reason: "no_identity" };
-    return { action: "insert", row_hash: hash };
+    const set = {};
+    if (nonEmpty(owned.next_action)) set.next_action = norm(owned.next_action);
+    if (owned.quality === "poor" && nonEmpty(owned.quality_reason)) set.poor_reason = norm(owned.quality_reason);
+    if (cfg.writeNextDate && nonEmpty(owned.next_followup_date)) set.next_followup_date = norm(owned.next_followup_date);
+    return { action: "insert", row_hash: hash, set, notes: notesOf(change), raw_patch: rawPatchOf(change, hash) };
   }
   const lead = m.lead;
   if (claimed.has(lead.id) && claimed.get(lead.id) !== change.key) return { action: "hold", reason: "two_rows_same_lead", lead_id: lead.id };
@@ -163,7 +167,7 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   const syncedAt = prev?.synced_at ? Date.parse(prev.synced_at) : null;
   const osChangedSince = osAt != null && (syncedAt == null || osAt - syncedAt > TOLERANCE_MS);
   const set = {}; const conflicts = []; const fields = [];
-  const current = { quality: lead.quality, next_action: lead.next_action, quality_reason: lead.poor_reason, next_followup_date: prev?.next_followup_date };
+  const current = { quality: lead.quality, next_action: lead.next_action, quality_reason: lead.poor_reason, next_followup_date: cfg.writeNextDate ? lead.next_followup_date : prev?.next_followup_date };
   for (const f of OWNED_FIELDS) {
     const v = norm(owned[f]);
     if (!nonEmpty(v)) continue; // empty never overwrites
@@ -177,20 +181,26 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
     fields.push(f);
     if (f === "quality") set.quality = v;
     else if (f === "next_action") set.next_action = v;
-    else if (f === "quality_reason" && v && v !== "") { if ((set.quality ?? lead.quality) === "poor" && !nonEmpty(lead.poor_reason)) set.poor_reason = v; }
+    else if (f === "quality_reason" && v && v !== "") { if ((set.quality ?? lead.quality) === "poor") set.poor_reason = v; }
     else if (f === "next_followup_date" && cfg.writeNextDate) set.next_followup_date = v;
   }
-  const notes = [];
-  if (nonEmpty(change.followup_text)) notes.push({ import_key: `${change.key}/daily-feedback`, type: "note", content: `[Sheet sales feedback] ${norm(change.followup_text)}`.slice(0, 4000) });
-  const raw_patch = { drive_sync: { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason ?? undefined, next_followup_date: owned.next_followup_date ?? undefined, contact_days_filled: change.contact_days_filled ?? undefined, first_contact_at: change.first_contact_at ?? undefined, contact_rule: change.contact_rule ?? undefined, source_modified_at: change.source_modified_at ?? undefined } };
+  const notes = notesOf(change);
+  const raw_patch = rawPatchOf(change, hash);
   const unarchive = !!(lead.archived && cfg.allowUnarchive);
   // A write happens whenever the row changed since the last sync: at least the sync state and the note go in.
   return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash };
 }
 
+function notesOf(change) {
+  return nonEmpty(change.followup_text) ? [{ import_key: `${change.key}/daily-feedback`, type: "note", content: `[Sheet sales feedback] ${norm(change.followup_text)}`.slice(0, 4000) }] : [];
+}
+function rawPatchOf(change, hash) {
+  const owned = change.owned ?? {};
+  return { drive_sync: { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason ?? undefined, next_followup_date: owned.next_followup_date ?? undefined, contact_days_filled: change.contact_days_filled ?? undefined, first_contact_at: change.first_contact_at ?? undefined, contact_rule: change.contact_rule ?? undefined, source_modified_at: change.source_modified_at ?? undefined } };
+}
 /** Number of database writes one decision costs (lead update + activities), for the per-run cap. */
 export function writeCost(d) {
-  if (d.action === "insert") return 2;
+  if (d.action === "insert") return 3 + (d.notes?.length ?? 0);
   if (d.action === "update") return 1 + (d.notes?.length ?? 0) + 1;
   return 0;
 }

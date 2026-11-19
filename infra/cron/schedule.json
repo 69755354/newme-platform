@@ -18,6 +18,13 @@
       "why": "Three unanswered calls in a row warn the lead owner. Warns again only when a newer follow-up log exists (S17)."
     },
     {
+      "name": "dispatch-sweep",
+      "install": "after-flag",
+      "dubaiTime": "08:20",
+      "idempotent": true,
+      "why": "Lead dispatch states (S24): evaluates leads created in the last seven days with no state and re-evaluates changed ones, at most 200 per run. The route answers Disabled until DISPATCH_SWEEP_ENABLED=true; install the timer only together with the flag. Idempotent: the database routine writes dispatch rows only and a second run changes nothing."
+    },
+    {
       "name": "daily-funnel-snapshot",
       "install": "enable",
       "dubaiTime": "23:50",

@@ -42,8 +42,6 @@ import {
   BarChart3,
   Settings,
   Cable,
-  Handshake,
-  MapPin,
 } from "lucide-react";
 
 export interface NavItem {
@@ -77,12 +75,10 @@ export const MGMT_NAV: NavItem[] = [
   // page of buttons that all throw.
   { href: "/team",      labelKey: "mgmtTeam", icon: UsersRound, roles: ["admin", "boss"] },
   { href: "/projects",  labelKey: "mgmtProjects", icon: Briefcase },
-  { href: "/opportunities", labelKey: "mgmtOpportunities", icon: Handshake },
-  { href: "/visits",    labelKey: "mgmtVisits", icon: MapPin },
   { href: "/settings",  labelKey: "mgmtSettings", icon: Settings },
 ];
 
-// ─── Sales nav — personal scope ───
+// ─── Sales nav — personal scope, 8 items ───
 export const SALES_NAV: NavItem[] = [
   { href: "/workbench", labelKey: "salesWorkbench", icon: Briefcase },
   { href: "/leads",     labelKey: "salesLeads", icon: Users },
@@ -91,8 +87,6 @@ export const SALES_NAV: NavItem[] = [
   { href: "/contracts", labelKey: "salesContracts", icon: FileText },
   { href: "/payments",  labelKey: "salesPayments", icon: CreditCard },
   { href: "/pipeline",  labelKey: "salesPipeline", icon: TrendingUp },
-  { href: "/opportunities", labelKey: "mgmtOpportunities", icon: Handshake },
-  { href: "/visits",    labelKey: "mgmtVisits", icon: MapPin },
   { href: "/analytics", labelKey: "salesAnalytics", icon: BarChart3 },
   { href: "/products",  labelKey: "salesProducts", icon: Package },
 ];

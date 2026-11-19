@@ -179,8 +179,6 @@ export const translations = {
       mgmtProducts: "Products",
       mgmtTeam: "Team",
       mgmtProjects: "Projects",
-      mgmtOpportunities: "Opportunities",
-      mgmtVisits: "Visits",
       mgmtSettings: "Settings",
       // Sales nav items
       salesWorkbench: "Workbench",
@@ -2217,8 +2215,6 @@ export const translations = {
       mgmtProducts: "产品库",
       mgmtTeam: "团队",
       mgmtProjects: "项目管理",
-      mgmtOpportunities: "商机",
-      mgmtVisits: "拜访",
       mgmtSettings: "设置",
       // Sales nav items
       salesWorkbench: "工作台",

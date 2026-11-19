@@ -52,8 +52,6 @@ test("both languages carry the same keys for opportunities and visits, and every
     const used = ["opportunities", "visits"].some((ns) => new Set(paths(block(src, ns)[0])).has(`error.${value}`));
     if (/^(required|invalid|tooLong|outOfRange|quoteRequired|unknownStage|inactiveStage|beforeStart|duplicate|forbidden|locked|notApproved|incomplete|noteRequired)$/.test(value)) assert.ok(used, `error.${value}`);
   }
-  assert.match(src, /mgmtOpportunities: "Opportunities"/);
-  assert.match(src, /mgmtVisits: "拜访"/);
 });
 
 test("the interface labels Show room, FB and ins are not touched by the new strings", () => {
@@ -76,7 +74,7 @@ test("the lead page shows both cards for the roles that may use them and passes 
   }
 });
 
-test("the list pages are guarded for the four roles, listed in the edge matcher and in the sidebars", () => {
+test("the list pages are guarded for the four roles and listed in the edge matcher; the sidebars are unchanged", () => {
   for (const page of ["opportunities", "visits"]) {
     const src = read(`src/app/(dashboard)/${page}/page.tsx`);
     assert.match(src, /authorizeServerPage\(\{ roles: \["admin", "boss", "operator", "sales"\] \}\)/);
@@ -86,9 +84,11 @@ test("the list pages are guarded for the four roles, listed in the edge matcher 
     assert.match(proxy, new RegExp(`"/${route}": \\["admin", "boss", "operator", "sales"\\]`));
     assert.match(proxy, new RegExp(`"/${route}/:path\\*"`));
   }
+  // The sidebar contract is checked by the post-deploy browser acceptance (CANONICAL_NAV_BY_ROLE); adding the two
+  // links belongs to the change that updates that contract, after the database batch is provisioned.
   const nav = read("src/lib/nav.ts");
-  assert.equal([...nav.matchAll(/href: "\/opportunities"/g)].length, 2, "management and sales sidebars");
-  assert.equal([...nav.matchAll(/href: "\/visits"/g)].length, 2);
+  assert.equal(nav.includes("/opportunities"), false);
+  assert.equal(nav.includes("/visits"), false);
 });
 
 test("approving and reviewing buttons are for staff only in the screen, and the API checks again", () => {

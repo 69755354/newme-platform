@@ -20,9 +20,17 @@ const pinned=S21_EVENTS.map(({version,file,sha256})=>({version,file,sha256}));
 //  (2) after the S21 branch is merged: the manifest already ends with the S21 entry.
 const live=structuredClone(manifest);
 const predAt=manifest.posture.deferred_contract.predicates.findIndex(x=>S21_PREDICATE_NAMES.includes(x.name));
-if(at>=0){
-  live.deferred_contract.splice(at);
-  live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.slice(0,predAt);
+// An entry with a later version (the S23 opportunities batch) may already be in the manifest while S21 is
+// not: it is part of the live release's future, not of S21, so it is cut as well.
+const laterAt=manifest.deferred_contract.findIndex(x=>x.version>S21_EVENTS[0].version);
+const laterPredAt=manifest.posture.deferred_contract.predicates.findIndex(x=>/^s(2[2-9]|[3-9][0-9])-/.test(x.name));
+const cutAt=at>=0?at:laterAt;
+const cutPredAt=at>=0?predAt:laterPredAt;
+if(cutAt>=0){
+  live.deferred_contract.splice(cutAt);
+}
+if(cutPredAt>=0){
+  live.posture.deferred_contract.predicates=live.posture.deferred_contract.predicates.slice(0,cutPredAt);
 }
 const sqls=inTree?urls.map(url=>fs.readFileSync(url,'utf8')):null;
 const candidate=structuredClone(live);

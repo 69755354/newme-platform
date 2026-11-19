@@ -9,6 +9,7 @@ contract_approvals
 contracts
 crm_daily_funnel_snapshot
 customers
+duplicate_reviews
 follow_up_logs
 installment_plans
 knx_designs
@@ -20,10 +21,14 @@ lead_files
 lead_followup_state
 lead_milestones
 leads
+lead_dispatch_events
+lead_dispatch_state
 lead_workflow_stages
 meta_crm_stage_events
 meta_tokens
 notifications
+opportunities
+opportunity_stages
 payment_allocations
 payments
 products
@@ -37,6 +42,7 @@ user_features
 user_session_daily
 v_lead_trace
 v_risk_pool
+visit_reports
 whatsapp_capi_events
 whatsapp_conversations
 whatsapp_message_events

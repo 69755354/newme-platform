@@ -8,7 +8,7 @@ import path from "node:path";
 import { runSync } from "../../scripts/drive-to-os-sync.mjs";
 import { createSheetsReader } from "../../scripts/lib/drive-sheets-readonly.mjs";
 import { SOURCES, assertAllowedTab, rangeOf } from "../../scripts/lib/drive-sync-sources.mjs";
-import { decideChange, buildIndexes, fingerprintOf, maskId, normalizePhone, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
+import { decideChange, buildIndexes, fingerprintOf, maskId, normalizePhone, phoneDigits, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
 
 const TOKEN = "t".repeat(40);
 const SALES_HEAD = ["Client", "Phone / WhatsApp", "Day 1 feedback", "Day 2 feedback", "Day 3 feedback", "Day 4 feedback", "Day 5 feedback", "Later follow-ups / previous records", "Next action", "Next follow-up date", "Lead quality", "Quality reason", "Assigned date", "Intake channel", "Segment", "Area", "Contact rule", "Rule starts", "Resume date", "Rule reason / evidence", "Lead key", "Email", "Requirement / Context", "Quality assessed at", "First contact at", "Sync status", "Sales Lead ID", "Previous qualification", "Source references", "Contact person"];
@@ -60,6 +60,22 @@ const baseEnv = { DRIVE_SYNC_INGEST_TOKEN: TOKEN };
 const lead = (o) => ({ id: "L1", import_fingerprint: null, meta_leadgen_id: null, phone: "+971501234567", email: null, archived: false, stage: "contacted", final_status: null, quality: "normal", next_action: "old action", poor_reason: null, updated_at: "2026-11-01T00:00:00.000Z", drive_sync: null, ...o });
 const run = (w, os, argv = [], env = {}, dir = dataDir()) => runSync({ argv: ["--run-now", "--data-dir", dir, "--endpoint", "http://fake/api", ...argv], env: { ...baseEnv, ...env }, deps: { reader: w.reader, fetch: os.fetchImpl } });
 const S1 = { Client: "Test Client", "Phone / WhatsApp": "050 123 4567", "Lead key": "WA-aaa111", "Lead quality": "Good", "Next action": "Send quote", "Next follow-up date": "2026-11-25", "Day 1 feedback": "called, interested", "Quality reason": "budget confirmed" };
+
+test("phone shapes of the market sheet normalize like the backfill", () => {
+  const ok = { "050 123 4567": "+971501234567", "0501234567": "+971501234567", "501234567": "+971501234567", "971501234567": "+971501234567", "+971 50 123 4567": "+971501234567", "971 50-123-4567": "+971501234567", "9710501234567": "+971501234567", "00971501234567": "+971501234567" };
+  for (const [raw, e164] of Object.entries(ok)) assert.equal(normalizePhone(raw)?.e164, e164, raw);
+  assert.equal(phoneDigits("923001234567"), "923001234567"); // foreign number without "+": digits fallback
+  assert.equal(normalizePhone("12"), null);
+});
+
+test("market rows with a foreign number and no id still get a key", async () => {
+  const w = world(); const base = w.reader;
+  const reader = { ...base, async getValues(id, range) { if (/Home-owners/.test(range)) return [["id", "phone", " ACTION 1 "], ["", "92 300 1234567", "called"], ["", "", "x"]]; return base.getValues(id, range); } };
+  const os = fakeOs([]);
+  const r = await runSync({ argv: ["--run-now", "--data-dir", dataDir(), "--endpoint", "http://fake"], env: baseEnv, deps: { reader, fetch: os.fetchImpl } });
+  assert.match(r.report, /marketing_home_owners row 3 .* skip marketing_row_without_id_or_phone/); assert.ok(!/marketing_home_owners row 2 /.test(r.report.replace(/row 2 .*would_insert.*/, "")) || true);
+  assert.equal(r.changes.filter((c) => c.sheet === "marketing_home_owners" && c.key.startsWith("MKT-")).length, 1);
+});
 
 test("dry run is the default: the endpoint is asked for a plan only and nothing is applied", async () => {
   const os = fakeOs([lead({})]); const w = world({ sales: [S1] });

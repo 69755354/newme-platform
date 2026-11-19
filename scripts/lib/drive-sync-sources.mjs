@@ -125,15 +125,16 @@ export function buildMarketingChanges(tabs, modified) {
       const id = norm(r.id).replace(/^l:/i, "");
       const phoneRaw = norm(r.phone) || norm(r.phone_number);
       const phoneN = normalizePhone(phoneRaw);
+      const pDigits = phoneN?.digits ?? phoneDigits(phoneRaw); // foreign numbers without "+" still identify the person (same fallback as the backfill)
       const actions = [r[" ACTION 1 "], r["ACTION 2"], r["ACTION 1"]].map(norm).filter(Boolean);
       const text = actions.length ? `Marketing actions: ${actions.join(" | ")}` : undefined;
       const hasId = LEADGEN.test(id);
-      const key = hasId ? `META-${id}` : phoneN ? `MKT-${sha(phoneN.digits).slice(0, 12)}` : null;
+      const key = hasId ? `META-${id}` : pDigits ? `MKT-${sha(pDigits).slice(0, 12)}` : null;
       const base = { sheet: k, row: r.__row, refs: [{ sheet: k, row: r.__row }], source_modified_at: modified[k] ?? null };
       if (!key) { out.push({ ...base, key: `${k}#${r.__row}`, skip_reason: "marketing_row_without_id_or_phone", identity: {}, owned: {} }); continue; }
-      const c = { ...base, key, identity: { fingerprint: hasId ? fingerprintOf(key) : undefined, leadgen: hasId ? id : null, phone_digits: phoneN?.digits ?? null, email: emailKey(r.email) }, owned: {}, followup_text: text, insertable: !hasId };
+      const c = { ...base, key, identity: { fingerprint: hasId ? fingerprintOf(key) : undefined, leadgen: hasId ? id : null, phone_digits: pDigits ?? null, email: emailKey(r.email) }, owned: {}, followup_text: text, insertable: !hasId };
       if (!text) c.skip_reason = "marketing_no_drive_owned_content";
-      else if (!hasId) c.insert_fields = { customer_name: norm(r.full_name) || undefined, phone: phoneN?.e164, email: emailKey(r.email) || undefined, source: "whatsapp", source_channel: "marketing_sheet" };
+      else if (!hasId) c.insert_fields = { customer_name: norm(r.full_name) || undefined, phone: phoneN?.e164 || phoneRaw || undefined, email: emailKey(r.email) || undefined, source: "whatsapp", source_channel: "marketing_sheet" };
       out.push(c);
     }
   }

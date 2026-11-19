@@ -29,6 +29,7 @@ export function normalizePhone(raw) {
   if (/^05\d{8}$/.test(s)) s = `+971${s.slice(1)}`;
   else if (/^5\d{8}$/.test(s)) s = `+971${s}`;
   else if (/^971\d{8,9}$/.test(s)) s = `+${s}`;
+  else if (/^9710\d{9}$/.test(s)) s = `+971${s.slice(4)}`;
   else if (/^\+9710\d{9}$/.test(s)) s = `+971${s.slice(5)}`;
   if (!/^\+\d{7,15}$/.test(s)) return null;
   return { e164: s, digits: s.replace(/\D/g, "") };

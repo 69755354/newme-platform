@@ -1949,6 +1949,22 @@ export const translations = {
       days: "{n} d",
       filterLabel: "WhatsApp ads",
     },
+    // ── S21 follow-up monitor (2026-11-19) — separate block at the end of the language ──
+    followup: {
+      title: "Follow-up status",
+      state: { normal: "On track", at_risk: "At risk", overdue: "Overdue" },
+      abandonRisk: "Abandon risk",
+      firstResponse: "First response",
+      noReplyYet: "No reply yet",
+      contacts5wd: "Contacts in 5 working days",
+      lastOutbound: "Last contact from us",
+      suggestedFields: "Suggested from the customer's messages",
+      field: { rooms: "Rooms", property_type: "Property type", area_sqm: "Area", budget_aed: "Budget", renovation: "Renovation", next_step: "Next step" },
+      draftHint: "These are suggestions only. Save them as a note draft, then confirm and edit the lead yourself.",
+      saveDraft: "Save as note draft",
+      draftSaved: "Saved to notes",
+      draftError: "Could not save, try again",
+    },
   },
   zh: {
     // ── S3 线索流程修复（2026-11-04）— 独立区块，放在语言开头以避免与 S6 合并冲突 ──
@@ -3873,6 +3889,22 @@ export const translations = {
       hours: "{n} 小时",
       days: "{n} 天",
       filterLabel: "WhatsApp 广告",
+    },
+    // ── S21 跟进监控（2026-11-19）— 独立区块，放在语言末尾 ──
+    followup: {
+      title: "跟进状态",
+      state: { normal: "正常", at_risk: "有风险", overdue: "已超时" },
+      abandonRisk: "疑似放弃",
+      firstResponse: "首次响应",
+      noReplyYet: "尚未回复",
+      contacts5wd: "5 个工作日内联系次数",
+      lastOutbound: "我方最近一次联系",
+      suggestedFields: "根据客户消息提取的建议",
+      field: { rooms: "房间数", property_type: "户型", area_sqm: "面积", budget_aed: "预算", renovation: "装修", next_step: "下一步" },
+      draftHint: "仅为建议。先保存为备注草稿，再由你核对并自行修改线索。",
+      saveDraft: "保存为备注草稿",
+      draftSaved: "已存入备注",
+      draftError: "保存失败，请重试",
     },
   },
 } as const;

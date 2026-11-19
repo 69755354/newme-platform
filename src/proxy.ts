@@ -45,6 +45,9 @@ const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
   "/api/meta/whatsapp-webhook",
   // Meta Lead Ads webhook: raw-body App Secret HMAC + page allowlist; exact path only.
   "/api/meta/leadgen-webhook",
+  // Meta ID registry export: the handler authenticates itself (login role OR read-only export token); exact path only.
+  // A forced-password session is still refused by the proxy; token callers carry no session at all.
+  "/api/export/meta-ids",
 ]);
 const EXTERNAL_AUTHORIZED_API_PREFIXES = ["/api/cron/"];
 const AUTH_TIMEOUT_MS = 3_000;

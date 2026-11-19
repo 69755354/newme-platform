@@ -158,7 +158,7 @@ for(const [label,change] of [
 test('the deploy wrapper gates S18 provisioning like the other additive suffixes',()=>{
   const wrapper=fs.readFileSync(new URL('../../infra/systemd/newme-deploy.sh',import.meta.url),'utf8');
   assert.match(wrapper,/s18-db-plan\|s18-db-provision\) ;;/);
-  // later additive switches (S20 data import) are appended to the usage list after this one
+  // later additive switches (S20 data import, S21) are appended to the usage list after this one
   assert.match(wrapper,/\|s18-db-plan\|s18-db-provision(?:\|[a-z0-9-]+)*>" >&2/);
   const start=wrapper.indexOf('= s18-db-plan ]');
   const block=wrapper.slice(start,wrapper.indexOf('case "$DB_TRANSITION_OPERATION" in',start));

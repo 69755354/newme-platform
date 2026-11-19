@@ -6,17 +6,24 @@ fail() {
   exit 1
 }
 
-[[ "$#" -eq 4 ]] || fail "evidence path, acceptance digest, closure SHA, and final run ID are required"
+# The fifth argument is the final-run SHA: the main head the release-final
+# workflow ran on. It defaults to the closure SHA (the original single-slot
+# flow); when it differs, newme-deploy has already proved through
+# scripts/check-release-closure.mjs that every commit between the closure record
+# and the final run changes only non-runtime paths.
+[[ "$#" -eq 4 || "$#" -eq 5 ]] || fail "evidence path, acceptance digest, closure SHA, final run ID, and optional final-run SHA are required"
 EVIDENCE_FILE="$1"
 ACCEPTANCE_DIGEST="$2"
 RELEASE_CLOSURE_SHA="$3"
 RELEASE_FINAL_RUN_ID="$4"
+RELEASE_FINAL_SHA="${5:-$RELEASE_CLOSURE_SHA}"
 [[ -f "$EVIDENCE_FILE" && ! -L "$EVIDENCE_FILE" ]] || fail "evidence file not found or is a symlink"
 [[ "$ACCEPTANCE_DIGEST" =~ ^[0-9a-f]{64}$ ]] || fail "acceptance digest must be an exact SHA-256"
 [[ "$RELEASE_CLOSURE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "release closure SHA must be exact"
 [[ "$RELEASE_FINAL_RUN_ID" =~ ^[1-9][0-9]*$ ]] || fail "release final run ID must be numeric"
+[[ "$RELEASE_FINAL_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "release final-run SHA must be exact"
 
-python3 - "$EVIDENCE_FILE" "$ACCEPTANCE_DIGEST" "$RELEASE_CLOSURE_SHA" "$RELEASE_FINAL_RUN_ID" <<'PY'
+python3 - "$EVIDENCE_FILE" "$ACCEPTANCE_DIGEST" "$RELEASE_CLOSURE_SHA" "$RELEASE_FINAL_RUN_ID" "$RELEASE_FINAL_SHA" <<'PY'
 import hashlib
 import json
 import os
@@ -26,7 +33,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 
-path, acceptance_digest, closure_sha, final_run_id = sys.argv[1:]
+path, acceptance_digest, closure_sha, final_run_id, final_sha = sys.argv[1:]
 
 def fail(message):
     print(f"G0-Lite evidence: {message}", file=sys.stderr)
@@ -81,6 +88,8 @@ if not re.fullmatch(r"[0-9a-f]{40}", git_sha or "") or not build_id:
     fail("git_sha and build_id are required")
 if closure_sha == git_sha:
     fail("release closure SHA must differ from the deployed release SHA")
+if final_sha == git_sha:
+    fail("release final-run SHA must differ from the deployed release SHA")
 
 for section in ("build", "systemd", "smoke", "logs", "regression", "health"):
     if evidence.get(section, {}).get("status") != "pass":
@@ -209,9 +218,10 @@ expected_closure = {
     "release_sha": git_sha,
     "acceptance_digest": acceptance_digest,
     "closure_sha": closure_sha,
+    "final_sha": final_sha,
     "final_ci_run_id": final_run_id,
     "final_ci_run_url": f"https://github.com/69755354/newme-platform/actions/runs/{final_run_id}",
-    "final_ci_head_sha": closure_sha,
+    "final_ci_head_sha": final_sha,
     "final_ci_conclusion": "success",
     "required_jobs_manifest": "infra/release/final-required-jobs.json",
 }

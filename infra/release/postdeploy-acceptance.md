@@ -190,49 +190,84 @@ The subsequent TASKBOARD-only closure commit must append exactly one new marker
 <!-- postdeploy-acceptance-sha256:<the 64 lowercase hexadecimal digest> -->
 ```
 
-Dispatch `ci` on that exact main SHA with `release_final=true`, the exact
-`release_sha`, exact `closure_sha`, and the same `acceptance_digest`.
-`check-release-closure.mjs` requires the closure to be the release's single
-direct child and sole commit, preserves the complete stable-item inventory and
-historical table rows, verifies the TASKBOARD-only commit, and verifies the
-marker before the completion gate runs. No source, workflow, schema, policy, or
-evidence-verifier edit is allowed in the closure commit.
+Dispatch `ci` on the current main SHA with `release_final=true`, the exact
+`release_sha`, the exact `closure_sha`, and the same `acceptance_digest`. When
+main head is the closure commit itself, leave `final_sha` empty (it defaults to
+`closure_sha`). When other commits have landed after the closure record, pass
+`final_sha` = the current main SHA; the workflow refuses unless `final_sha` is
+the exact SHA it runs on.
+
+`check-release-closure.mjs` applies two rules:
+
+- the closure record (`closure_sha`) must be the release's single direct child
+  and sole commit, preserve the complete stable-item inventory and historical
+  table rows, change nothing but TASKBOARD.md, and append exactly one marker
+  naming the attested digest. No source, workflow, schema, policy, or
+  evidence-verifier edit is allowed in the closure commit;
+- the final-run commit (`final_sha`) is the closure itself, or a later linear
+  descendant of it such that every commit in `closure_sha..final_sha` is a
+  non-merge commit changing only non-runtime paths: `TASKBOARD.md`, `*.md` at
+  the repository root, `docs/**`, `.claude/**`, and `crm-v3/SPEC.md`
+  (`CLOSURE_DRIFT_ALLOWED_PATHS`). `src/`, `supabase/`, `scripts/`, `infra/`,
+  `.github/`, `tests/`, `public/`, `package.json`, `package-lock.json`, and every
+  path not on the allowlist are refused by name. The closure's marker must still
+  appear exactly once in TASKBOARD.md at `final_sha`, and the completion gate
+  runs on the `final_sha` taskboard.
+
+A documentation or agent-configuration pull request merged between the closure
+record and the final CI run therefore no longer consumes the release's closure
+slot. A commit that changes anything the application, the database, the deploy
+path, or CI runs still does, because a green run on that tree proves nothing
+about the deployed release.
 
 After the required final job succeeds, complete the release through:
 
 ```text
-sudo newme-deploy finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id>
+sudo newme-deploy finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id> [<final-run-sha>]
 ```
 
+`<final-run-sha>` is required exactly when it differs from `<closure-sha>`; it
+must equal canonical main and the SHA the final run was dispatched on.
 Finalization re-hashes the sealed bundle and every sealed artifact, requires the
 stored `acceptance_verified` digest, re-verifies canonical main immediately
-before the evidence write, and binds final CI to workflow ID `310914082`, path
-`.github/workflows/ci.yml`, its live active workflow identity, exact closure SHA,
-ordered timestamps, and the versioned freshness SLO. It also requires the strict
-database phase. Only then may it atomically write `release_status=complete`. The
-former freeform actor/fixture arguments are not accepted.
+before the evidence write, re-measures both rules above with the deployed
+release's own copy of `check-release-closure.mjs`, and binds final CI to
+workflow ID `310914082`, path `.github/workflows/ci.yml`, its live active
+workflow identity, the exact final-run SHA, ordered timestamps, and the
+versioned freshness SLO. It also requires the strict database phase. Only then
+may it atomically write `release_status=complete`, recording `closure_sha`,
+`final_sha`, and `final_ci_head_sha` (= `final_sha`) under `release_closure`.
+The former freeform actor/fixture arguments are not accepted.
+
+Because finalize runs the checker shipped inside the deployed release, a release
+cut from a tree that predates the tolerant rule can still only be closed under
+the single-slot rule; if its slot is gone, it is superseded as described below.
 
 ## When the closure slot is already gone
 
-The closure commit must be the release SHA's single direct child, and main is
-append-only, so a release has exactly one chance to be closed and it is destroyed
-by the next commit that lands. `release_status` therefore stops at
-`acceptance_verified` for good, and because an ordinary deployment required the
-live release to be `complete`, nothing could be deployed afterwards either --
-a frozen control plane, reached on 2026-09-11 when the runner provenance
-exceptions expired on 2026-09-01 and the only way to make main mergeable again
-was a pull request that consumed 8373de8's closure slot.
+The closure record must be the release SHA's single direct child, and main is
+append-only, so a release has exactly one chance to record its closure and that
+chance is destroyed by any other commit landing first. The slot is also consumed
+when, after a valid record, a commit touching a runtime path lands before the
+final CI run (non-runtime commits are tolerated, see above). `release_status`
+then stops at `acceptance_verified` for good, and because an ordinary deployment
+once required the live release to be `complete`, nothing could be deployed
+afterwards either -- a frozen control plane, reached on 2026-09-11 when the
+runner provenance exceptions expired on 2026-09-01 and the only way to make main
+mergeable again was a pull request that consumed 8373de8's closure slot.
 
 `verify_live_release_permits_new_release()` in `infra/systemd/newme-deploy.sh`
-now separates the two states that rule conflated, and
+separates the two states that rule conflated, and
 `tests/release/live-release-supersession.test.mjs` executes both:
 
-- the candidate is still a TASKBOARD.md-only single child of the live release, so
-  the closure is reachable and the release was merely not finalized yet: refused,
-  finalize it;
-- the candidate contains the live release but the slot is provably consumed (more
-  than one commit, or any non-TASKBOARD path) and the live release is
-  `acceptance_verified`: the deployment proceeds and prints
+- the closure is still reachable -- the first commit after the live release is a
+  TASKBOARD.md-only single child and every later commit up to the candidate is a
+  non-merge commit changing only `closure_drift_path_allowed` paths (the shell
+  twin of `CLOSURE_DRIFT_ALLOWED_PATHS`) -- so the release was merely not
+  finalized yet: refused, finalize it with the candidate as `<final-run-sha>`;
+- the candidate contains the live release but the slot is provably consumed (a
+  non-TASKBOARD first commit, a merge, or any runtime path after the record) and
+  the live release is `acceptance_verified`: the deployment proceeds and prints
   `superseded_release=<sha> superseded_status=... closure_slot=consumed`, which is
   the release's closing record in place of a TASKBOARD marker it can never carry.
 
@@ -241,9 +276,10 @@ refused: there is no verified production evidence to supersede. Its exit is
 `newme-production-rollback execute <reason>`, whose `release_recovery`
 transaction undoes it.
 
-The order that avoids all of this: close a release before merging anything else,
-and renew `infra/ci/provenance-exceptions.json` well before its 45-day expiry, so
-the calendar never forces a commit between a release and its closure.
+The order that avoids all of this: record the closure before merging anything
+else, run final CI promptly, and renew `infra/ci/provenance-exceptions.json`
+well before its 45-day expiry, so the calendar never forces a runtime commit
+between a release and its closure.
 
 ## Prepare a later application release
 

@@ -4,8 +4,11 @@
     "deployed release SHA has produced the evidence needed to close TASKBOARD.md.",
     "This is intentionally separate from required-jobs.json: deployment is gated",
     "at the release SHA, while final acceptance is gated at a later closure SHA.",
-    "scripts/check-release-closure.mjs proves that the release is an ancestor of",
-    "the closure and that their non-empty diff changes only TASKBOARD.md.",
+    "scripts/check-release-closure.mjs proves that the closure is the release's",
+    "single direct child changing only TASKBOARD.md, and that the final-run SHA",
+    "(the main head the job ran on) is the closure itself or a later linear",
+    "descendant whose intervening commits change only non-runtime paths",
+    "(TASKBOARD.md, root *.md, docs/**, .claude/**, crm-v3/SPEC.md).",
     "The closure TASKBOARD must contain the exact SHA-256 produced by canonical",
     "postdeploy attestation; canonical finalize reuses the same digest."
   ],
@@ -18,13 +21,13 @@
   "required_jobs": [
     {
       "name": "Release-final taskboard completion",
-      "why": "runs at the closure SHA, requires the workflow's release_sha input to name the deployed release SHA and acceptance_digest to name the canonically attested bundle, checks that exact release-to-closure relationship, and requires every TASKBOARD row to be complete"
+      "why": "runs at the final-run SHA (the closure SHA itself, or a later non-runtime-only descendant of it), requires the workflow's release_sha input to name the deployed release SHA, closure_sha the TASKBOARD-only closure record, and acceptance_digest the canonically attested bundle, checks that exact release-to-closure and closure-to-final relationship, and requires every TASKBOARD row to be complete"
     }
   ],
   "tolerated_conclusions": ["success"],
   "notes": [
-    "The closure SHA is not a second application release and must never replace",
-    "the exact SHA recorded by canonical deployment evidence.",
+    "Neither the closure SHA nor the final-run SHA is a second application release",
+    "and neither may replace the exact SHA recorded by canonical deployment evidence.",
     "A missing job, skipped job, non-success conclusion, missing release_sha or",
     "acceptance_digest input, or failed release-closure check is a refusal."
   ]

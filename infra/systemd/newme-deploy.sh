@@ -1157,11 +1157,15 @@ PY
   ;;
 esac
 
-# Completion is a two-commit claim. The immutable application release stays at
-# FINALIZE_RELEASE_SHA; a later canonical-main commit at FINALIZE_CLOSURE_SHA may
-# close postdeploy TASKBOARD rows, but it may change nothing else. This function
-# re-measures that relationship from the root-owned mirror and then requires the
-# release-final GitHub job to have succeeded at the closure SHA. It runs in a
+# Completion is a three-SHA claim. The immutable application release stays at
+# FINALIZE_RELEASE_SHA; its single direct child at FINALIZE_CLOSURE_SHA may close
+# postdeploy TASKBOARD rows, but it may change nothing else; and the release-final
+# GitHub job must have succeeded at FINALIZE_FINAL_SHA, the canonical-main head
+# it was dispatched on. FINALIZE_FINAL_SHA is the closure SHA itself (the original
+# single-slot flow) or a later linear descendant of it whose every intervening
+# commit changes only non-runtime paths (scripts/check-release-closure.mjs,
+# CLOSURE_DRIFT_ALLOWED_PATHS). This function re-measures all of that from the
+# root-owned mirror with the deployed release's own checker. It runs in a
 # subshell so token/config cleanup cannot be bypassed by an early return.
 verify_release_closure_and_final_ci() (
   set -Eeuo pipefail
@@ -1193,8 +1197,8 @@ verify_release_closure_and_final_ci() (
 
   git --git-dir="$mirror" fetch --quiet --prune origin '+refs/heads/main:refs/remotes/origin/main' || return 65
   main_sha="$(git --git-dir="$mirror" rev-parse refs/remotes/origin/main)" || return 65
-  [ "$FINALIZE_CLOSURE_SHA" = "$main_sha" ] || {
-    echo "closure SHA must equal canonical main" >&2
+  [ "$FINALIZE_FINAL_SHA" = "$main_sha" ] || {
+    echo "final-run SHA (the closure SHA unless a later non-runtime-only descendant is named) must equal canonical main" >&2
     return 65
   }
   [ -f "$checker" ] && [ ! -L "$checker" ] || {
@@ -1209,6 +1213,7 @@ verify_release_closure_and_final_ci() (
   "$NODE_BIN" "$checker" \
     --release-sha "$FINALIZE_RELEASE_SHA" \
     --closure-sha "$FINALIZE_CLOSURE_SHA" \
+    --final-sha "$FINALIZE_FINAL_SHA" \
     --acceptance-digest "$FINALIZE_ACCEPTANCE_DIGEST" \
     --repo "$mirror" || return 65
 
@@ -1263,6 +1268,7 @@ verify_release_closure_and_final_ci() (
   "$NODE_BIN" "$checker" \
     --release-sha "$FINALIZE_RELEASE_SHA" \
     --closure-sha "$FINALIZE_CLOSURE_SHA" \
+    --final-sha "$FINALIZE_FINAL_SHA" \
     --acceptance-digest "$FINALIZE_ACCEPTANCE_DIGEST" \
     --repo "$mirror" \
     --run-id "$FINALIZE_RUN_ID" \
@@ -1535,10 +1541,23 @@ esac
 # the closure pull request, and the remediation that made main mergeable again
 # had to consume the closure slot in order to exist.
 #
+# The closure rule itself was later made tolerant of NON-RUNTIME commits: the
+# closure record must still be the release's single TASKBOARD.md-only child, but
+# the final CI run may be dispatched on a later main head as long as every commit
+# between the record and that head changes only documentation, agent
+# configuration, or the taskboard (closure_drift_path_allowed below mirrors
+# CLOSURE_DRIFT_ALLOWED_PATHS in scripts/check-release-closure.mjs). A commit
+# touching src/, supabase/, scripts/, infra/, .github/, tests/, or package
+# manifests still consumes the slot, because the final run would then say nothing
+# about the tree the release was cut from.
+#
 # So this function separates the two states the old check conflated:
 #
-#   * the closure is STILL REACHABLE -- the candidate is a TASKBOARD.md-only
-#     single child of the live release. That is the operator error the rule was
+#   * the closure is STILL REACHABLE -- the first commit after the live release
+#     is a TASKBOARD.md-only single child, and every commit after it up to the
+#     candidate is a non-merge commit changing only closure_drift_path_allowed
+#     paths, so `newme-deploy finalize <release> <digest> <closure> <run> <candidate>`
+#     can still complete the live release. That is the operator error the rule was
 #     written for, and it is still refused: finalize, do not deploy;
 #   * the closure is UNREACHABLE and the live release was ATTESTED
 #     (`acceptance_verified` means postdeploy acceptance was gathered, verified
@@ -1557,11 +1576,63 @@ esac
 # tests/release/live-release-supersession.test.mjs EXECUTES this function against
 # real temporary repositories, including the refusals, because a regex over shell
 # text cannot tell a check from a comment about a check.
+
+# Shell twin of isClosureDriftAllowedPath() in scripts/check-release-closure.mjs:
+# the paths a commit between the closure record and the final-run SHA may touch.
+# The denylist is matched first so a widened allowlist can never reach runtime
+# paths. tests/release/live-release-supersession.test.mjs proves this function
+# and the JavaScript one agree on a shared corpus.
+closure_drift_path_allowed() (
+  local file=${1:-}
+  case "$file" in
+    ""|/*|*/|.|..|./*|../*|*/./*|*/../*|*/.|*/..) return 1 ;;
+    src/*|supabase/*|scripts/*|infra/*|.github/*|tests/*|public/*|node_modules/*) return 1 ;;
+    package.json|package-lock.json) return 1 ;;
+    TASKBOARD.md|crm-v3/SPEC.md) return 0 ;;
+    docs/?*|.claude/?*) return 0 ;;
+    */*) return 1 ;;
+    *.md) return 0 ;;
+    *) return 1 ;;
+  esac
+)
+
+# Is the live release's closure still reachable through this candidate? Prints
+# nothing; exit 0 means "yes, finalize it instead of deploying", exit 1 means the
+# slot is consumed. Any Git failure is treated as consumed-unknown (exit 65).
+live_release_closure_reachable() (
+  set -Eeuo pipefail
+  local mirror=${1:-} live_sha=${2:-} candidate_sha=${3:-}
+  local chain line sha parents index=0 file changed
+  chain="$(git --git-dir="$mirror" rev-list --reverse --parents "$live_sha..$candidate_sha")" || return 65
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    sha=${line%% *}
+    parents=${line#"$sha"}
+    parents=${parents# }
+    case "$parents" in
+      *" "*|"") return 1 ;;
+    esac
+    changed="$(git --git-dir="$mirror" diff-tree --no-commit-id --name-only --no-renames -r "$sha" --)" || return 65
+    if [ "$index" -eq 0 ]; then
+      [ "$parents" = "$live_sha" ] || return 1
+      [ "$changed" = TASKBOARD.md ] || return 1
+    else
+      while IFS= read -r file; do
+        [ -n "$file" ] || continue
+        closure_drift_path_allowed "$file" || return 1
+      done <<< "$changed"
+    fi
+    index=$((index + 1))
+  done <<< "$chain"
+  [ "$index" -ge 1 ] || return 1
+  return 0
+)
+
 verify_live_release_permits_new_release() (
   set -Eeuo pipefail
   local evidence_file=${1:-} live_sha=${2:-} candidate_sha=${3:-}
   local db_transition_only=${4:-} operation=${5:-} mirror=${6:-}
-  local release_status commits changed
+  local release_status commits reachable
 
   release_status="$(python3 - "$evidence_file" "$live_sha" <<'PY'
 import json
@@ -1613,28 +1684,36 @@ PY
     echo "the candidate is the live release" >&2
     return 65
   }
-  changed="$(git --git-dir="$mirror" diff --name-only "$live_sha" "$candidate_sha")" || return 65
-  if [ "$commits" -eq 1 ] && [ "$changed" = TASKBOARD.md ]; then
-    echo "the live release's closure commit is still reachable; finalize it instead of deploying" >&2
-    return 65
-  fi
+  local reachable=0
+  live_release_closure_reachable "$mirror" "$live_sha" "$candidate_sha" || reachable=$?
+  case "$reachable" in
+    0)
+      echo "the live release's closure commit is still reachable; finalize it instead of deploying" >&2
+      return 65
+      ;;
+    1) ;;
+    *) return 65 ;;
+  esac
 
   echo "superseded_release=$live_sha superseded_status=$release_status closure_slot=consumed commits_since=$commits"
   return 0
 )
 
 if [ "${1:-}" = "finalize" ]; then
-  [ "$#" -eq 5 ] || {
-    echo "usage: newme-deploy finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id>" >&2
+  [ "$#" -eq 5 ] || [ "$#" -eq 6 ] || {
+    echo "usage: newme-deploy finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id> [<final-run-sha>]" >&2
     exit 64
   }
   FINALIZE_RELEASE_SHA=${2:-}
   FINALIZE_ACCEPTANCE_DIGEST=${3:-}
   FINALIZE_CLOSURE_SHA=${4:-}
   FINALIZE_RUN_ID=${5:-}
+  # The final-run SHA defaults to the closure SHA (original single-slot flow).
+  FINALIZE_FINAL_SHA=${6:-$FINALIZE_CLOSURE_SHA}
   if ! [[ "$FINALIZE_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
     ! [[ "$FINALIZE_ACCEPTANCE_DIGEST" =~ ^[0-9a-f]{64}$ ]] ||
     ! [[ "$FINALIZE_CLOSURE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+    ! [[ "$FINALIZE_FINAL_SHA" =~ ^[0-9a-f]{40}$ ]] ||
     ! [[ "$FINALIZE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
     echo "finalize arguments are invalid" >&2
     exit 64
@@ -1755,10 +1834,10 @@ PY
     exit 65
   }
   bash "$FINALIZE_TARGET/scripts/finalize-deploy-evidence.sh" \
-    "$EVIDENCE_FILE" "$FINALIZE_ACCEPTANCE_DIGEST" "$FINALIZE_CLOSURE_SHA" "$FINALIZE_RUN_ID"
+    "$EVIDENCE_FILE" "$FINALIZE_ACCEPTANCE_DIGEST" "$FINALIZE_CLOSURE_SHA" "$FINALIZE_RUN_ID" "$FINALIZE_FINAL_SHA"
   sync -f "$EVIDENCE_FILE"
   sync -f "$FINALIZE_TARGET/.audit"
-  echo "finalized release=$FINALIZE_RELEASE_SHA acceptance=$FINALIZE_ACCEPTANCE_DIGEST closure=$FINALIZE_CLOSURE_SHA final_run=$FINALIZE_RUN_ID evidence=$EVIDENCE_FILE status=complete"
+  echo "finalized release=$FINALIZE_RELEASE_SHA acceptance=$FINALIZE_ACCEPTANCE_DIGEST closure=$FINALIZE_CLOSURE_SHA final=$FINALIZE_FINAL_SHA final_run=$FINALIZE_RUN_ID evidence=$EVIDENCE_FILE status=complete"
   exit 0
 fi
 

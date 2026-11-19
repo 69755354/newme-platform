@@ -445,8 +445,8 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(deploy, /ATTEST_BUNDLE="\$POSTDEPLOY_INTAKE_ROOT\/\$ATTEST_RELEASE_SHA\/bundle\.json"/);
   assert.match(deploy, /verify-postdeploy-acceptance\.mjs/);
   assert.match(deploy, /record-deploy-acceptance\.mjs/);
-  assert.match(deploy, /finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id>/);
-  assert.match(deploy, /closure SHA must equal canonical main/);
+  assert.match(deploy, /finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id> \[<final-run-sha>\]/);
+  assert.match(deploy, /final-run SHA \(the closure SHA unless a later non-runtime-only descendant is named\) must equal canonical main/);
   assert.match(deploy, /final-required-jobs\.json/);
   assert.match(deploy, /status=acceptance_verified/);
   assert.doesNotMatch(deploy, /UAT_ACTOR|UAT_FIXTURE_IDS|FIXTURE_CLEANUP_STATUS|UAT_STATUS/);

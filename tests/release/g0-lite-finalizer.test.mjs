@@ -95,7 +95,7 @@ async function fixture({ status = "acceptance_verified" } = {}) {
   return { path, directory, sealed, bundleDigest, artifactDigest };
 }
 
-function finalize(path, acceptanceDigest, closureSha = CLOSURE_SHA, finalRunId = FINAL_RUN_ID) {
+function finalize(path, acceptanceDigest, closureSha = CLOSURE_SHA, finalRunId = FINAL_RUN_ID, finalSha = null) {
   return spawnSync(process.execPath, [
     "scripts/run-bash.mjs",
     "scripts/finalize-deploy-evidence.sh",
@@ -103,6 +103,7 @@ function finalize(path, acceptanceDigest, closureSha = CLOSURE_SHA, finalRunId =
     acceptanceDigest,
     closureSha,
     finalRunId,
+    ...(finalSha ? [finalSha] : []),
   ], { encoding: "utf8" });
 }
 
@@ -127,7 +128,35 @@ test("acceptance_verified plus the matching sealed digest completes release", as
   assert.equal(completed.release_closure.acceptance_digest, fx.bundleDigest);
   assert.equal(completed.release_closure.release_sha, RELEASE_SHA);
   assert.equal(completed.release_closure.closure_sha, CLOSURE_SHA);
+  assert.equal(completed.release_closure.final_sha, CLOSURE_SHA, "the final-run SHA defaults to the closure SHA");
+  assert.equal(completed.release_closure.final_ci_head_sha, CLOSURE_SHA);
   assert.equal(completed.release_closure.final_ci_run_id, FINAL_RUN_ID);
+});
+
+test("a distinct final-run SHA is recorded next to the closure SHA and binds final CI", async () => {
+  const finalSha = "e".repeat(40);
+  const fx = await fixture();
+  const result = finalize(fx.path, fx.bundleDigest, CLOSURE_SHA, FINAL_RUN_ID, finalSha);
+  assert.equal(result.status, 0, result.stderr);
+  const completed = await evidence(fx.path);
+  assert.equal(completed.release_status, "complete");
+  assert.equal(completed.release_closure.closure_sha, CLOSURE_SHA);
+  assert.equal(completed.release_closure.final_sha, finalSha);
+  assert.equal(completed.release_closure.final_ci_head_sha, finalSha);
+
+  const retry = finalize(fx.path, fx.bundleDigest, CLOSURE_SHA, FINAL_RUN_ID, finalSha);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.deepEqual(await evidence(fx.path), completed);
+  const retryWithoutFinal = finalize(fx.path, fx.bundleDigest, CLOSURE_SHA, FINAL_RUN_ID);
+  assert.notEqual(retryWithoutFinal.status, 0, "a retry that names a different final-run SHA is refused");
+  assert.deepEqual(await evidence(fx.path), completed);
+
+  for (const bad of [RELEASE_SHA, "E".repeat(40), "e".repeat(39), "not-a-sha"]) {
+    const other = await fixture();
+    const refused = finalize(other.path, other.bundleDigest, CLOSURE_SHA, FINAL_RUN_ID, bad);
+    assert.notEqual(refused.status, 0, bad);
+    assert.equal((await evidence(other.path)).release_status, "acceptance_verified");
+  }
 });
 
 test("wrong acceptance digest, closure SHA, and final run fail closed", async () => {

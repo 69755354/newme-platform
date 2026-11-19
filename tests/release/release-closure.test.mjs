@@ -12,9 +12,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  CLOSURE_DRIFT_ALLOWED_PATHS,
+  auditClosureDrift,
   auditFinalRequiredRun,
   auditReleaseClosure,
   inspectReleaseClosure,
+  isClosureDriftAllowedPath,
 } from "../../scripts/check-release-closure.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -103,12 +106,37 @@ function fixture() {
   return { repo, releaseSha, closureSha, siblingSha, sourceSha, acceptanceDigest: ACCEPTANCE_DIGEST };
 }
 
-function runCli(repo, releaseSha, closureSha, acceptanceDigest = ACCEPTANCE_DIGEST) {
+function runCli(repo, releaseSha, closureSha, acceptanceDigest = ACCEPTANCE_DIGEST, finalSha = null) {
   return spawnSync(
     process.execPath,
-    [CLI, "--release-sha", releaseSha, "--closure-sha", closureSha, "--acceptance-digest", acceptanceDigest, "--repo", repo],
+    [
+      CLI,
+      "--release-sha", releaseSha,
+      "--closure-sha", closureSha,
+      "--acceptance-digest", acceptanceDigest,
+      "--repo", repo,
+      ...(finalSha ? ["--final-sha", finalSha] : []),
+    ],
     { encoding: "utf8", windowsHide: true },
   );
+}
+
+/**
+ * Commits that land on main after the closure record. Each entry becomes one
+ * commit on a branch started at `from`; returns the branch head.
+ */
+function driftChain(repo, from, name, steps) {
+  git(repo, "switch", "--quiet", "--create", name, from);
+  let head = from;
+  for (const [index, files] of steps.entries()) {
+    for (const [file, contents] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+      if (contents === null) rmSync(path.join(repo, file));
+      else writeFileSync(path.join(repo, file), contents);
+    }
+    head = commit(repo, `${name} step ${index + 1}`);
+  }
+  return head;
 }
 
 function finalRunEvidence(closureSha, overrides = {}) {
@@ -175,7 +203,7 @@ function writeFinalRunEvidence(repo, evidence) {
   return files;
 }
 
-function runFinalCli(repo, releaseSha, closureSha, evidence, runId = FINAL_RUN_ID) {
+function runFinalCli(repo, releaseSha, closureSha, evidence, runId = FINAL_RUN_ID, finalSha = null) {
   const files = writeFinalRunEvidence(repo, evidence);
   return spawnSync(
     process.execPath,
@@ -185,6 +213,7 @@ function runFinalCli(repo, releaseSha, closureSha, evidence, runId = FINAL_RUN_I
       "--closure-sha", closureSha,
       "--acceptance-digest", ACCEPTANCE_DIGEST,
       "--repo", repo,
+      ...(finalSha ? ["--final-sha", finalSha] : []),
       "--run-id", runId,
       "--run-json-file", files.runJsonFile,
       "--jobs-json-file", files.jobsJsonFile,
@@ -207,8 +236,215 @@ test("a non-empty TASKBOARD-only descendant is a valid closure", (t) => {
 
   const cli = runCli(data.repo, data.releaseSha, data.closureSha);
   assert.equal(cli.status, 0, cli.stderr);
-  assert.match(cli.stdout, new RegExp(`release=${data.releaseSha} closure=${data.closureSha}`));
+  assert.match(cli.stdout, new RegExp(`release=${data.releaseSha} closure=${data.closureSha} final=${data.closureSha}`));
   assert.match(cli.stdout, /changed files \(1\): TASKBOARD\.md/);
+  assert.doesNotMatch(cli.stdout, /closure-to-final/);
+
+  // (a) The original single-slot flow, with the final SHA named explicitly as
+  // the closure itself, is unchanged.
+  const explicit = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, data.closureSha);
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.equal(explicit.stdout, cli.stdout);
+});
+
+test("(b) non-runtime commits between the closure record and the final-run SHA are tolerated", (t) => {
+  const data = fixture();
+  t.after(() => rmSync(data.repo, { recursive: true, force: true }));
+  const finalSha = driftChain(data.repo, data.closureSha, "docs-chore", [
+    { "docs/runbooks/new.md": "# runbook\n", "docs/old.md": "old\n", ".claude/hooks/pre-commit.sh": "#!/bin/sh\n", "CLAUDE.md": "@AGENTS.md\n" },
+    { "crm-v3/SPEC.md": "# spec\n", "README.md": "readme\n", "docs/old.md": null, "docs/arch.excalidraw": "{}\n" },
+    { "TASKBOARD.md": `${CLOSURE_BOARD}\n| NEXT-ITEM | TODO | Codex | 2026-08-16 |\n` },
+  ]);
+
+  const measured = inspectReleaseClosure({ repo: data.repo, releaseSha: data.releaseSha, closureSha: data.closureSha, finalSha });
+  assert.equal(measured.closureIsFinalAncestor, true);
+  assert.equal(measured.driftCommitCount, 3);
+  assert.deepEqual(measured.driftCommits.map((entry) => entry.parents.length), [1, 1, 1]);
+  assert.equal(measured.driftCommits[0].parents[0], data.closureSha);
+  assert.equal(measured.driftCommits.at(-1).sha, finalSha);
+  assert.deepEqual(auditReleaseClosure({ ...data, finalSha, ...measured }), []);
+
+  const cli = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, finalSha);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, new RegExp(`release=${data.releaseSha} closure=${data.closureSha} final=${finalSha}`));
+  assert.match(cli.stdout, /closure-to-final non-runtime commits \(3\)/);
+  assert.match(cli.stdout, /closure-to-final changed files \(\d+\): .*docs\/runbooks\/new\.md/);
+
+  // Final CI must be bound to the final-run SHA, not to the closure record.
+  const atFinal = runFinalCli(data.repo, data.releaseSha, data.closureSha, finalRunEvidence(finalSha), FINAL_RUN_ID, finalSha);
+  assert.equal(atFinal.status, 0, atFinal.stderr);
+  assert.match(atFinal.stdout, new RegExp(`is green at final-run SHA ${finalSha}`));
+  const atClosure = runFinalCli(data.repo, data.releaseSha, data.closureSha, finalRunEvidence(data.closureSha), FINAL_RUN_ID, finalSha);
+  assert.equal(atClosure.status, 1);
+  assert.match(atClosure.stderr, /final run head_sha is not the final-run SHA/);
+});
+
+test("(b) the closure record itself stays strict even when the drift is non-runtime", (t) => {
+  const data = fixture();
+  t.after(() => rmSync(data.repo, { recursive: true, force: true }));
+  // Closure that also changed a source file, followed by a docs-only commit: the
+  // tolerant drift rule must not launder the strict single-child rule.
+  const finalSha = driftChain(data.repo, data.sourceSha, "docs-after-bad-closure", [{ "docs/x.md": "x\n" }]);
+  const cli = runCli(data.repo, data.releaseSha, data.sourceSha, ACCEPTANCE_DIGEST, finalSha);
+  assert.equal(cli.status, 1);
+  assert.match(cli.stderr, /the closure commit itself must change exactly TASKBOARD\.md/);
+
+  // A docs commit directly after the release, with the TASKBOARD closure after
+  // it, is the wrong order: the record must be the first commit.
+  const docsFirst = driftChain(data.repo, data.releaseSha, "docs-first", [
+    { "docs/x.md": "x\n" },
+    { "TASKBOARD.md": CLOSURE_BOARD },
+  ]);
+  const wrongOrder = runCli(data.repo, data.releaseSha, docsFirst);
+  assert.equal(wrongOrder.status, 1);
+  assert.match(wrongOrder.stderr, /single direct child/);
+});
+
+test("(c) a runtime path anywhere between the closure record and the final-run SHA is refused by name", (t) => {
+  const data = fixture();
+  t.after(() => rmSync(data.repo, { recursive: true, force: true }));
+  const cases = [
+    ["src/app/page.tsx", "src"],
+    ["supabase/migrations/20261120000000_x.sql", "supabase"],
+    ["scripts/check-release-closure.mjs", "scripts"],
+    ["infra/release/final-required-jobs.json", "infra"],
+    [".github/workflows/ci.yml", "github"],
+    ["tests/release/x.test.mjs", "tests"],
+    ["package.json", "package-json"],
+    ["package-lock.json", "package-lock"],
+    ["public/robots.txt", "public"],
+    ["next.config.ts", "next-config"],
+    ["crm-v3/ops/sync-metadata.json", "crm-v3-non-spec"],
+    ["notes/README.md", "nested-md-outside-docs"],
+  ];
+  for (const [file, name] of cases) {
+    // One harmless docs commit on either side so the offending commit is in the
+    // middle of an otherwise acceptable chain.
+    const finalSha = driftChain(data.repo, data.closureSha, `runtime-${name}`, [
+      { "docs/before.md": "before\n" },
+      { [file]: "changed\n" },
+      { "docs/after.md": "after\n" },
+    ]);
+    const measured = inspectReleaseClosure({ repo: data.repo, releaseSha: data.releaseSha, closureSha: data.closureSha, finalSha });
+    const problems = auditReleaseClosure({ ...data, finalSha, ...measured }).join("\n");
+    assert.match(problems, new RegExp(`closure-to-final commit [0-9a-f]{12} changes paths outside the non-runtime allowlist: ${JSON.stringify(file).replaceAll(".", "\\.")}`), file);
+    assert.match(problems, /closure-to-final diff contains paths outside the non-runtime allowlist/);
+    const cli = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, finalSha);
+    assert.equal(cli.status, 1, file);
+    assert.match(cli.stderr, new RegExp(JSON.stringify(file).replaceAll(".", "\\.")));
+  }
+
+  // A rename out of a runtime path shows up as a delete of that path and is refused.
+  const renamed = driftChain(data.repo, data.closureSha, "rename-src", [
+    { "src/moved.ts": "export const moved = true;\n" },
+  ]);
+  const movedAway = driftChain(data.repo, renamed, "rename-src-away", [
+    { "src/moved.ts": null, "docs/moved.ts": "export const moved = true;\n" },
+  ]);
+  const rename = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, movedAway);
+  assert.equal(rename.status, 1);
+  assert.match(rename.stderr, /"src\/moved\.ts"/);
+});
+
+test("(d) merge commits, non-descendants, a final SHA before the closure, and an erased marker are refused", (t) => {
+  const data = fixture();
+  t.after(() => rmSync(data.repo, { recursive: true, force: true }));
+
+  // Merge of a docs-only branch into a docs-only chain: still refused, because
+  // the chain must be linear.
+  const left = driftChain(data.repo, data.closureSha, "merge-left", [{ "docs/left.md": "left\n" }]);
+  driftChain(data.repo, data.closureSha, "merge-right", [{ "docs/right.md": "right\n" }]);
+  git(data.repo, "switch", "--quiet", "merge-left");
+  git(data.repo, "merge", "--quiet", "--no-ff", "--no-edit", "merge-right");
+  const mergeSha = git(data.repo, "rev-parse", "HEAD");
+  const merged = inspectReleaseClosure({ repo: data.repo, releaseSha: data.releaseSha, closureSha: data.closureSha, finalSha: mergeSha });
+  const mergeProblems = auditReleaseClosure({ ...data, finalSha: mergeSha, ...merged }).join("\n");
+  assert.match(mergeProblems, /is a merge or root commit \(2 parents\)/);
+  const mergeCli = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, mergeSha);
+  assert.equal(mergeCli.status, 1);
+  assert.match(mergeCli.stderr, /merge or root commit/);
+  assert.notEqual(left, mergeSha);
+
+  // A docs-only commit on a sibling branch of the closure does not descend from it.
+  const sibling = driftChain(data.repo, data.releaseSha, "sibling-docs", [{ "docs/sibling.md": "s\n" }]);
+  const siblingCli = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, sibling);
+  assert.equal(siblingCli.status, 1);
+  assert.match(siblingCli.stderr, /closure SHA is not an ancestor of final SHA/);
+
+  // The release SHA itself, and a SHA that does not exist, cannot be the final run.
+  const atRelease = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, data.releaseSha);
+  assert.equal(atRelease.status, 1);
+  assert.match(atRelease.stderr, /final SHA must not be the release SHA/);
+  const absent = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, "f".repeat(40));
+  assert.equal(absent.status, 1);
+  assert.match(absent.stderr, /final SHA is not an existing commit/);
+  const malformed = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, "F".repeat(40));
+  assert.equal(malformed.status, 1);
+  assert.match(malformed.stderr, /final SHA must be exactly 40 lowercase hexadecimal characters/);
+
+  // A later TASKBOARD edit that removes or duplicates the closure's marker is refused.
+  const erased = driftChain(data.repo, data.closureSha, "erase-marker", [
+    { "TASKBOARD.md": CLOSURE_BOARD.replace(`\n${ACCEPTANCE_MARKER}\n`, "\n") },
+  ]);
+  const erasedCli = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, erased);
+  assert.equal(erasedCli.status, 1);
+  assert.match(erasedCli.stderr, /must still carry the closure acceptance marker exactly once \(found 0\)/);
+  const duplicated = driftChain(data.repo, data.closureSha, "duplicate-marker", [
+    { "TASKBOARD.md": `${CLOSURE_BOARD}\n${ACCEPTANCE_MARKER}\n` },
+  ]);
+  const duplicatedCli = runCli(data.repo, data.releaseSha, data.closureSha, ACCEPTANCE_DIGEST, duplicated);
+  assert.equal(duplicatedCli.status, 1);
+  assert.match(duplicatedCli.stderr, /exactly once \(found 2\)/);
+});
+
+test("the drift allowlist is closed: denylist first, root markdown only, no traversal", () => {
+  assert.deepEqual([...CLOSURE_DRIFT_ALLOWED_PATHS], [
+    "TASKBOARD.md",
+    "*.md (repository root only)",
+    "docs/**",
+    ".claude/**",
+    "crm-v3/SPEC.md",
+  ]);
+  for (const allowed of ["TASKBOARD.md", "CLAUDE.md", "AGENTS.md", "README.md", "docs/a.md", "docs/deep/b.svg", ".claude/settings.json", ".claude/hooks/x.sh", "crm-v3/SPEC.md"]) {
+    assert.equal(isClosureDriftAllowedPath(allowed), true, allowed);
+  }
+  for (const denied of [
+    "", "/docs/a.md", "docs/", "docs", ".claude", "docs/../src/a.ts", "./README.md", "docs/./a.md",
+    "src/a.md", "supabase/README.md", "scripts/README.md", "infra/README.md", ".github/README.md",
+    "tests/README.md", "public/a.md", "node_modules/x/README.md", "package.json", "package-lock.json",
+    "next.config.ts", "tsconfig.json", "crm-v3/README.md", "crm-v3/ops/sync-metadata.json", "nested/x.md",
+    "TASKBOARD.md.bak", "docs\\a.md", 42, null, undefined,
+  ]) {
+    assert.equal(isClosureDriftAllowedPath(denied), false, String(denied));
+  }
+});
+
+test("an unmeasured or inconsistent closure-to-final claim is refused", () => {
+  const closureSha = "b".repeat(40);
+  const finalSha = "c".repeat(40);
+  const base = { closureSha, finalSha, acceptanceDigest: ACCEPTANCE_DIGEST };
+  const unmeasured = auditClosureDrift(base).join("\n");
+  assert.match(unmeasured, /ancestry was not measured/);
+  assert.match(unmeasured, /commit chain was not measured/);
+
+  const good = {
+    ...base,
+    closureIsFinalAncestor: true,
+    driftCommitCount: 1,
+    driftCommits: [{ sha: finalSha, parents: [closureSha], changedFiles: ["docs/a.md"] }],
+    driftChangedFiles: ["docs/a.md"],
+    finalTaskboardText: `${CLOSURE_BOARD}`,
+  };
+  assert.deepEqual(auditClosureDrift(good), []);
+  assert.deepEqual(auditClosureDrift({ ...good, finalSha: closureSha }), [], "final equal to closure is the original rule");
+  assert.match(auditClosureDrift({ ...good, driftCommitCount: 2 }).join("\n"), /commit count does not match/);
+  assert.match(auditClosureDrift({ ...good, driftCommits: [] }).join("\n"), /range is empty/);
+  assert.match(auditClosureDrift({ ...good, driftCommits: [{ sha: finalSha, parents: ["e".repeat(40)], changedFiles: [] }] }).join("\n"), /does not continue the linear chain/);
+  assert.match(auditClosureDrift({ ...good, driftCommits: [{ sha: "e".repeat(40), parents: [closureSha], changedFiles: [] }] }).join("\n"), /does not end at the final SHA/);
+  assert.match(auditClosureDrift({ ...good, driftCommits: [{ sha: finalSha, parents: [closureSha] }] }).join("\n"), /inventory was not measured/);
+  assert.match(auditClosureDrift({ ...good, driftChangedFiles: undefined }).join("\n"), /changed files were not measured/);
+  assert.match(auditClosureDrift({ ...good, finalTaskboardText: undefined }).join("\n"), /TASKBOARD\.md content was not measured/);
+  assert.match(auditClosureDrift({ ...good, closureIsFinalAncestor: false }).join("\n"), /not an ancestor of final/);
 });
 
 test("a multi-commit modify-then-revert chain cannot hide source changes behind a net TASKBOARD diff", (t) => {
@@ -455,6 +691,8 @@ test("the final job manifest binds the closure job to the deployed release input
   assert.deepEqual(manifest.tolerated_conclusions, ["success"]);
   assert.deepEqual(manifest.required_jobs.map((job) => job.name), ["Release-final taskboard completion"]);
   assert.match(manifest.required_jobs[0].why, /closure SHA/);
+  assert.match(manifest.required_jobs[0].why, /final-run SHA/);
+  assert.match(manifest.required_jobs[0].why, /non-runtime-only descendant/);
   assert.match(manifest.required_jobs[0].why, /release_sha input/);
   assert.match(manifest.required_jobs[0].why, /acceptance_digest/);
   assert.match(manifest.required_jobs[0].why, /deployed release SHA/);
@@ -473,7 +711,7 @@ test("final CI evidence is accepted only when the run and required job are green
 
   const cli = runFinalCli(data.repo, data.releaseSha, data.closureSha, evidence);
   assert.equal(cli.status, 0, cli.stderr);
-  assert.match(cli.stdout, new RegExp(`final CI run ${FINAL_RUN_ID} is green at closure SHA`));
+  assert.match(cli.stdout, new RegExp(`final CI run ${FINAL_RUN_ID} is green at final-run SHA ${data.closureSha}`));
 });
 
 test("a green final run at the release SHA cannot close the later closure SHA", (t) => {
@@ -488,12 +726,12 @@ test("a green final run at the release SHA cannot close the later closure SHA", 
     runId: FINAL_RUN_ID,
     ...evidence,
   });
-  assert.match(problems.join("\n"), /final run head_sha is not the closure SHA/);
+  assert.match(problems.join("\n"), /final run head_sha is not the final-run SHA/);
   assert.match(problems.join("\n"), /ran against a different commit/);
 
   const cli = runFinalCli(data.repo, data.releaseSha, data.closureSha, evidence);
   assert.equal(cli.status, 1);
-  assert.match(cli.stderr, /final run head_sha is not the closure SHA/);
+  assert.match(cli.stderr, /final run head_sha is not the final-run SHA/);
 });
 
 test("same-name workflow lookalikes, inactive workflow identity, invalid ordering, and stale CI are refused", () => {
@@ -685,6 +923,7 @@ test("release-final workflow proves the exact closure before checking taskboard 
   const workflow = readFileSync(CI_WORKFLOW, "utf8").replaceAll("\r\n", "\n");
   assert.match(workflow, /\n      release_sha:\n[\s\S]*?type: string/);
   assert.match(workflow, /\n      closure_sha:\n[\s\S]*?type: string/);
+  assert.match(workflow, /\n      final_sha:\n[\s\S]*?default: ''\n[\s\S]*?type: string/);
   assert.match(workflow, /\n      acceptance_digest:\n[\s\S]*?type: string/);
 
   const start = workflow.indexOf("  taskboard-completion:");
@@ -697,10 +936,18 @@ test("release-final workflow proves the exact closure before checking taskboard 
   assert.match(job, /fetch-depth: 0/);
   assert.match(job, /RELEASE_SHA: \$\{\{ inputs\.release_sha \}\}/);
   assert.match(job, /CLOSURE_SHA: \$\{\{ inputs\.closure_sha \}\}/);
+  assert.match(job, /FINAL_SHA: \$\{\{ inputs\.final_sha \}\}/);
   assert.match(job, /ACCEPTANCE_DIGEST: \$\{\{ inputs\.acceptance_digest \}\}/);
+  assert.match(job, /--closure-sha "\$CLOSURE_SHA"/);
+  assert.match(job, /--final-sha "\$FINAL_SHA"/);
   assert.match(job, /--acceptance-digest "\$ACCEPTANCE_DIGEST"/);
   assert.match(job, /\[ "\$GITHUB_REF" = "refs\/heads\/main" \]/);
-  assert.match(job, /\[ "\$CLOSURE_SHA" = "\$GITHUB_SHA" \]/);
+  // The final-run SHA defaults to the closure SHA, must be a full SHA, and must be
+  // the exact workflow SHA: the closure record is never required to be main head.
+  assert.match(job, /FINAL_SHA="\$\{FINAL_SHA:-\$CLOSURE_SHA\}"/);
+  assert.match(job, /\[\[ "\$FINAL_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
+  assert.match(job, /\[ "\$FINAL_SHA" = "\$GITHUB_SHA" \]/);
+  assert.doesNotMatch(job, /\[ "\$CLOSURE_SHA" = "\$GITHUB_SHA" \]/);
   assert.match(job, /\[ "\$\(git rev-parse HEAD\)" = "\$GITHUB_SHA" \]/);
 });
 
@@ -715,22 +962,26 @@ test("canonical attestation and digest-only finalization replace freeform UAT se
   assert.match(source, /verify-postdeploy-acceptance\.mjs/);
   assert.match(source, /record-deploy-acceptance\.mjs/);
   assert.match(source, /status=acceptance_verified/);
-  assert.match(finalize, /\[ "\$#" -eq 5 \]/);
+  assert.match(finalize, /\[ "\$#" -eq 5 \] \|\| \[ "\$#" -eq 6 \]/);
   assert.match(finalize, /FINALIZE_ACCEPTANCE_DIGEST=\$\{3:-\}/);
+  assert.match(finalize, /FINALIZE_FINAL_SHA=\$\{6:-\$FINALIZE_CLOSURE_SHA\}/);
+  assert.match(finalize, /! \[\[ "\$FINALIZE_FINAL_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
   assert.doesNotMatch(finalize, /UAT_ACTOR|UAT_FIXTURE_IDS|FIXTURE_CLEANUP_STATUS|UAT_STATUS/);
   assert.match(finalize, /verify_release_closure_and_final_ci/);
   assert.ok(finalize.indexOf("verify_release_closure_and_final_ci") < finalize.indexOf("finalize-deploy-evidence.sh"));
-  assert.match(finalize, /"\$EVIDENCE_FILE" "\$FINALIZE_ACCEPTANCE_DIGEST" "\$FINALIZE_CLOSURE_SHA" "\$FINALIZE_RUN_ID"/);
+  assert.match(finalize, /"\$EVIDENCE_FILE" "\$FINALIZE_ACCEPTANCE_DIGEST" "\$FINALIZE_CLOSURE_SHA" "\$FINALIZE_RUN_ID" "\$FINALIZE_FINAL_SHA"/);
 
   const verifierStart = source.indexOf("verify_release_closure_and_final_ci() (");
   assert.ok(verifierStart >= 0 && verifierStart < finalizeStart);
   const verifier = source.slice(verifierStart, finalizeStart);
-  assert.match(verifier, /\[ "\$FINALIZE_CLOSURE_SHA" = "\$main_sha" \]/);
+  assert.match(verifier, /\[ "\$FINALIZE_FINAL_SHA" = "\$main_sha" \]/);
+  assert.doesNotMatch(verifier, /\[ "\$FINALIZE_CLOSURE_SHA" = "\$main_sha" \]/);
   assert.match(verifier, /\$FINALIZE_CLOSURE_SHA:infra\/release\/final-required-jobs\.json/);
   assert.match(verifier, /actions\/runs\/\$FINALIZE_RUN_ID\/jobs\?per_page=100&filter=latest/);
   assert.match(verifier, /actions\/workflows\/\$CANONICAL_CI_WORKFLOW_ID/);
   assert.match(verifier, /--release-sha "\$FINALIZE_RELEASE_SHA"/);
   assert.match(verifier, /--closure-sha "\$FINALIZE_CLOSURE_SHA"/);
+  assert.equal(verifier.split('--final-sha "$FINALIZE_FINAL_SHA"').length - 1, 2, "both checker invocations bind the final-run SHA");
   assert.match(verifier, /--acceptance-digest "\$FINALIZE_ACCEPTANCE_DIGEST"/);
   assert.match(verifier, /--run-id "\$FINALIZE_RUN_ID"/);
   assert.match(verifier, /--workflow-json-file "\$workflow_file"/);

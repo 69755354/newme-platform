@@ -200,7 +200,7 @@ export function locateSalesColumns(phoneCol, clidCol, cfg = DEFAULTS) {
 
 /**
  * leads: [{lead_ref, phone, ctwa_clid, created_at}] (OS side). Returns
- * {writes:[{row, value, lead_ref}], unchanged, unmatched:[{lead_ref, reason}], ambiguous:[{lead_ref, rows}], manual:[{lead_ref, row, edited, current}], conflicts}.
+ * {writes:[{row, value, lead_ref}], unchanged, unmatched:[{lead_ref, reason}], ambiguous:[{lead_ref, rows}], ambiguousDestination:[{lead_ref, row}], manual:[{lead_ref, row, edited, current}], conflicts}.
  * A cell is written only when it is empty or still holds the value this program wrote earlier for that lead (owned[lead_ref]);
  * anything else was typed by a person: skipped and reported, never overwritten.
  * Only ever plans a cell in the clid column of a data row; rows that do not match are reported, never created.
@@ -225,22 +225,30 @@ export function planCtwaColumnX(phoneCol, clidCol, leads, cfg = DEFAULTS, owned 
     if (seen.ctwa_clid !== lead.ctwa_clid) conflicts++;
     if (Date.parse(lead.created_at ?? "") < Date.parse(seen.created_at ?? "")) perPhone.set(key, lead);
   }
-  const writes = []; const ambiguous = []; let unchanged = 0; const manual = [];
+  const writes = []; const ambiguous = []; const ambiguousDestination = []; let unchanged = 0; const manual = [];
+  // first decide which sheet row each phone's lead would write to, then look at rows that two different leads aim at
+  const byRow = new Map();
   for (const [key, lead] of perPhone) {
     const rows = [...(byKey.get(key) ?? [])];
     if (rows.length === 0) { unmatched.push({ lead_ref: lead.lead_ref, reason: "no_row" }); continue; }
     if (rows.length > 1) { ambiguous.push({ lead_ref: lead.lead_ref, rows: rows.length }); continue; }
-    const row = rows[0]; const current = cell(clidCol[row]).trim();
+    if (!byRow.has(rows[0])) byRow.set(rows[0], []);
+    byRow.get(rows[0]).push(lead);
+  }
+  for (const [row, aimed] of byRow) {
+    // one cell cannot hold two different ids: a phone cell with two numbers that belong to different leads
+    if (new Set(aimed.map((l) => l.ctwa_clid)).size > 1) { for (const l of aimed) ambiguousDestination.push({ lead_ref: l.lead_ref, row: row + 1 }); continue; }
+    const lead = aimed.sort((x, y) => String(x.lead_ref).localeCompare(String(y.lead_ref)))[0];
+    const current = cell(clidCol[row]).trim();
     if (current === lead.ctwa_clid) { unchanged++; continue; }
     if (current && current !== owned[lead.lead_ref]) {
-      // `edited` = this program wrote the cell earlier and a person changed it since (gets the yellow mark)
       manual.push({ lead_ref: lead.lead_ref, row: row + 1, edited: owned[lead.lead_ref] !== undefined, current });
       continue;
     }
     writes.push({ row: row + 1, value: lead.ctwa_clid, lead_ref: lead.lead_ref });
   }
   writes.sort((a, b) => a.row - b.row);
-  return { writes, unchanged, unmatched, ambiguous, manual, conflicts };
+  return { writes, unchanged, unmatched, ambiguous, ambiguousDestination, manual, conflicts };
 }
 
 // ---------- provenance marks (blue fill + note on every cell the program writes; people's cells are never formatted) ----------

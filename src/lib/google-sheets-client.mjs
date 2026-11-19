@@ -18,7 +18,8 @@ export function createSheetsClient({ serviceAccount, fetchImpl = fetch, sleep = 
   now = () => Date.now(), rand = Math.random, maxRequests = 40, maxAttempts = 5, log = () => {} } = {}) {
   let tokenValue = null; let tokenExpires = 0; let requests = 0;
 
-  async function raw(url, init, label) {
+  // idempotent=false (append): a network error or 5xx may have landed on the sheet, so only 429 (never processed) is retried
+  async function raw(url, init, label, idempotent = true) {
     for (let attempt = 0; ; attempt++) {
       if (requests >= maxRequests) throw new SyncError("request_budget", `request budget of ${maxRequests} reached`);
       requests++;
@@ -26,7 +27,7 @@ export function createSheetsClient({ serviceAccount, fetchImpl = fetch, sleep = 
       try { res = await fetchImpl(url, init); } catch { failure = "network"; }
       if (res && res.ok) return res;
       const status = res ? res.status : 0;
-      const retry = failure === "network" || isRetryableStatus(status);
+      const retry = idempotent ? (failure === "network" || isRetryableStatus(status)) : status === 429;
       if (!retry || attempt + 1 >= maxAttempts) throw new SyncError(`http_${status || "network"}`, `${label} failed (HTTP ${status || "network error"})`);
       const wait = Math.max(retryAfterMs(res?.headers?.get?.("retry-after"), now()) ?? 0, backoffDelayMs(attempt, { rand }));
       log(`retry ${label} after ${wait}ms (HTTP ${status || "network"})`);
@@ -48,10 +49,10 @@ export function createSheetsClient({ serviceAccount, fetchImpl = fetch, sleep = 
     return tokenValue;
   }
 
-  const api = async (path, { method = "GET", body, query = "" } = {}, label = "sheets") => {
+  const api = async (path, { method = "GET", body, query = "", idempotent = true } = {}, label = "sheets") => {
     const t = await token();
     const res = await raw(`https://sheets.googleapis.com/v4/spreadsheets/${path}${query}`,
-      { method, headers: { authorization: `Bearer ${t}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }, label);
+      { method, headers: { authorization: `Bearer ${t}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }, label, idempotent);
     return res.json();
   };
   const enc = encodeURIComponent;
@@ -117,7 +118,7 @@ export function createSheetsClient({ serviceAccount, fetchImpl = fetch, sleep = 
     },
     async appendValues(id, range, values) {
       if (!values.length) return { updates: {} };
-      return api(`${id}/values/${enc(range)}:append`, { method: "POST", query: "?valueInputOption=RAW&insertDataOption=INSERT_ROWS", body: { majorDimension: "ROWS", values } }, "append");
+      return api(`${id}/values/${enc(range)}:append`, { method: "POST", query: "?valueInputOption=RAW&insertDataOption=INSERT_ROWS", body: { majorDimension: "ROWS", values }, idempotent: false }, "append");
     },
   };
 }

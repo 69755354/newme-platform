@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { META_IDS_HEADER } from "../../src/lib/meta-ids-export.mjs";
+import { SyncError } from "../../src/lib/os-drive-sync.mjs";
 import { createSheetsClient } from "../../src/lib/google-sheets-client.mjs";
 import {
   backoffDelayMs, buildWritePolicy, columnIndex, columnLetter, guardSheets, phoneKey, phoneKeysFromCell, planCtwaColumnX,
@@ -17,7 +18,7 @@ const A1 = /^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/;
 
 /** In-memory spreadsheets. grids[id] = array of rows (strings). Records every write range. */
 function fakeSheets(grids, titles = { [META]: "Registry", [SALES]: "Home-owners" }) {
-  const writes = []; let requests = 0; const fmt = {};
+  const writes = []; let requests = 0; const fmt = {}; const inject = { append: null };
   const parse = (range) => {
     const bang = range.lastIndexOf("!"); const a1 = range.slice(bang + 1);
     const m = a1.match(A1); const c1 = columnIndex(m[1]); const c2 = columnIndex(m[3] ?? m[1]);
@@ -34,7 +35,7 @@ function fakeSheets(grids, titles = { [META]: "Registry", [SALES]: "Home-owners"
     values.forEach((vals, i) => { while (g.length < r1 + i) g.push([]); vals.forEach((v, j) => { g[r1 + i - 1][c1 + j] = String(v); }); });
   };
   return {
-    writes, grids, fmt, get requestCount() { return requests; },
+    writes, grids, fmt, inject, get requestCount() { return requests; },
     async getFirstSheetTitle(id) { requests++; return titles[id]; },
     async getValues(id, range) { requests++; return read(id, range); },
     async batchGetValues(id, ranges) { requests++; return ranges.map((r) => read(id, r)); },
@@ -57,7 +58,9 @@ function fakeSheets(grids, titles = { [META]: "Registry", [SALES]: "Home-owners"
       return ranges.map((r) => { const { c1, r1 } = parse(r); const f = fmt[`${id}:${r1},${c1}`] ?? {}; return { value: grids[id][r1 - 1]?.[c1] ?? "", bg: f.bg ?? null, note: f.note ?? "" }; });
     },
     async appendValues(id, range, values) {
-      requests++; const g = grids[id]; const start = g.length + 1; values.forEach((v) => g.push([...v])); writes.push({ id, range: `append:${range}`, rows: values.length });
+      requests++; const g = grids[id];
+      if (inject.append === "lost") { inject.append = null; throw new SyncError("http_network", "lost before the sheet saw it"); }
+      if (inject.append === "landed") { inject.append = null; values.forEach((v) => g.push([...v])); throw new SyncError("http_network", "landed but the answer was lost"); } const start = g.length + 1; values.forEach((v) => g.push([...v])); writes.push({ id, range: `append:${range}`, rows: values.length });
       return { updates: { updatedRange: `'${titles[id]}'!A${start}:O${start + values.length - 1}` } };
     },
   };
@@ -79,11 +82,11 @@ function setup(leads, grids) {
   const dir = mkdtempSync(join(tmpdir(), "s28-"));
   const io = createIo(dir, join(dir, "meta-ids"));
   const sheets = fakeSheets(grids);
-  const uploads = []; const nas = { upload: async (f) => { uploads.push(f); } };
+  const uploads = []; const nas = { fail: false, upload: async (f) => { if (nas.fail) throw new SyncError("nas_upload_failed", "x"); uploads.push(f); } };
   const clock = { t: Date.parse("2026-11-20T08:00:00Z") };
   const args = { dryRun: false, maxWrites: 200 };
   const run = (extra = {}) => runSync({ osReader: reader(leads), sheets: extra.sheets ?? sheets, nas, io, args: { ...args, ...extra.args }, now: () => clock.t, log: () => {} });
-  return { dir, io, sheets, uploads, run, clock };
+  return { dir, io, sheets, uploads, run, clock, nas };
 }
 
 test("phone normalization handles sheet spellings", () => {
@@ -327,4 +330,71 @@ test("parseArgs", () => {
   assert.deepEqual(parseArgs(["--dry-run", "--max-writes", "5"]).maxWrites, 5);
   assert.throws(() => parseArgs(["--bogus"]));
   assert.throws(() => parseArgs(["--max-writes", "x"]));
+});
+
+test("NAS: a day whose upload failed is re-uploaded after midnight, not only the current day's file", async () => {
+  const leads = [lead(1, { updated_at: "2026-11-18T00:00:00.000Z" })];
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([]) });
+  t.nas.fail = true;
+  const first = await t.run();
+  assert.equal(first.exitCode, 1); assert.equal(t.uploads.length, 0);
+  t.nas.fail = false; t.clock.t += 13 * 3_600_000; // 01:00 Dubai the next day
+  leads[0].stage = "qualified"; leads[0].updated_at = "2026-11-20T21:00:00.000Z";
+  await t.run();
+  assert.deepEqual(t.uploads.map((f) => f.split("/").pop()).sort(), ["20261120.jsonl", "20261121.jsonl"]);
+});
+
+test("audit: what the Meta sheet got is in the spool even when a later step throws", async () => {
+  const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  const failing = { ...t.sheets, getCells: async (id, r) => { if (id === SALES) throw new SyncError("http_500", "boom"); return t.sheets.getCells(id, r); } };
+  Object.defineProperty(failing, "requestCount", { get: () => 0 });
+  await assert.rejects(() => t.run({ sheets: failing }), (e) => e.code === "http_500");
+  const log = readFileSync(t.io.changesFile("20261120").file, "utf8");
+  assert.match(log, /"sheet":"meta_ids","action":"append"/);
+  assert.match(log, /"sheet":"home_owners_x","action":"write"/, "the X write that landed before the failed read-back is logged too");
+  assert.equal(t.io.readState().x_written["NM-000000010000"], "CLID_1_abcdefghij");
+  assert.equal(t.io.readState().leads_cursor, null);
+});
+
+test("two numbers in one phone cell that belong to different leads: no write, reported as ambiguous destination", () => {
+  const g = salesGrid([sRow("0500000001 / +971500000002"), sRow("+971500000003")]);
+  const P = g.map((r) => r[15]); const X = g.map((r) => r[23]);
+  const leads = [1, 2, 3].map((n) => ({ lead_ref: `r${n}`, phone: `+97150000000${n}`, ctwa_clid: `CLID_${n}_abcdefghij`, created_at: "2026-11-19" }));
+  const p = planCtwaColumnX(P, X, leads);
+  assert.deepEqual(p.writes.map((w) => w.lead_ref), ["r3"]);
+  assert.deepEqual(p.ambiguousDestination.map((a) => [a.lead_ref, a.row]).sort(), [["r1", 2], ["r2", 2]]);
+  const same = planCtwaColumnX(P, X, [leads[0], { ...leads[1], ctwa_clid: leads[0].ctwa_clid }], DEFAULTS);
+  assert.equal(same.writes.length, 1, "two leads with the same id write once");
+});
+
+test("append lost or landed on a network error: never duplicated, always present once", async () => {
+  for (const mode of ["lost", "landed"]) {
+    const t = setup([lead(1), lead(2)], { [META]: metaGrid(), [SALES]: salesGrid([]) });
+    t.sheets.inject.append = mode;
+    const r = await t.run();
+    assert.equal(r.exitCode, 0, mode);
+    const keys = t.sheets.grids[META].slice(1).map((row) => row[3]);
+    assert.deepEqual(keys.sort(), ["CLID_1_abcdefghij", "CLID_2_abcdefghij"], mode);
+    assert.equal(t.sheets.grids[META].length, 3, `${mode}: header + 2 rows, no duplicates`);
+    assert.deepEqual(t.sheets.fmt[`${META}:2,0`].bg, BLUE, `${mode}: marked after recovery`);
+    const again = await t.run();
+    assert.equal(again.summary.planned_writes, 0);
+  }
+});
+
+test("sheets client never repeats an append after a network error or 5xx, but does after 429", async () => {
+  const sa = { client_email: "x@y", token_uri: "https://t", private_key: (await import("node:crypto")).generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }) };
+  for (const [first, expectedCalls] of [["net", 1], [503, 1], [429, 2]]) {
+    let appendCalls = 0;
+    const fetchImpl = async (url) => {
+      if (String(url) === "https://t") return { ok: true, status: 200, json: async () => ({ access_token: "tok" }) };
+      appendCalls++;
+      if (appendCalls === 1 && first === "net") throw new Error("socket");
+      if (appendCalls === 1) return { ok: false, status: first, headers: { get: () => null } };
+      return { ok: true, status: 200, json: async () => ({ updates: {} }) };
+    };
+    const c = createSheetsClient({ serviceAccount: sa, fetchImpl, sleep: async () => {}, rand: () => 0 });
+    await c.appendValues("id", "A1", [["x"]]).catch(() => {});
+    assert.equal(appendCalls, expectedCalls, String(first));
+  }
 });

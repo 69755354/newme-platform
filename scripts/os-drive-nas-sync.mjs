@@ -103,6 +103,12 @@ export function createIo(dataDir, metaIdsDir) {
       chmodSync(file, 0o600);
       return { file, size: statSync(file).size };
     },
+    listChanges() {
+      try {
+        return readdirSync(join(dataDir, "changes")).filter((n) => /^\d{8}\.jsonl$/.test(n)).sort()
+          .map((n) => ({ day: n.slice(0, 8), file: join(dataDir, "changes", n), size: statSync(join(dataDir, "changes", n)).size }));
+      } catch { return []; }
+    },
     changesFile(day) { const file = join(dataDir, "changes", `${day}.jsonl`); return existsSync(file) ? { file, size: statSync(file).size } : null; },
     writeReport(day, text) {
       const dir = join(dataDir, "reports"); ensure(dir);
@@ -144,10 +150,11 @@ async function verifyAndRetry(sheets, id, writes, rewrite) {
 }
 
 /** Apply colour/note ops in one request, read the cells back (value, background, note); retry the mismatches once. */
-async function applyOps(guarded, id, tab, ops) {
+async function applyOps(guarded, id, tab, ops, onWritten = () => {}) {
   const expected = expectedFromOps(ops);
   const readBack = async (exp) => guarded.getCells(id, exp.map((e) => `${a1Tab(tab)}!${columnLetter(e.col)}${e.row}`));
   await guarded.batchUpdateCells(id, tab, ops);
+  onWritten(); // the write is on the sheet: make the audit record durable before anything else can fail
   let bad = diffCellReadBack(expected, await readBack(expected));
   if (bad.length) {
     const again = ops.filter((_, i) => bad.includes(expected[i]));
@@ -193,10 +200,10 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   const grids = await loadSheetGrids(sheets, cfg, titles, { needSales: ctwaLeads.length > 0 });
   const planA = planMetaIdsUpsert(grids.meta, osRows);
   const planB = grids.sales ? planCtwaColumnX(grids.sales.phoneCol, grids.sales.clidCol, ctwaLeads, cfg, state.x_written)
-    : { writes: [], unchanged: 0, unmatched: [], ambiguous: [], manual: [], conflicts: 0 };
+    : { writes: [], unchanged: 0, unmatched: [], ambiguous: [], manual: [], ambiguousDestination: [], conflicts: 0 };
   Object.assign(summary, {
     meta_updates: planA.updates.length, meta_appends: planA.appends.length, meta_unchanged: planA.unchanged, meta_duplicate_keys: planA.duplicateSheetKeys,
-    x_writes: planB.writes.length, x_manual_skipped: planB.manual.length, x_unchanged: planB.unchanged, x_unmatched: planB.unmatched.length, x_ambiguous: planB.ambiguous.length,
+    x_writes: planB.writes.length, x_manual_skipped: planB.manual.length, x_unchanged: planB.unchanged, x_unmatched: planB.unmatched.length, x_ambiguous: planB.ambiguous.length, x_ambiguous_destination: planB.ambiguousDestination.length,
   });
   // a person's value is never touched and never formatted: it is only counted, and logged once per distinct value
   const manualNew = planB.manual.filter((m) => state.x_manual_marked[m.lead_ref] !== hashText(m.current));
@@ -210,13 +217,17 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   }
   assertWithinCap(planned, args.maxWrites); // throws before anything is written
 
-  // 3. write + read back
+  // 3. write + read back. Every stage logs what it wrote to the spool BEFORE the next thing that can fail.
   const changes = []; const ts = startedAt;
+  const flush = () => { if (changes.length) io.appendChanges(day, changes.splice(0)); };
   const guarded = guardSheets(sheets, buildWritePolicy({ ...cfg, metaTab: titles.meta }));
   const metaOps = [];
+  const metaRange = `${a1Tab(titles.meta)}!A:${WIDTH}`;
   if (planA.updates.length) {
     const data = planA.updates.map((u) => ({ range: `${a1Tab(titles.meta)}!A${u.row}:${WIDTH}${u.row}`, values: [u.values] }));
     await guarded.batchUpdateValues(cfg.metaSheetId, data);
+    for (const u of planA.updates) changes.push({ ts, sheet: "meta_ids", action: "update", row: u.row, lead_ref: u.values[0], meta_id_type: u.values[2], meta_id: u.values[3], values: u.values, previous: u.previous });
+    flush();
     await verifyAndRetry(guarded, cfg.metaSheetId, data, (bad) => guarded.batchUpdateValues(cfg.metaSheetId, bad));
     for (const u of planA.updates) {
       const key = `${u.values[0]}|${u.values[2]}|${u.values[3]}`;
@@ -224,48 +235,57 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
       u.values.forEach((v, c) => { if (v !== u.previous[c]) metaOps.push({ kind: "cell", row: u.row, col: c, note: noteUpdated(now(), state.meta_times[key]) }); });
       state.meta_times[key] = dubaiStamp(now());
     }
-    for (const u of planA.updates) changes.push({ ts, sheet: "meta_ids", action: "update", row: u.row, lead_ref: u.values[0], meta_id_type: u.values[2], meta_id: u.values[3], values: u.values, previous: u.previous });
   }
   if (planA.appends.length) {
-    const res = await guarded.appendValues(cfg.metaSheetId, `${a1Tab(titles.meta)}!A1`, planA.appends);
-    const updated = res?.updates?.updatedRange;
-    if (!updated) throw new SyncError("append_no_range", "append did not report where it wrote");
-    const back = await guarded.batchGetValues(cfg.metaSheetId, [updated]);
-    if (diffReadBack([{ range: updated, values: planA.appends }], [{ values: back[0] }]).length) {
-      throw new SyncError("readback_mismatch", "read-back mismatch after append");
+    // An append that fails with a network error or 5xx may or may not have landed. Never repeat it blindly:
+    // re-read the sheet, and append only the rows whose key is still missing.
+    const keyOf = (v) => `${v[0]}|${v[2]}|${v[3]}`;
+    const sheetKeys = (grid) => new Map(grid.slice(1).map((r, i) => [`${r?.[0] ?? ""}|${r?.[2] ?? ""}|${r?.[3] ?? ""}`, i + 2]));
+    let todo = planA.appends;
+    for (let attempt = 0; attempt < 2 && todo.length; attempt++) {
+      try { await guarded.appendValues(cfg.metaSheetId, `${a1Tab(titles.meta)}!A1`, todo); } catch (e) {
+        if (!/^http_(network|5\d\d)$/.test(e?.code ?? "")) throw e;
+      }
+      const have = sheetKeys(await guarded.getValues(cfg.metaSheetId, metaRange));
+      todo = todo.filter((v) => !have.has(keyOf(v)));
     }
-    const first = Number(/!A(\d+):/.exec(updated)?.[1]);
-    if (!Number.isInteger(first)) throw new SyncError("append_no_range", "append range could not be read");
-    planA.appends.forEach((v, i) => {
-      metaOps.push({ kind: "rowbg", row: first + i, c1: 0, c2: 14, bg: BLUE }, { kind: "cell", row: first + i, col: 0, note: noteUpdated(now(), null) });
-      state.meta_times[`${v[0]}|${v[2]}|${v[3]}`] = dubaiStamp(now());
-    });
-    for (const v of planA.appends) changes.push({ ts, sheet: "meta_ids", action: "append", lead_ref: v[0], meta_id_type: v[2], meta_id: v[3], values: v });
+    if (todo.length) throw new SyncError("append_not_found", `${todo.length} appended row(s) are not on the sheet after two attempts`);
+    const grid = await guarded.getValues(cfg.metaSheetId, metaRange); const rowOf = sheetKeys(grid);
+    for (const v of planA.appends) changes.push({ ts, sheet: "meta_ids", action: "append", row: rowOf.get(keyOf(v)), lead_ref: v[0], meta_id_type: v[2], meta_id: v[3], values: v });
+    flush();
+    const bad = planA.appends.filter((v) => { const r = grid[rowOf.get(keyOf(v)) - 1] ?? []; return v.some((x, c) => String(r[c] ?? "") !== x); });
+    if (bad.length) throw new SyncError("readback_mismatch", "read-back mismatch after append");
+    for (const v of planA.appends) {
+      const row = rowOf.get(keyOf(v));
+      metaOps.push({ kind: "rowbg", row, c1: 0, c2: 14, bg: BLUE }, { kind: "cell", row, col: 0, note: noteUpdated(now(), null) });
+      state.meta_times[keyOf(v)] = dubaiStamp(now());
+    }
   }
   if (!state.meta_header_noted) metaOps.push({ kind: "headernote", row: 1, col: 0, note: HEADER_NOTE });
   if (metaOps.length) {
-    await applyOps(guarded, cfg.metaSheetId, titles.meta, metaOps);
-    if (!state.meta_header_noted) { state.meta_header_noted = true; changes.push({ ts, sheet: "meta_ids", action: "header_note", row: 1 }); }
+    await applyOps(guarded, cfg.metaSheetId, titles.meta, metaOps, () => {
+      if (!state.meta_header_noted) { state.meta_header_noted = true; changes.push({ ts, sheet: "meta_ids", action: "header_note", row: 1 }); flush(); }
+    });
+    io.writeState(state); // meta_times / header flag are facts about the sheet now; the cursor is not moved here
   }
   if (planB.writes.length) {
     const col = columnIndex(cfg.clidColumn); const nowMs = now();
-    const ops = [
-      ...planB.writes.map((w) => ({ kind: "cell", row: w.row, col, value: w.value, bg: BLUE, note: noteWritten(nowMs, w.lead_ref) })),
-    ];
-    await applyOps(guarded, cfg.salesSheetId, cfg.salesTab, ops);
-    for (const w of planB.writes) changes.push({ ts, sheet: "home_owners_x", action: "write", row: w.row, lead_ref: w.lead_ref, value: w.value, note: noteWritten(nowMs, w.lead_ref) });
+    const ops = planB.writes.map((w) => ({ kind: "cell", row: w.row, col, value: w.value, bg: BLUE, note: noteWritten(nowMs, w.lead_ref) }));
+    await applyOps(guarded, cfg.salesSheetId, cfg.salesTab, ops, () => {
+      for (const w of planB.writes) { changes.push({ ts, sheet: "home_owners_x", action: "write", row: w.row, lead_ref: w.lead_ref, value: w.value, note: noteWritten(nowMs, w.lead_ref) }); state.x_written[w.lead_ref] = w.value; delete state.x_manual_marked[w.lead_ref]; }
+      flush(); io.writeState(state);
+    });
   }
   // no sheet write for these: only the NAS log (no cell text) and a hash in the state so each value is logged once
   for (const m of manualNew) { changes.push({ ts, sheet: "home_owners_x", action: "skipped_manual_value", row: m.row, lead_ref: m.lead_ref, edited_after_os_write: m.edited }); state.x_manual_marked[m.lead_ref] = hashText(m.current); }
+  for (const a of planB.ambiguousDestination) changes.push({ ts, sheet: "home_owners_x", action: "skipped_ambiguous_destination", row: a.row, lead_ref: a.lead_ref });
+  flush();
 
-  for (const w of planB.writes) { state.x_written[w.lead_ref] = w.value; delete state.x_manual_marked[w.lead_ref]; }
-
-  // 4. NAS spool + upload (a failed upload is retried next run, it never blocks the cursor)
+  // 4. NAS upload: every day's spool that the NAS has not confirmed (a failed day is retried after midnight too)
   let nasError = null;
-  if (changes.length) io.appendChanges(day, changes);
-  const spool = io.changesFile(day);
-  if (spool && state.nas_uploaded[day] !== spool.size) {
-    try { await nas.upload(spool.file); state.nas_uploaded[day] = spool.size; } catch (e) { nasError = e; }
+  for (const spool of io.listChanges()) {
+    if (state.nas_uploaded[spool.day] === spool.size) continue;
+    try { await nas.upload(spool.file); state.nas_uploaded[spool.day] = spool.size; } catch (e) { nasError = e; }
   }
 
   // 5. cursor + pending list, saved last
@@ -273,7 +293,7 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   state.leads_cursor = seenAt ?? state.leads_cursor ?? startedAt;
   const pendingNow = { ...state.pending_ctwa };
   for (const l of ctwaLeads) delete pendingNow[idByRef.get(l.lead_ref)];
-  const stillOpen = new Set([...planB.unmatched.filter((u) => u.reason === "no_row").map((u) => u.lead_ref), ...planB.ambiguous.map((a) => a.lead_ref)]);
+  const stillOpen = new Set([...planB.unmatched.filter((u) => u.reason === "no_row").map((u) => u.lead_ref), ...planB.ambiguous.map((a) => a.lead_ref), ...planB.ambiguousDestination.map((a) => a.lead_ref)]);
   for (const ref of stillOpen) pendingNow[idByRef.get(ref)] = pendingNow[idByRef.get(ref)] ?? startedAt;
   for (const [id, first] of Object.entries(pendingNow)) if (now() - Date.parse(first) > cfg.pendingDays * 86_400_000) delete pendingNow[id];
   state.pending_ctwa = pendingNow;
@@ -299,7 +319,7 @@ export async function runReconcile({ osReader, sheets, io, cfg = DEFAULTS, now =
   let x = null;
   if (grids.sales) {
     const p = planCtwaColumnX(grids.sales.phoneCol, grids.sales.clidCol, ctwa, cfg, io.readState().x_written);
-    x = { os_leads_with_click_id: ctwa.length, already_in_sheet: p.unchanged, would_write: p.writes.length, unmatched: p.unmatched.length, ambiguous: p.ambiguous.length, manual_value_skipped: p.manual.length };
+    x = { os_leads_with_click_id: ctwa.length, already_in_sheet: p.unchanged, would_write: p.writes.length, unmatched: p.unmatched.length, ambiguous: p.ambiguous.length, ambiguous_destination: p.ambiguousDestination.length, manual_value_skipped: p.manual.length };
   }
   const state = io.readState();
   const ageMin = state.last_ok_at ? Math.round((now() - Date.parse(state.last_ok_at)) / 60_000) : null;

@@ -1133,3 +1133,15 @@ p75 157 ms / p95 204 ms, within policy. The delayed verification passed at `2026
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:faf127793276a007c0e0ee666fd10d90213e9a06b1abb7ffa0fcd958d756589b -->
+
+## OS fix S23 provisioning switch technical acceptance (2026-11-19)
+
+Release `440df85428a398f66164dd82d4617b2312258c11` (S23 database provisioning switch for opportunities and visits) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T18:54:27Z`, replacing the finalized release `e84e7b84`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 50 ms / p95 76 ms, within policy. The delayed verification passed at `2026-11-19T19:11:34Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:718acd0fee7ffc24d5cb1daeca648181fec6062de96ebc8847163ab97f6c8975 -->

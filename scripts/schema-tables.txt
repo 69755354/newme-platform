@@ -48,3 +48,4 @@ whatsapp_conversations
 whatsapp_message_events
 whatsapp_pilot_channels
 whatsapp_pilot_events
+whatsapp_synced_contacts

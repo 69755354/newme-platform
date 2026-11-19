@@ -716,6 +716,12 @@ jobs:
           createdb --template history newme_dispatch_review_test
           PGDATABASE=newme_dispatch_review_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s24-dispatch-review.sql
 
+      # S25 history backfill writers: backfilled rows only, no lead / Meta queue / timing writes.
+      - name: WhatsApp history backfill (S25)
+        run: |
+          createdb --template history newme_whatsapp_history_test
+          PGDATABASE=newme_whatsapp_history_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s25-whatsapp-history.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

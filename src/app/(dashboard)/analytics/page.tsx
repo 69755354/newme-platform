@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useLanguage } from "@/lib/i18n/context";
@@ -9,7 +9,7 @@ import LeadHealth from "./_components/LeadHealth";
 import PipelineFunnel from "./_components/PipelineFunnel";
 import PaymentTracker from "./_components/PaymentTracker";
 import AdsROI from "./_components/AdsROI";
-import { logFetchFailure } from "@/lib/fetch-interruption";
+import { PageIdentityContext } from "@/lib/session-contexts";
 
 const SalesLoad = dynamic(() => import("./_components/SalesLoad"), {
   ssr: false,
@@ -41,29 +41,24 @@ export default function AnalyticsPage() {
   // operator included: /api/analytics/summary computes isManagement as
   // ["admin","boss","operator"], so the server already serves this role the
   // management view the sidebar sends them to.
-  const { loading: roleLoading, blocked, role } = useRequireRole(["admin", "boss", "operator", "sales"]);
+  const { loading: roleLoading, blocked, role, userId } = useRequireRole(["admin", "boss", "operator", "sales"]);
   const { t } = useLanguage();
 
-  const [analyticsData, setAnalyticsData] = useState<AnalyticsSummary | null>(null);
+  // S22: the panels below each used to ask the server who the user is again
+  // (five /api/auth/me calls, one after the other). The role is resolved once,
+  // here, and the panels read it from context.
+  const pageIdentity = useMemo(
+    () => (role ? { role, userId } : null),
+    [role, userId],
+  );
 
-  // ── Single BFF fetch replacing all sub-component-level fetches ──
-  useEffect(() => {
-    if (roleLoading || blocked) return;
-    const controller = new AbortController();
-    fetch("/api/analytics/summary", { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((json) => setAnalyticsData(json))
-      .catch((err) => {
-        logFetchFailure("[analytics] summary fetch failed:", err, { signal: controller.signal });
-      });
-    return () => controller.abort();
-  }, [roleLoading, blocked]);
+  // S22: this page used to fetch /api/analytics/summary as well, the slowest
+  // call on the page, and then nothing read the result: every panel loads its
+  // own endpoint. The call is gone; the route stays for its other callers.
+  const analyticsData: AnalyticsSummary | null = null;
 
   // Block render until role is resolved to prevent flash
-  if (roleLoading || blocked) return null;
+  if (roleLoading || blocked || !pageIdentity) return null;
 
   const isManagement = role === "boss" || role === "admin";
   const isSales = role === "sales";
@@ -71,6 +66,7 @@ export default function AnalyticsPage() {
   if (isManagement) {
     /* ═══ CEO/Admin View: 2-column grid ═══ */
     return (
+      <PageIdentityContext.Provider value={pageIdentity}>
       <AnalyticsContext.Provider value={analyticsData}>
         <DashboardScrollContainer className="space-y-5">
           {/* Header */}
@@ -112,12 +108,14 @@ export default function AnalyticsPage() {
           <WeeklyTrends isManagement={true} />
         </DashboardScrollContainer>
       </AnalyticsContext.Provider>
+      </PageIdentityContext.Provider>
     );
   }
 
   /* ═══ Sales View: Single column, action-first ═══ */
   return (
-    <AnalyticsContext.Provider value={analyticsData}>
+    <PageIdentityContext.Provider value={pageIdentity}>
+      <AnalyticsContext.Provider value={analyticsData}>
       <DashboardScrollContainer className="space-y-5 max-w-3xl">
         {/* Header */}
         <div>
@@ -149,5 +147,6 @@ export default function AnalyticsPage() {
         <WeeklyTrends isManagement={false} />
       </DashboardScrollContainer>
     </AnalyticsContext.Provider>
+      </PageIdentityContext.Provider>
   );
 }

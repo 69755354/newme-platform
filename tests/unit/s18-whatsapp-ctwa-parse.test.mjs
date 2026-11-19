@@ -25,10 +25,10 @@ test("an ad click message yields waba, phone_number_id, sender, time and the ref
   assert.deepEqual(event.referral, { source_type: "ad", source_id: "120210000000001", source_url: "https://fb.me/abc", headline: "Smart home offer", ctwa_clid: CLID });
 });
 
-test("chat text, ad body and media links are never kept", () => {
+test("ad body text and media links are never kept (chat text is kept since S21, see s21-whatsapp-message-body)", () => {
   const events = extractWhatsAppAdEvents(envelope("messages", [inbound("wamid.1", "2026-10-19T01:00:00Z", { referral })]), [channel], now);
   const text = JSON.stringify(events);
-  for (const secret of ["PRIVATE", "scontent", ".jpg", "image_url", "media_type"]) assert.equal(text.includes(secret), false, secret);
+  for (const secret of ["PRIVATE AD BODY", "scontent", ".jpg", "image_url", "media_type"]) assert.equal(text.includes(secret), false, secret);
 });
 
 test("a handset echo from the coexistence phone is an outbound event to the customer", () => {
@@ -37,7 +37,7 @@ test("a handset echo from the coexistence phone is an outbound event to the cust
   assert.equal(event.source, "smb_message_echoes");
   assert.equal(event.customer_phone, "971501234567");
   assert.equal(event.referral, null);
-  assert.equal(JSON.stringify(event).includes("PRIVATE"), false);
+  assert.equal(event.body, "PRIVATE");
 });
 
 test("a message without a referral is kept with referral null (organic)", () => {

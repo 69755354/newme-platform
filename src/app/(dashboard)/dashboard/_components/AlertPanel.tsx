@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { takeEarlyFetch } from "@/lib/early-fetch";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   AlertTriangle, Clock, UserX, PhoneOff, DollarSign,
@@ -59,7 +60,7 @@ export default function AlertPanel() {
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const res = await fetch("/api/alerts");
+      const res = await takeEarlyFetch("/api/alerts");
       if (res.ok) {
         const json = await res.json();
         setData(json);

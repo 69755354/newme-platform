@@ -25,6 +25,8 @@ import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
+import LeadFollowupCard from "./LeadFollowupCard";
+
 import LeadOpportunitiesCard from "./LeadOpportunitiesCard";
 import LeadVisitsCard from "./LeadVisitsCard";
 import LeadSalesProcess from "./LeadSalesProcess";
@@ -106,6 +108,7 @@ export default function LeadDetailPage() {
     projectInfoDraft,
     setProjectInfoDraft,
     loading,
+    notFound,
     error,
     fetchData,
   } = useLeadDetailData(id as string);
@@ -141,7 +144,7 @@ export default function LeadDetailPage() {
         .maybeSingle();
     },
     [currentUserId],
-    { enabled: !!currentUserId, retry: 1 }
+    { enabled: !!currentUserId && !notFound, retry: 1 }
   );
   // 3-way state: "admin"/"boss"/"sales" once resolved, "sales" on error/missing
   // (matches original setSalesRole(profile?.role || "sales")), null while loading.
@@ -487,7 +490,7 @@ export default function LeadDetailPage() {
     return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   }
 
-  if (!lead) {
+  if (notFound || !lead) {
     return (
       <div className="text-center py-16">
         <p className="text-muted-foreground">{t("common.notFound")}</p>
@@ -586,6 +589,8 @@ export default function LeadDetailPage() {
             transferHistory={transferHistory}
           />
           <LeadWhatsAppAdPanel lead={lead} t={t} />
+          <LeadFollowupCard lead={lead} t={t} />
+
           <LeadOpportunitiesCard lead={lead} t={t} lang={lang} role={salesRole} />
           <LeadVisitsCard lead={lead} t={t} role={salesRole} />
         </aside>

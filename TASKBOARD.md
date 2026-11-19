@@ -1097,3 +1097,39 @@ onboarded to Cloud API, so Meta click-id delivery and callback end-to-end accept
 still NOT claimed.
 
 <!-- postdeploy-acceptance-sha256:c469936fe173be2dca65afe386807382830bad34a36617ca3376e638b7121926 -->
+
+## OS fix S19-S21 release bundle 1 technical acceptance (2026-11-19)
+
+Release `100006be5ff9b1f410e19ce505e8385de9420889` (S19 hide QA and release-acceptance accounts, S19 Meta ID export, S20 data-import gate operations, S21 provisioning switch; no migration) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T13:36:34Z`, replacing the finalized release `eb54afae`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 308 ms / p95 1052 ms, within policy. The delayed verification passed at `2026-11-19T13:53:42Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:9bf49d7f1f721ace6900c02548b149699a6e57b966526fcfa694266acc57b3a7 -->
+
+## OS fix S21 WhatsApp conversation text and follow-up monitor technical acceptance (2026-11-19)
+
+Release `69161843bd95bef77f60a3094d9d9b8798d45e1d` (S21 WhatsApp conversation text stored, follow-up monitor v1 (first response, contact count, status, notes), migration 20261119100000 applied through s21-db-plan/provision) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T15:09:32Z`, replacing the finalized release `100006be`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 95 ms / p95 319 ms, within policy. The delayed verification passed at `2026-11-19T16:10:31Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:8976e5efc06c1bcdf2b6881656f464250d73a419e5071ce89322ae8efa15314e -->
+
+## OS fix S22 speed fixes technical acceptance (2026-11-19)
+
+Release `e84e7b84d844877970e02a2859e513f4d8101145` (S22 page speed fixes (batched requests, fewer repeated queries)) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T17:26:35Z`, replacing the finalized release `69161843`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 157 ms / p95 204 ms, within policy. The delayed verification passed at `2026-11-19T17:43:42Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:faf127793276a007c0e0ee666fd10d90213e9a06b1abb7ffa0fcd958d756589b -->

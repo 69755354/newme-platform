@@ -46,6 +46,13 @@
       "why": "Hermes already calls it at 09:02 Dubai. Not taken over. Deleting rows older than 90 days is idempotent."
     },
     {
+      "name": "check-whatsapp-followups",
+      "install": "after-flag",
+      "dubaiTime": "09:30",
+      "idempotent": true,
+      "why": "Sales follow-up monitor (S21): first response, contacts in 5 working days, follow-up state, system note and notification only when the state changes. The route answers Disabled until WHATSAPP_FOLLOWUP_MONITOR_ENABLED=true; the timer repeats hourly 09:30-19:30 Dubai (extra OnCalendar lines). Idempotent: the database writer only writes on a change."
+    },
+    {
       "name": "check-visit-overdue",
       "install": "after-flag",
       "dubaiTime": "09:45",

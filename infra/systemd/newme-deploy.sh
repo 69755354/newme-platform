@@ -1795,7 +1795,7 @@ ROLLBACK_SHA=""
 if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
   DB_TRANSITION_OPERATION=${3:-}
   if [ "$#" -ne 3 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision|whatsapp-privacy-plan|whatsapp-privacy-provision|meta-ads-plan|meta-ads-provision|meta-capi-plan|meta-capi-provision|meta-crm-plan|meta-crm-provision|s2-roles-plan|s2-roles-provision|s16-db-plan|s16-db-provision|s18-db-plan|s18-db-provision|data-import-plan|data-import-apply|data-import-rollback|s21-db-plan|s21-db-provision|s24-db-plan|s24-db-provision>" >&2
+    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision|whatsapp-privacy-plan|whatsapp-privacy-provision|meta-ads-plan|meta-ads-provision|meta-capi-plan|meta-capi-provision|meta-crm-plan|meta-crm-provision|s2-roles-plan|s2-roles-provision|s16-db-plan|s16-db-provision|s18-db-plan|s18-db-provision|data-import-plan|data-import-apply|data-import-rollback|s21-db-plan|s21-db-provision|s23-db-plan|s23-db-provision|s24-db-plan|s24-db-provision>" >&2
     exit 64
   fi
   case "$DB_TRANSITION_OPERATION" in
@@ -1810,6 +1810,7 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     s18-db-plan|s18-db-provision) ;;
     data-import-plan|data-import-apply|data-import-rollback) ;;
     s21-db-plan|s21-db-provision) ;;
+    s23-db-plan|s23-db-provision) ;;
     s24-db-plan|s24-db-provision) ;;
     *) exit 64 ;;
   esac
@@ -2349,9 +2350,23 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     require_canonical_main_sha "$SHA" || exit 65
     require_ci_gate_still_fresh || exit 65
   fi
+  # S23 opportunities and visit reports batch (OS fix S23): three new tables with row-level security and no client
+  # writes plus four service-role routines, one reviewed file, applied only after the complete live prefix with an
+  # exact SQL hash and an exact before-state.
+  if [ "$DB_TRANSITION_OPERATION" = s23-db-plan ] || [ "$DB_TRANSITION_OPERATION" = s23-db-provision ]; then
+    git --git-dir="$MIRROR" merge-base --is-ancestor "$ROLLBACK_SHA" "$SHA" || exit 65
+    "$NODE_BIN" "$LIVE_RELEASE/scripts/db-phase-push.mjs" \
+      --phase deferred_contract --verify-only \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    "$NODE_BIN" "$WORKTREE/scripts/check-s23-db-batch-provisioning.mjs" \
+      --live-release "$LIVE_RELEASE" --candidate-release "$WORKTREE" \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    require_canonical_main_sha "$SHA" || exit 65
+    require_ci_gate_still_fresh || exit 65
+  fi
   # S24 lead dispatch and duplicate review batch (OS fix S24): three new tables with row-level security and no client or
-  # service-role writes plus six service-role routines, one reviewed file, applied only after the complete live prefix
-  # with an exact SQL hash and an exact before-state.
+  # service-role writes plus six service-role routines, one reviewed file, applied only after the complete live prefix with an
+  # exact SQL hash and an exact before-state.
   if [ "$DB_TRANSITION_OPERATION" = s24-db-plan ] || [ "$DB_TRANSITION_OPERATION" = s24-db-provision ]; then
     git --git-dir="$MIRROR" merge-base --is-ancestor "$ROLLBACK_SHA" "$SHA" || exit 65
     "$NODE_BIN" "$LIVE_RELEASE/scripts/db-phase-push.mjs" \
@@ -2452,6 +2467,13 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
       [ "$DB_TRANSITION_OPERATION" != s21-db-provision ] || s21_db_mode=--apply
       "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
         --phase deferred_contract "$s21_db_mode" \
+        --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    s23-db-plan|s23-db-provision)
+      s23_db_mode=--plan
+      [ "$DB_TRANSITION_OPERATION" != s23-db-provision ] || s23_db_mode=--apply
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase deferred_contract "$s23_db_mode" \
         --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
       ;;
     s24-db-plan|s24-db-provision)

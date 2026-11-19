@@ -227,6 +227,25 @@ test("matching completion retry is idempotent and a mismatched retry is refused"
   assert.deepEqual(await evidence(fx.path), completed);
 });
 
+test("evidence completed before final_sha existed is retried as final_sha == closure_sha", async () => {
+  const fx = await fixture();
+  const first = finalize(fx.path, fx.bundleDigest);
+  assert.equal(first.status, 0, first.stderr);
+  const completed = await evidence(fx.path);
+  const legacy = structuredClone(completed);
+  delete legacy.release_closure.final_sha;
+  await writeFile(fx.path, `${JSON.stringify(legacy, null, 2)}\n`);
+
+  const retry = finalize(fx.path, fx.bundleDigest);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.deepEqual(await evidence(fx.path), legacy, "a matching retry leaves legacy evidence byte-for-byte alone");
+  const explicit = finalize(fx.path, fx.bundleDigest, CLOSURE_SHA, FINAL_RUN_ID, CLOSURE_SHA);
+  assert.equal(explicit.status, 0, explicit.stderr);
+  const other = finalize(fx.path, fx.bundleDigest, CLOSURE_SHA, FINAL_RUN_ID, "e".repeat(40));
+  assert.notEqual(other.status, 0, "legacy evidence binds final CI to the closure SHA");
+  assert.deepEqual(await evidence(fx.path), legacy);
+});
+
 test("the removed freeform actor and fixture interface is not accepted", async () => {
   const fx = await fixture();
   const result = spawnSync(process.execPath, [

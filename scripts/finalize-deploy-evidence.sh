@@ -239,6 +239,10 @@ def fsync_directory(directory_path):
 
 if evidence.get("release_status") == "complete":
     existing_closure = evidence.get("release_closure", {})
+    if isinstance(existing_closure, dict) and "final_sha" not in existing_closure:
+        # Evidence completed by a finalizer that predates the final-run SHA
+        # recorded only closure_sha; its final run was dispatched on that SHA.
+        existing_closure = {**existing_closure, "final_sha": existing_closure.get("closure_sha")}
     if not isinstance(existing_closure, dict) or any(
         existing_closure.get(key) != value for key, value in expected_closure.items()
     ):

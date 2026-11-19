@@ -19,7 +19,10 @@ owned `0600` file outside Git. A personal Bitwarden session is unnecessary.
 
 `final_sha` is the main SHA the release-final run was dispatched on. Omit it
 when that is the closure commit itself; a bridge that forwards it maps it to the
-optional sixth `newme-deploy finalize` argument.
+optional sixth `newme-deploy finalize` argument. Releases deployed before the
+final-run SHA existed can only be finalized with `final_sha` omitted (or equal
+to `closure_sha`): the coordinator runs the release's own checker, which does
+not know the flag.
 
 The controlled recovery actions `accept-recover`, `accept-abort`,
 `attest-recover`, and `attest-abort` use only `action` and `release_sha`.

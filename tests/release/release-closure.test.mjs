@@ -397,6 +397,31 @@ test("(d) merge commits, non-descendants, a final SHA before the closure, and an
   assert.match(duplicatedCli.stderr, /exactly once \(found 2\)/);
 });
 
+test("a release shipped with the pre-final-sha checker is still closable under the single-slot flow", (t) => {
+  // 527c9753 is the last main commit before --final-sha existed. The coordinator
+  // runs the DEPLOYED release's checker, so the exact invocation it makes for a
+  // final SHA equal to the closure SHA must be one that checker accepts.
+  const legacy = spawnSync("git", ["-C", ROOT, "show", "527c9753:scripts/check-release-closure.mjs"], { encoding: "utf8", windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+  if (legacy.status !== 0) {
+    t.skip("history before the final-run SHA is not available in this checkout");
+    return;
+  }
+  const data = fixture();
+  t.after(() => rmSync(data.repo, { recursive: true, force: true }));
+  const legacyCli = path.join(data.repo, "legacy-check-release-closure.mjs");
+  writeFileSync(legacyCli, legacy.stdout);
+  const run = (...extra) => spawnSync(
+    process.execPath,
+    [legacyCli, "--release-sha", data.releaseSha, "--closure-sha", data.closureSha, "--acceptance-digest", ACCEPTANCE_DIGEST, "--repo", data.repo, ...extra],
+    { encoding: "utf8", windowsHide: true },
+  );
+  const withoutFlag = run();
+  assert.equal(withoutFlag.status, 0, withoutFlag.stderr);
+  const withFlag = run("--final-sha", data.closureSha);
+  assert.equal(withFlag.status, 64, "the legacy checker rejects the flag outright, which is why the coordinator omits it when final == closure");
+  assert.match(withFlag.stderr, /unknown argument "--final-sha"/);
+});
+
 test("the drift allowlist is closed: denylist first, root markdown only, no traversal", () => {
   assert.deepEqual([...CLOSURE_DRIFT_ALLOWED_PATHS], [
     "TASKBOARD.md",
@@ -969,7 +994,8 @@ test("canonical attestation and digest-only finalization replace freeform UAT se
   assert.doesNotMatch(finalize, /UAT_ACTOR|UAT_FIXTURE_IDS|FIXTURE_CLEANUP_STATUS|UAT_STATUS/);
   assert.match(finalize, /verify_release_closure_and_final_ci/);
   assert.ok(finalize.indexOf("verify_release_closure_and_final_ci") < finalize.indexOf("finalize-deploy-evidence.sh"));
-  assert.match(finalize, /"\$EVIDENCE_FILE" "\$FINALIZE_ACCEPTANCE_DIGEST" "\$FINALIZE_CLOSURE_SHA" "\$FINALIZE_RUN_ID" "\$FINALIZE_FINAL_SHA"/);
+  assert.match(finalize, /"\$EVIDENCE_FILE" "\$FINALIZE_ACCEPTANCE_DIGEST" "\$FINALIZE_CLOSURE_SHA" "\$FINALIZE_RUN_ID" "\$\{FINALIZE_EVIDENCE_FINAL_ARGS\[@\]\}"/);
+  assert.match(finalize, /mapfile -t FINALIZE_EVIDENCE_FINAL_ARGS < <\(finalize_final_sha_evidence_args\)/);
 
   const verifierStart = source.indexOf("verify_release_closure_and_final_ci() (");
   assert.ok(verifierStart >= 0 && verifierStart < finalizeStart);
@@ -981,7 +1007,9 @@ test("canonical attestation and digest-only finalization replace freeform UAT se
   assert.match(verifier, /actions\/workflows\/\$CANONICAL_CI_WORKFLOW_ID/);
   assert.match(verifier, /--release-sha "\$FINALIZE_RELEASE_SHA"/);
   assert.match(verifier, /--closure-sha "\$FINALIZE_CLOSURE_SHA"/);
-  assert.equal(verifier.split('--final-sha "$FINALIZE_FINAL_SHA"').length - 1, 2, "both checker invocations bind the final-run SHA");
+  assert.match(verifier, /mapfile -t final_sha_args < <\(finalize_final_sha_checker_args\)/);
+  assert.equal(verifier.split('"${final_sha_args[@]}"').length - 1, 2, "both checker invocations bind the final-run SHA only when it differs from the closure");
+  assert.doesNotMatch(verifier, /--final-sha "\$FINALIZE_FINAL_SHA"/);
   assert.match(verifier, /--acceptance-digest "\$FINALIZE_ACCEPTANCE_DIGEST"/);
   assert.match(verifier, /--run-id "\$FINALIZE_RUN_ID"/);
   assert.match(verifier, /--workflow-json-file "\$workflow_file"/);

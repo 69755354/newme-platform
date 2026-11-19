@@ -239,9 +239,15 @@ may it atomically write `release_status=complete`, recording `closure_sha`,
 `final_sha`, and `final_ci_head_sha` (= `final_sha`) under `release_closure`.
 The former freeform actor/fixture arguments are not accepted.
 
-Because finalize runs the checker shipped inside the deployed release, a release
-cut from a tree that predates the tolerant rule can still only be closed under
-the single-slot rule; if its slot is gone, it is superseded as described below.
+Because finalize runs the checker and evidence finalizer shipped inside the
+deployed release, a release cut from a tree that predates the tolerant rule can
+only be closed under the single-slot rule: the coordinator passes `--final-sha`
+and the fifth evidence argument only when the final-run SHA differs from the
+closure SHA, so such a release still finalizes when main head is its closure
+commit, and the supersession rule below treats any commit after that closure as
+consuming its slot (it checks whether the live release's own checker knows
+`--final-sha`). Supersede it as described below; do not wait for a closure that
+release cannot accept.
 
 ## When the closure slot is already gone
 
@@ -261,13 +267,19 @@ separates the two states that rule conflated, and
 `tests/release/live-release-supersession.test.mjs` executes both:
 
 - the closure is still reachable -- the first commit after the live release is a
-  TASKBOARD.md-only single child and every later commit up to the candidate is a
-  non-merge commit changing only `closure_drift_path_allowed` paths (the shell
-  twin of `CLOSURE_DRIFT_ALLOWED_PATHS`) -- so the release was merely not
-  finalized yet: refused, finalize it with the candidate as `<final-run-sha>`;
+  TASKBOARD.md-only single child adding exactly one acceptance marker, every
+  later commit up to the candidate is a non-merge commit changing only
+  `closure_drift_path_allowed` paths (the shell twin of
+  `CLOSURE_DRIFT_ALLOWED_PATHS`), the live release's own checker understands
+  `--final-sha` whenever such later commits exist, and that marker is still
+  present exactly once in the candidate's TASKBOARD.md -- so the release was
+  merely not finalized yet: refused, finalize it with the candidate as
+  `<final-run-sha>`;
 - the candidate contains the live release but the slot is provably consumed (a
-  non-TASKBOARD first commit, a merge, or any runtime path after the record) and
-  the live release is `acceptance_verified`: the deployment proceeds and prints
+  non-TASKBOARD first commit, a merge, any runtime path after the record, a
+  live release whose checker predates `--final-sha`, or a marker finalize could
+  not accept -- the last three are explained on stderr) and the live release is
+  `acceptance_verified`: the deployment proceeds and prints
   `superseded_release=<sha> superseded_status=... closure_slot=consumed`, which is
   the release's closing record in place of a TASKBOARD marker it can never carry.
 

@@ -55,6 +55,13 @@ function extractSubshellFunction(file, name) {
 
 const PATH_RULE_NAME = "closure_drift_path_allowed";
 const REACHABLE_NAME = "live_release_closure_reachable";
+const CHECKER_ARGS_NAME = "finalize_final_sha_checker_args";
+const EVIDENCE_ARGS_NAME = "finalize_final_sha_evidence_args";
+const NEW_CHECKER = readFileSync(path.join(ROOT, "scripts/check-release-closure.mjs"), "utf8");
+// A checker from before the final-run SHA existed: it has no --final-sha flag.
+const OLD_CHECKER = "// legacy release-closure checker: --release-sha --closure-sha --acceptance-digest only\n";
+const DIGEST = "a".repeat(64);
+const MARKER = `<!-- postdeploy-acceptance-sha256:${DIGEST} -->`;
 // The supersession function calls two helpers defined just above it; lift all
 // three so the executed rule is exactly the wrapper's.
 const FUNCTION = [
@@ -93,42 +100,66 @@ function commit(work, message, files) {
 }
 
 /**
- * One repository holding every shape the function has to tell apart:
+ * One repository holding every shape the function has to tell apart. `live`
+ * ships the current checker (knows --final-sha); `liveOld` ships a checker from
+ * before the final-run SHA existed.
  *
  *   base ── live ── closure              TASKBOARD.md only, one commit        (reachable)
- *             │       ├─ closureThenDocs  then docs/, .claude/, CLAUDE.md     (reachable)
+ *             │       ├─ closureThenDocs  then docs/, .claude/, CLAUDE.md,    (reachable)
+ *             │       │                   a Chinese docs path, TASKBOARD.md
  *             │       ├─ closureThenSrc   then docs/ then a source path       (consumed)
  *             │       ├─ closureThenInfra then infra/ (.github/ likewise)     (consumed)
- *             │       └─ closureThenMerge then a merge of two docs commits    (consumed)
+ *             │       ├─ closureThenMerge then a merge of two docs commits    (consumed)
+ *             │       └─ markerErased     then TASKBOARD.md loses the marker  (consumed, noted)
  *             │  └─ source               a source path                       (consumed)
  *             │  └─ taskboardTwice       TASKBOARD.md only, two commits       (reachable)
  *             │  └─ docsFirst            docs/ first, TASKBOARD.md second     (consumed)
+ *             │  └─ fakeMarker           closure adds no real marker          (consumed, noted)
  *             └─ (from base) sibling     does not contain live
+ *   base ── liveOld ── oldClosure        TASKBOARD.md only, one commit        (reachable)
+ *                        └─ oldThenDocs   then docs/ only                     (consumed, noted)
  */
 function buildRepository() {
   const work = path.join(TMP, "repo");
   mkdirSync(work, { recursive: true });
   git(work, "init", "--quiet", "--initial-branch=main", ".");
-  const base = commit(work, "base", { "TASKBOARD.md": "board v1\n", "src.txt": "code v1\n" });
+  const base = commit(work, "base", {
+    "TASKBOARD.md": "board v1\n",
+    "src.txt": "code v1\n",
+    "scripts/check-release-closure.mjs": NEW_CHECKER,
+  });
   const live = commit(work, "live release", { "src.txt": "code v2\n" });
 
   git(work, "checkout", "--quiet", "-b", "closure", live);
-  const closure = commit(work, "closure", { "TASKBOARD.md": "board v1\n<!-- marker -->\n" });
+  const closure = commit(work, "closure", { "TASKBOARD.md": `board v1\n${MARKER}\n` });
 
   git(work, "checkout", "--quiet", "-b", "source", live);
   const source = commit(work, "candidate with a source change", { "src.txt": "code v3\n" });
 
   git(work, "checkout", "--quiet", "-b", "taskboardTwice", live);
-  commit(work, "closure attempt", { "TASKBOARD.md": "board v1\n<!-- marker -->\n" });
-  const taskboardTwice = commit(work, "second taskboard commit", { "TASKBOARD.md": "board v1\n<!-- marker -->\n<!-- again -->\n" });
+  commit(work, "closure attempt", { "TASKBOARD.md": `board v1\n${MARKER}\n` });
+  const taskboardTwice = commit(work, "second taskboard commit", { "TASKBOARD.md": `board v1\n${MARKER}\n<!-- again -->\n` });
 
   git(work, "checkout", "--quiet", "-b", "docsFirst", live);
   commit(work, "docs before the record", { "docs-note.md": "note\n" });
-  const docsFirst = commit(work, "record after docs", { "TASKBOARD.md": "board v1\n<!-- marker -->\n" });
+  const docsFirst = commit(work, "record after docs", { "TASKBOARD.md": `board v1\n${MARKER}\n` });
+
+  git(work, "checkout", "--quiet", "-b", "fakeMarker", live);
+  const fakeMarker = commit(work, "closure without a real marker", { "TASKBOARD.md": "board v1\n<!-- marker -->\n" });
 
   git(work, "checkout", "--quiet", "-b", "closureThenDocs", closure);
-  commit(work, "docs chore", { "docs/runbook.md": "runbook\n", "CLAUDE.md": "@AGENTS.md\n" });
-  const closureThenDocs = commit(work, "agent config", { ".claude/settings.json": "{}\n", "TASKBOARD.md": "board v1\n<!-- marker -->\n| NEXT | TODO |\n" });
+  commit(work, "docs chore", { "docs/runbook.md": "runbook\n", "CLAUDE.md": "@AGENTS.md\n", "docs/新CRM全局结构技术方案.md": "方案\n" });
+  const closureThenDocs = commit(work, "agent config", { ".claude/settings.json": "{}\n", "TASKBOARD.md": `board v1\n${MARKER}\n| NEXT | TODO |\n` });
+
+  git(work, "checkout", "--quiet", "-b", "markerErased", closure);
+  const markerErased = commit(work, "docs commit that also erases the marker", { "docs/a.md": "a\n", "TASKBOARD.md": "board v1\n" });
+
+  git(work, "checkout", "--quiet", "-b", "liveOld", base);
+  const liveOld = commit(work, "live release with the legacy checker", { "src.txt": "code v2 old\n", "scripts/check-release-closure.mjs": OLD_CHECKER });
+  git(work, "checkout", "--quiet", "-b", "oldClosure", liveOld);
+  const oldClosure = commit(work, "legacy closure", { "TASKBOARD.md": `board v1\n${MARKER}\n` });
+  git(work, "checkout", "--quiet", "-b", "oldThenDocs", oldClosure);
+  const oldThenDocs = commit(work, "docs after the legacy closure", { "docs/x.md": "x\n" });
 
   git(work, "checkout", "--quiet", "-b", "closureThenSrc", closureThenDocs);
   const closureThenSrc = commit(work, "source after docs", { "src.txt": "code v3\n" });
@@ -148,8 +179,9 @@ function buildRepository() {
 
   return {
     mirror: path.join(work, ".git"),
-    base, live, closure, source, taskboardTwice, docsFirst,
-    closureThenDocs, closureThenSrc, closureThenInfra, closureThenMerge, sibling,
+    base, live, closure, source, taskboardTwice, docsFirst, fakeMarker,
+    closureThenDocs, closureThenSrc, closureThenInfra, closureThenMerge, markerErased,
+    liveOld, oldClosure, oldThenDocs, sibling,
   };
 }
 
@@ -210,7 +242,56 @@ test("a runtime path, a merge, or a docs commit ahead of the record consumes the
     const result = ask({ status: "acceptance_verified", candidate });
     assert.equal(result.code, 0, `${name}: ${result.stderr}`);
     assert.match(result.stdout, new RegExp(`closure_slot=consumed commits_since=${commits}$`, "m"), name);
+    assert.equal(result.stderr, "", `${name}: the plain shape needs no note`);
   }
+});
+
+test("a live release whose own checker predates --final-sha keeps the single-slot rule", () => {
+  // The legacy single child is still reachable: finalize with four arguments.
+  const reachable = ask({ status: "acceptance_verified", live: REPO.liveOld, candidate: REPO.oldClosure });
+  assert.equal(reachable.code, 65, reachable.stdout);
+  assert.match(reachable.stderr, /closure commit is still reachable; finalize it instead of deploying/);
+
+  // A docs commit after it would be tolerated by the current checker, but
+  // finalize runs the release's OWN checker, which rejects --final-sha with exit
+  // 64; refusing to deploy here would be the deadlock, so the slot is consumed.
+  const consumed = ask({ status: "acceptance_verified", live: REPO.liveOld, candidate: REPO.oldThenDocs });
+  assert.equal(consumed.code, 0, consumed.stderr);
+  assert.match(consumed.stdout, /closure_slot=consumed commits_since=2$/m);
+  assert.match(consumed.stderr, /own release-closure checker predates --final-sha/);
+});
+
+test("a closure the checker could not accept is reported as consumed, with the reason", () => {
+  const erased = ask({ status: "acceptance_verified", candidate: REPO.markerErased });
+  assert.equal(erased.code, 0, erased.stderr);
+  assert.match(erased.stdout, /closure_slot=consumed commits_since=2$/m);
+  assert.match(erased.stderr, /acceptance marker is no longer present exactly once in the candidate TASKBOARD\.md/);
+
+  const fake = ask({ status: "acceptance_verified", candidate: REPO.fakeMarker });
+  assert.equal(fake.code, 0, fake.stderr);
+  assert.match(fake.stdout, /closure_slot=consumed commits_since=1$/m);
+  assert.match(fake.stderr, /does not add exactly one acceptance marker/);
+});
+
+test("the final-run SHA is passed to the release's checker and finalizer only when it differs from the closure", () => {
+  const helpers = [
+    extractSubshellFunction(WRAPPER, CHECKER_ARGS_NAME),
+    extractSubshellFunction(WRAPPER, EVIDENCE_ARGS_NAME),
+  ].join("\n");
+  const script = path.join(TMP, "final-args.sh");
+  writeFileSync(script, `${helpers}\nmapfile -t a < <(${CHECKER_ARGS_NAME}); mapfile -t b < <(${EVIDENCE_ARGS_NAME}); printf 'checker=%s\\n' "\${#a[@]}" "\${a[@]}"; printf 'evidence=%s\\n' "\${#b[@]}" "\${b[@]}"\n`);
+  const closure = "b".repeat(40);
+  const same = spawnSync("bash", [script], { encoding: "utf8", env: { ...process.env, FINALIZE_CLOSURE_SHA: closure, FINALIZE_FINAL_SHA: closure } });
+  assert.equal(same.status, 0, same.stderr);
+  assert.equal(same.stdout, "checker=0\nevidence=0\n", "the single-slot flow invokes the release's tools exactly as before");
+  const different = spawnSync("bash", [script], { encoding: "utf8", env: { ...process.env, FINALIZE_CLOSURE_SHA: closure, FINALIZE_FINAL_SHA: "c".repeat(40) } });
+  assert.equal(different.status, 0, different.stderr);
+  assert.equal(different.stdout, `checker=2\nchecker=--final-sha\nchecker=${"c".repeat(40)}\nevidence=1\nevidence=${"c".repeat(40)}\n`);
+
+  const wrapper = readFileSync(WRAPPER, "utf8");
+  assert.equal(wrapper.split('"${final_sha_args[@]}"').length - 1, 2, "both checker invocations splice the conditional arguments");
+  assert.doesNotMatch(wrapper, /--final-sha "\$FINALIZE_FINAL_SHA"/, "the flag is never passed unconditionally");
+  assert.match(wrapper, /"\$FINALIZE_RUN_ID" "\$\{FINALIZE_EVIDENCE_FINAL_ARGS\[@\]\}"/);
 });
 
 test("the shell drift allowlist agrees with isClosureDriftAllowedPath on a shared corpus", () => {
@@ -223,12 +304,15 @@ test("the shell drift allowlist agrees with isClosureDriftAllowedPath on a share
     "tsconfig.json", "crm-v3/README.md", "crm-v3/ops/sync-metadata.json", "nested/x.md", "TASKBOARD.md.bak",
     "docs/../src/a.ts", "./README.md", "docs/./a.md", "/docs/a.md", "docs/", "docs", ".claude", "..", ".",
     "README.markdown", "x.MD", "docs/a.md ", " docs/a.md",
+    "docs/新CRM全局结构技术方案.md", "新文档.md", "docs//x", "docs/a\\b.md", "a\\b.md", 'docs/a"b.md', "docs/a b.md",
+    "a b.md", "docs/a\nb.md", ".md", "*.md", "Docs/y.md", "Src/a.js", "x.md/", "docs/x", "crm-v3/spec.md",
   ];
   const script = path.join(TMP, "paths.sh");
-  writeFileSync(script, `${FUNCTION}\nfor file in "$@"; do if ${PATH_RULE_NAME} "$file"; then echo "allow $file"; else echo "deny $file"; fi; done\n`);
+  // NUL-separated so a path containing a newline stays one verdict.
+  writeFileSync(script, `${FUNCTION}\nfor file in "$@"; do if ${PATH_RULE_NAME} "$file"; then printf 'allow %s\\0' "$file"; else printf 'deny %s\\0' "$file"; fi; done\n`);
   const result = spawnSync("bash", [script, ...corpus], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
-  const verdicts = result.stdout.split("\n").filter(Boolean);
+  const verdicts = result.stdout.split("\0").filter(Boolean);
   assert.equal(verdicts.length, corpus.length);
   for (const [index, file] of corpus.entries()) {
     const expected = isClosureDriftAllowedPath(file) ? "allow" : "deny";

@@ -1167,6 +1167,21 @@ esac
 # CLOSURE_DRIFT_ALLOWED_PATHS). This function re-measures all of that from the
 # root-owned mirror with the deployed release's own checker. It runs in a
 # subshell so token/config cleanup cannot be bypassed by an early return.
+# Extra arguments that name the final-run SHA, printed one per line: nothing
+# while it equals the closure SHA. Finalize executes the checker and the evidence
+# finalizer shipped INSIDE the deployed release; releases cut before the
+# final-run SHA existed reject the flag (exit 64) and a fifth evidence argument
+# (exit 1), so under the single-slot flow they must be invoked exactly as before.
+# tests/release/live-release-supersession.test.mjs executes these.
+finalize_final_sha_checker_args() (
+  [ "${FINALIZE_FINAL_SHA:-}" != "${FINALIZE_CLOSURE_SHA:-}" ] || return 0
+  printf -- '--final-sha\n%s\n' "$FINALIZE_FINAL_SHA"
+)
+finalize_final_sha_evidence_args() (
+  [ "${FINALIZE_FINAL_SHA:-}" != "${FINALIZE_CLOSURE_SHA:-}" ] || return 0
+  printf '%s\n' "$FINALIZE_FINAL_SHA"
+)
+
 verify_release_closure_and_final_ci() (
   set -Eeuo pipefail
   local mirror=/opt/newme/repository.git
@@ -1176,6 +1191,7 @@ verify_release_closure_and_final_ci() (
   local checker="$FINALIZE_TARGET/scripts/check-release-closure.mjs"
   local main_sha github_token
   local curl_config="" run_file="" jobs_file="" workflow_file="" manifest_file=""
+  local final_sha_args=()
 
   cleanup_finalize_ci_files() {
     local file
@@ -1210,10 +1226,15 @@ verify_release_closure_and_final_ci() (
       echo "release-closure checker ownership, mode, or exact-SHA bytes are invalid" >&2
       return 65
     }
+  # The checker is the deployed release's own copy. A release cut before the
+  # --final-sha flag existed exits 64 on it, so the flag is passed only when the
+  # final-run SHA actually differs from the closure SHA; under the single-slot
+  # flow such a release is still finalizable with its own checker.
+  mapfile -t final_sha_args < <(finalize_final_sha_checker_args)
   "$NODE_BIN" "$checker" \
     --release-sha "$FINALIZE_RELEASE_SHA" \
     --closure-sha "$FINALIZE_CLOSURE_SHA" \
-    --final-sha "$FINALIZE_FINAL_SHA" \
+    "${final_sha_args[@]}" \
     --acceptance-digest "$FINALIZE_ACCEPTANCE_DIGEST" \
     --repo "$mirror" || return 65
 
@@ -1268,7 +1289,7 @@ verify_release_closure_and_final_ci() (
   "$NODE_BIN" "$checker" \
     --release-sha "$FINALIZE_RELEASE_SHA" \
     --closure-sha "$FINALIZE_CLOSURE_SHA" \
-    --final-sha "$FINALIZE_FINAL_SHA" \
+    "${final_sha_args[@]}" \
     --acceptance-digest "$FINALIZE_ACCEPTANCE_DIGEST" \
     --repo "$mirror" \
     --run-id "$FINALIZE_RUN_ID" \
@@ -1585,7 +1606,7 @@ esac
 closure_drift_path_allowed() (
   local file=${1:-}
   case "$file" in
-    ""|/*|*/|.|..|./*|../*|*/./*|*/../*|*/.|*/..) return 1 ;;
+    ""|/*|*/|.|..|./*|../*|*/./*|*/../*|*/.|*/..|*//*|*\\*) return 1 ;;
     src/*|supabase/*|scripts/*|infra/*|.github/*|tests/*|public/*|node_modules/*) return 1 ;;
     package.json|package-lock.json) return 1 ;;
     TASKBOARD.md|crm-v3/SPEC.md) return 0 ;;
@@ -1597,12 +1618,21 @@ closure_drift_path_allowed() (
 )
 
 # Is the live release's closure still reachable through this candidate? Prints
-# nothing; exit 0 means "yes, finalize it instead of deploying", exit 1 means the
-# slot is consumed. Any Git failure is treated as consumed-unknown (exit 65).
+# nothing on success; exit 0 means "yes, finalize it instead of deploying", exit 1
+# means the slot is consumed (a note on stderr says why when the reason is not
+# the plain shape of the history). Any Git failure is exit 65.
+#
+# Reachable means `newme-deploy finalize <live> <digest> <closure> <run> [<candidate>]`
+# could actually succeed, so beyond the commit shape this also requires that
+# (1) when commits follow the closure record, the live release's OWN checker
+# understands --final-sha -- finalize runs that copy, so an older release can
+# only ever be closed under the single-slot rule; and (2) the marker the closure
+# record added is still present exactly once in the candidate's TASKBOARD.md.
 live_release_closure_reachable() (
   set -Eeuo pipefail
   local mirror=${1:-} live_sha=${2:-} candidate_sha=${3:-}
-  local chain line sha parents index=0 file changed
+  local chain line sha parents index=0 file closure_sha="" markers_before markers_after digest=""
+  local -a files
   chain="$(git --git-dir="$mirror" rev-list --reverse --parents "$live_sha..$candidate_sha")" || return 65
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -1612,19 +1642,43 @@ live_release_closure_reachable() (
     case "$parents" in
       *" "*|"") return 1 ;;
     esac
-    changed="$(git --git-dir="$mirror" diff-tree --no-commit-id --name-only --no-renames -r "$sha" --)" || return 65
+    git --git-dir="$mirror" -c core.quotePath=false diff-tree --no-commit-id --name-only --no-renames -r -z "$sha" -- >/dev/null || return 65
+    files=()
+    mapfile -d '' files < <(git --git-dir="$mirror" -c core.quotePath=false diff-tree --no-commit-id --name-only --no-renames -r -z "$sha" --)
     if [ "$index" -eq 0 ]; then
       [ "$parents" = "$live_sha" ] || return 1
-      [ "$changed" = TASKBOARD.md ] || return 1
+      [ "${#files[@]}" -eq 1 ] && [ "${files[0]}" = TASKBOARD.md ] || return 1
+      closure_sha=$sha
     else
-      while IFS= read -r file; do
-        [ -n "$file" ] || continue
+      for file in "${files[@]}"; do
         closure_drift_path_allowed "$file" || return 1
-      done <<< "$changed"
+      done
     fi
     index=$((index + 1))
   done <<< "$chain"
   [ "$index" -ge 1 ] || return 1
+
+  if [ "$index" -gt 1 ]; then
+    if ! git --git-dir="$mirror" show "$live_sha:scripts/check-release-closure.mjs" 2>/dev/null | grep -q -- '--final-sha'; then
+      echo "note: the live release's own release-closure checker predates --final-sha, so the commits after its closure record consume the slot (older releases close only under the single-slot rule)" >&2
+      return 1
+    fi
+  fi
+
+  markers_before="$(git --git-dir="$mirror" show "$live_sha:TASKBOARD.md" | grep -o 'postdeploy-acceptance-sha256:[0-9a-f]\{64\}' || true)"
+  markers_after="$(git --git-dir="$mirror" show "$closure_sha:TASKBOARD.md" | grep -o 'postdeploy-acceptance-sha256:[0-9a-f]\{64\}' || true)"
+  digest="$(comm -13 <(printf '%s\n' "$markers_before" | sort) <(printf '%s\n' "$markers_after" | sort))"
+  case "$digest" in
+    postdeploy-acceptance-sha256:*) ;;
+    *)
+      echo "note: the closure record does not add exactly one acceptance marker, so finalize could not accept it; the slot is treated as consumed" >&2
+      return 1
+      ;;
+  esac
+  if [ "$(git --git-dir="$mirror" show "$candidate_sha:TASKBOARD.md" | grep -c -- "$digest")" -ne 1 ]; then
+    echo "note: the closure record's acceptance marker is no longer present exactly once in the candidate TASKBOARD.md, so finalize could not accept it; the slot is treated as consumed" >&2
+    return 1
+  fi
   return 0
 )
 
@@ -1833,8 +1887,9 @@ PY
     echo "release closure or final CI expired/changed before final release evidence could be written" >&2
     exit 65
   }
+  mapfile -t FINALIZE_EVIDENCE_FINAL_ARGS < <(finalize_final_sha_evidence_args)
   bash "$FINALIZE_TARGET/scripts/finalize-deploy-evidence.sh" \
-    "$EVIDENCE_FILE" "$FINALIZE_ACCEPTANCE_DIGEST" "$FINALIZE_CLOSURE_SHA" "$FINALIZE_RUN_ID" "$FINALIZE_FINAL_SHA"
+    "$EVIDENCE_FILE" "$FINALIZE_ACCEPTANCE_DIGEST" "$FINALIZE_CLOSURE_SHA" "$FINALIZE_RUN_ID" "${FINALIZE_EVIDENCE_FINAL_ARGS[@]}"
   sync -f "$EVIDENCE_FILE"
   sync -f "$FINALIZE_TARGET/.audit"
   echo "finalized release=$FINALIZE_RELEASE_SHA acceptance=$FINALIZE_ACCEPTANCE_DIGEST closure=$FINALIZE_CLOSURE_SHA final=$FINALIZE_FINAL_SHA final_run=$FINALIZE_RUN_ID evidence=$EVIDENCE_FILE status=complete"

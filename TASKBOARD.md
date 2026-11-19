@@ -1186,6 +1186,12 @@ touching `src/`, `supabase/`, `scripts/`, `infra/`, `.github/`, `tests/`,
 to equal canonical main, and records `final_sha` / `final_ci_head_sha` in the
 evidence; the live-release supersession rule refuses deployment while a closure
 is still reachable through non-runtime commits. Finalize uses the deployed
-release's own checker, so only releases cut after this change benefit. Release
-closure suite 26/26, supersession 12/12, finalizer 8/8; full-suite failures are
-identical to unmodified main (6 environment-dependent tests).
+release's own checker and finalizer, so `--final-sha` and the fifth evidence
+argument are passed only when the final-run SHA differs from the closure SHA,
+releases cut before this change keep the single-slot rule (the supersession
+rule checks whether the live release's checker knows `--final-sha`, and treats
+a closure whose marker is missing or duplicated as consumed, saying why), and
+the shell path rule reads NUL-separated unquoted paths so non-ASCII names agree
+with the JavaScript rule. Release closure suite 27/27, supersession 16/16,
+finalizer 9/9, rollback controller 5/5; full-suite failures are identical to
+unmodified main (6 environment-dependent tests).

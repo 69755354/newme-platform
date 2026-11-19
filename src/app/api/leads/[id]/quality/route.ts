@@ -8,6 +8,8 @@ import {
   requestAuthErrorResponse,
 } from '@/lib/request-auth-context';
 import { isCompleteContact } from '@/lib/first-contact-gate.mjs';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { enqueueWhatsAppCapiForQuality } from '@/lib/whatsapp-capi.mjs';
 
 export async function POST(
   req: NextRequest,
@@ -109,6 +111,9 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    // Click-to-WhatsApp leads rated good or normal are reported as qualified (best-effort, never throws).
+    await enqueueWhatsAppCapiForQuality(supabaseAdmin, leadId, quality);
 
     // INSERT business_events (best-effort, do not fail request)
     let eventLogged = false;

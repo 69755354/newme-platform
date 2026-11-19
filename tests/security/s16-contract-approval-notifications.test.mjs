@@ -100,6 +100,7 @@ function patchWorld({ approvals, failInsert = false, dispatchFails = false }) {
     "@/lib/contract-approval-rows.mjs": approvalRows,
     "@/lib/supabase-admin": { supabaseAdmin: admin },
     "@/lib/meta-crm-events": { enqueueMetaCrmWonForContract: async () => {} },
+    "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppPurchaseForContract: async () => {} },
     "@/lib/notification-dispatch": {
       dispatchPersistedNotification: async ({ input }) => {
         events.push(["notify", input.type, approvals.filter((row) => row.status === "pending").length]);

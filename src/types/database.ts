@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=c982a7394da58c2001d4e7de4fc8e8acaef71aa6be60ebab4d02af1b4c116963
+// Migration fingerprint: sha256=4f7a5d82ae7bd4f0536f913a9c4b1ea4bbcc9f3b1fed220e0b496d51644d956f
 export type Json =
   | string
   | number
@@ -1956,6 +1956,7 @@ export type Database = {
           created_by: string | null
           creative_id: string | null
           creative_name: string | null
+          ctwa_clid: string | null
           current_milestone: string | null
           customer_budget: number | null
           customer_company_type: string | null
@@ -2047,6 +2048,10 @@ export type Database = {
           utm_source: string | null
           utm_term: string | null
           visit_status: string | null
+          wa_ad_headline: string | null
+          wa_ad_source_url: string | null
+          wa_first_inbound_at: string | null
+          wa_first_reply_at: string | null
           win_probability: number | null
           won_at: string | null
         }
@@ -2077,6 +2082,7 @@ export type Database = {
           created_by?: string | null
           creative_id?: string | null
           creative_name?: string | null
+          ctwa_clid?: string | null
           current_milestone?: string | null
           customer_budget?: number | null
           customer_company_type?: string | null
@@ -2168,6 +2174,10 @@ export type Database = {
           utm_source?: string | null
           utm_term?: string | null
           visit_status?: string | null
+          wa_ad_headline?: string | null
+          wa_ad_source_url?: string | null
+          wa_first_inbound_at?: string | null
+          wa_first_reply_at?: string | null
           win_probability?: number | null
           won_at?: string | null
         }
@@ -2198,6 +2208,7 @@ export type Database = {
           created_by?: string | null
           creative_id?: string | null
           creative_name?: string | null
+          ctwa_clid?: string | null
           current_milestone?: string | null
           customer_budget?: number | null
           customer_company_type?: string | null
@@ -2289,6 +2300,10 @@ export type Database = {
           utm_source?: string | null
           utm_term?: string | null
           visit_status?: string | null
+          wa_ad_headline?: string | null
+          wa_ad_source_url?: string | null
+          wa_first_inbound_at?: string | null
+          wa_first_reply_at?: string | null
           win_probability?: number | null
           won_at?: string | null
         }

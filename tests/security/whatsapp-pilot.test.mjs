@@ -89,7 +89,8 @@ test("webhook route fails closed, validates challenge and retries storage failur
     select: () => ({ eq: async () => ({ data: [channel], error: null }) }),
     upsert: async (rows, options) => { calls.push({ table, rows, options }); return { error: failStorage ? { code: "unavailable" } : null }; },
   }) };
-  const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs") });
+  admin.rpc = async () => ({ data: { duplicate: false }, error: null });
+  const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"), "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs") });
   try {
     Date.now = () => now;
     delete process.env.WHATSAPP_PILOT_ENABLED;
@@ -145,10 +146,10 @@ test("webhook drops a batch that ages out during parsing, preserves fresh rows, 
   const admin = { from: () => ({
     select: () => ({ eq: async () => ({ data: [longRunning], error: null }) }),
     upsert: async rows => { writes.push(rows); return { error: null }; },
-  }) };
+  }), rpc: async () => ({ data: { duplicate: false }, error: null }) };
   const actual = require("../../src/lib/whatsapp-pilot.mjs");
   const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", {
-    "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin },
+    "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs"),
     "@/lib/whatsapp-pilot.mjs": { ...actual, extractWhatsAppEvents: (...args) => {
       const rows = actual.extractWhatsAppEvents(...args);
       clock += 1000; // Represents elapsed time while parsing a batch, before dispatch.
@@ -191,4 +192,74 @@ test("pilot status requires current boss/admin context before any service-role q
     assert.equal((await (await route.GET(new Request("https://example.test"))).json()).state, "disabled");
     assert.equal(touched, 0);
   } finally { process.env = saved; }
+});
+
+// ── S18: second app secret, alias path, coexistence onboarding fields ──
+test("signature accepts any listed secret, rejects others and empty lists", () => {
+  const bytes = Buffer.from('{"a":1}');
+  const sign = (s) => `sha256=${createHmac("sha256", s).update(bytes).digest("hex")}`;
+  assert.equal(verifyWhatsAppSignature(bytes, sign("meta-secret"), ["wa-secret", "meta-secret"]), true);
+  assert.equal(verifyWhatsAppSignature(bytes, sign("wa-secret"), ["wa-secret", "meta-secret"]), true);
+  assert.equal(verifyWhatsAppSignature(bytes, sign("other"), ["wa-secret", "meta-secret"]), false);
+  assert.equal(verifyWhatsAppSignature(bytes, sign("x"), []), false);
+  assert.equal(verifyWhatsAppSignature(bytes, sign("x"), undefined), false);
+});
+
+test("alias route shares the handler; META_APP_SECRET signs; history and sync fields get 200 without storing anything", async () => {
+  const saved = { ...process.env };
+  const writes = []; const rpcs = [];
+  const admin = { from: () => ({ select: () => ({ eq: async () => ({ data: [channel], error: null }) }), upsert: async (r) => { writes.push(r); return { error: null }; } }),
+    rpc: async (n, a) => { rpcs.push([n, a]); return { data: {}, error: null }; } };
+  const mocks = { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"),
+    "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs") };
+  const real = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", mocks);
+  const alias = loadRoute("../../src/app/api/meta/whatsapp-webhook/route.ts", { ...mocks, "@/app/api/whatsapp/webhook/route": real });
+  const savedClock = Date.now;
+  try {
+    Date.now = () => now;
+    Object.assign(process.env, { WHATSAPP_PILOT_ENABLED: "true", WHATSAPP_APP_SECRET: "wa-secret", META_APP_SECRET: "meta-secret", WHATSAPP_PILOT_CONTACT_SALT: "salt", WHATSAPP_WEBHOOK_VERIFY_TOKEN: "verify" });
+    assert.equal(alias.GET, real.GET); assert.equal(alias.POST, real.POST);
+    assert.equal(await (await alias.GET(new Request("https://example.test?hub.mode=subscribe&hub.verify_token=verify&hub.challenge=77"))).text(), "77");
+    const post = (body, secret) => alias.POST(new Request("https://example.test", { method: "POST", body, headers: { "content-type": "application/json", "x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}` } }));
+    const referral = { source_type: "ad", source_id: "120210000000001", source_url: "https://fb.me/x", headline: "h", body: "PRIVATE", media_type: "image", ctwa_clid: "AfcT3sTcLiCkId_abc-123XYZ" };
+    const ad = JSON.stringify(payload("messages", [message("ad-1", "2026-10-19T01:00:00Z", { referral })]));
+    assert.equal((await post(ad, "meta-secret")).status, 200);
+    assert.equal(rpcs.length, 1);
+    assert.equal(rpcs[0][1].p_event.referral.ctwa_clid, "AfcT3sTcLiCkId_abc-123XYZ");
+    assert.equal(JSON.stringify(rpcs).includes("PRIVATE"), false);
+    assert.equal((await post(ad, "wrong")).status, 403);
+    const onboarding = JSON.stringify({ object: "whatsapp_business_account", entry: [{ id: channel.waba_id, changes: [
+      { field: "history", value: { messaging_product: "whatsapp", metadata: { phone_number_id: channel.phone_number_id }, history: [{ metadata: { phase: 0 }, threads: [{ id: "x", messages: [{ id: "h1", text: { body: "PRIVATE" } }] }] }] } },
+      { field: "smb_app_state_sync", value: { state_sync: [{ type: "contact", contact: { full_name: "PRIVATE" } }] } },
+      { field: "account_update", value: { event: "PARTNER_ADDED" } },
+      { field: "never_heard_of_it", value: {} }] }] });
+    const before = rpcs.length; const writesBefore = writes.length;
+    assert.equal((await post(onboarding, "meta-secret")).status, 200);
+    assert.equal(rpcs.length, before); assert.equal(writes.length, writesBefore);
+  } finally { process.env = saved; Date.now = savedClock; }
+});
+
+// ── S18 review: the ad path must never run when the pilot write is refused ──
+test("pilot write failure answers 503 and the ad path is not touched, on both paths; success still records", async () => {
+  const saved = { ...process.env }; const savedClock = Date.now;
+  let failPilot = false; const rpcs = [];
+  const admin = { from: () => ({ select: () => ({ eq: async () => ({ data: [channel], error: null }) }),
+    upsert: async () => ({ error: failPilot ? { code: "55000" } : null }) }),
+    rpc: async (n, a) => { rpcs.push([n, a]); return { data: {}, error: null }; } };
+  const mocks = { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"),
+    "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs") };
+  const real = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", mocks);
+  const alias = loadRoute("../../src/app/api/meta/whatsapp-webhook/route.ts", { ...mocks, "@/app/api/whatsapp/webhook/route": real });
+  try {
+    Date.now = () => now;
+    Object.assign(process.env, { WHATSAPP_PILOT_ENABLED: "true", WHATSAPP_APP_SECRET: "secret", WHATSAPP_PILOT_CONTACT_SALT: "salt" });
+    const referral = { source_type: "ad", source_id: "120210000000001", source_url: "https://fb.me/x", media_type: "image", ctwa_clid: "AfcT3sTcLiCkId_abc-123XYZ" };
+    const raw = JSON.stringify(payload("messages", [message("ad-x", "2026-10-19T01:00:00Z", { referral })]));
+    const post = (route) => route.POST(new Request("https://example.test", { method: "POST", body: raw,
+      headers: { "content-type": "application/json", "x-hub-signature-256": `sha256=${createHmac("sha256", "secret").update(raw).digest("hex")}` } }));
+    failPilot = true;
+    for (const route of [real, alias]) { assert.equal((await post(route)).status, 503); assert.equal(rpcs.length, 0); }
+    failPilot = false;
+    assert.equal((await post(real)).status, 200); assert.equal(rpcs.length, 1);
+  } finally { process.env = saved; Date.now = savedClock; }
 });

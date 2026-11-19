@@ -10,10 +10,17 @@ export function isWhatsAppEventFresh(time, now = Date.now()) {
     && time > now - WHATSAPP_EVENT_MAX_AGE_MS && time <= now + 300_000;
 }
 
+/** `secret` is one app secret or a list (the WhatsApp and Meta app secrets); any match passes. */
 export function verifyWhatsAppSignature(bytes, signature, secret) {
-  if (!secret || !/^sha256=[a-f0-9]{64}$/.test(signature ?? "")) return false;
-  const expected = createHmac("sha256", secret).update(bytes).digest();
-  return timingSafeEqual(expected, Buffer.from(signature.slice(7), "hex"));
+  if (!/^sha256=[a-f0-9]{64}$/.test(signature ?? "")) return false;
+  const given = Buffer.from(signature.slice(7), "hex");
+  let ok = false;
+  for (const candidate of Array.isArray(secret) ? secret : [secret]) {
+    if (typeof candidate !== "string" || !candidate) continue;
+    const expected = createHmac("sha256", candidate).update(bytes).digest();
+    if (timingSafeEqual(expected, given)) ok = true;
+  }
+  return ok;
 }
 
 /** Store event metadata only. Never retain webhook bodies, chat text or media URLs. */

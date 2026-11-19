@@ -56,14 +56,14 @@ const gitZ = (args) => git(args).split("\0").filter(Boolean);
 const BYTE_SENSITIVE = ["supabase", "scripts", "infra", "tests", ".github"];
 
 /**
- * The four blobs committed with mixed line endings before the rule existed. They
+ * The blobs committed with mixed line endings before the rule existed (the quality route was
+ * normalised to LF when S18 edited it, 2026-11-19, leaving three). They
  * are pinned here rather than tolerated by a pattern: a fifth one appearing is a
  * question for a reviewer, not something this test should absorb.
  */
 const MIXED_EOL_EXEMPTIONS = [
   "build.log",
   "docs/meta-ads-auth-instructions.txt",
-  "src/app/api/leads/[id]/quality/route.ts",
   "tests/integration/api-validation-static.test.mjs",
 ];
 
@@ -198,7 +198,7 @@ test("every byte-sensitive tracked file resolves to eol=lf", () => {
   assert.match(control, /text: unset/);
 });
 
-test("no tracked blob carries CRLF except the four declared exemptions", () => {
+test("no tracked blob carries CRLF except the declared exemptions", () => {
   const rows = indexEol();
   assert.ok(rows.length > 900, `expected the whole index, got ${rows.length} rows`);
 

@@ -25,6 +25,12 @@
 > ⚠️ **COMPACT 后:用户最后 3 条消息 > 本文件 > handoff 摘要**
 > (本文件是参考手册,不是圣经。compaction 时用户的尾消息是唯一权威。)
 
+## 2026-11-19 S17 运行层 + S18 WhatsApp 广告线索
+
+- S17（已上线 7e5049e1）：告警发送器 `infra/alerts/newme-whatsapp-alert.sh`（WhatsApp 模板消息）；NAS 主动拉取 `infra/backup/newme-nas-pull-setup.sh`、只读强制命令 `infra/backup/newme-nas-rsync-ro.sh`；定时接口调用 `infra/cron/newme-cron-call.sh`。
+- S18（PR #526）：WhatsApp「点击进 WhatsApp」广告的点击编号 ctwa_clid 入库并自动建/对线索，回传 Conversions API for Business Messaging。webhook 现有 `src/app/api/whatsapp/webhook/route.ts`，别名 `src/app/api/meta/whatsapp-webhook/route.ts`；线索详情面板 `src/app/(dashboard)/leads/[id]/LeadWhatsAppAdPanel.tsx`；市场导出 `src/app/api/leads/whatsapp-ads/export/route.ts`；迁移 `20261118200000_whatsapp_ctwa_leads.sql`。
+- 供应链：glob/minimatch 已降为中危、picomatch 公告撤回，S17 登记的三条高危例外过期移除，登记表恢复为空。
+
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 

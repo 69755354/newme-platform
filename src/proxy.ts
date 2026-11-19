@@ -41,6 +41,8 @@ const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
   "/api/meta/oauth-callback",
   // Meta webhook owns raw-body HMAC verification; an exact path only.
   "/api/whatsapp/webhook",
+  // Same handler under the path the production Meta app is subscribed to.
+  "/api/meta/whatsapp-webhook",
   // Meta Lead Ads webhook: raw-body App Secret HMAC + page allowlist; exact path only.
   "/api/meta/leadgen-webhook",
 ]);
@@ -155,7 +157,7 @@ export async function proxy(request: NextRequest) {
   // Check if this path requires specific roles
   // Webhook deliveries have no browser session and must not depend on a
   // signed-in user's refresh/profile state. The handler fails closed itself.
-  if (pathname === "/api/whatsapp/webhook" || pathname === "/api/meta/leadgen-webhook") return NextResponse.next();
+  if (pathname === "/api/whatsapp/webhook" || pathname === "/api/meta/whatsapp-webhook" || pathname === "/api/meta/leadgen-webhook") return NextResponse.next();
 
   let requiredRoles: string[] | null = null;
   for (const [prefix, roles] of Object.entries(PROTECTED_ROUTES)) {

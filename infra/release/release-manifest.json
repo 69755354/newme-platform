@@ -248,8 +248,8 @@
       "sha256": "afa2212f9f3cf1a08ab384adebea9b316146a0fce5bd5f547bb3f97cb1576d8a"    },
     {
       "$comment": "WhatsApp coexistence history backfill (S25): one defaulted boolean column, one server-only contacts table, two service-role routines that store history and contacts only. No lead, Meta queue or timing writes. Inert until a history webhook arrives.",
-      "version": "20261119150000",
-      "file": "20261119150000_whatsapp_history_backfill.sql",
+      "version": "20261119400000",
+      "file": "20261119400000_whatsapp_history_backfill.sql",
       "sha256": "e94c432f3169a61114421287f8aedb873777ec26dda82bbd32e11660d798f7f5"
     }
   ],

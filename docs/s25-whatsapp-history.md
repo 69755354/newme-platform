@@ -13,7 +13,7 @@ dropped them. Nothing here is customer data; the examples are fictional.
 | `smb_app_state_sync` | `whatsapp_synced_contacts` (new, server-only) | name and canonical phone key; `action: remove` sets `removed_at` |
 
 Both go through two service-role routines, `record_whatsapp_history_messages` and `record_whatsapp_synced_contacts`
-(migration `20261119150000_whatsapp_history_backfill.sql`, additive only).
+(migration `20261119400000_whatsapp_history_backfill.sql`, additive only).
 
 ## What history never does
 
@@ -31,9 +31,7 @@ Both go through two service-role routines, `record_whatsapp_history_messages` an
 - Switch: `WHATSAPP_HISTORY_SYNC_ENABLED=false` makes the route ignore both fields again (answer 200). Default on.
 - A failed database write answers 503 so Meta retries the chunk; already stored rows are skipped. The body limit for this
   webhook is now 3 MiB (history chunks are larger than live messages); the signature is checked before parsing.
-- Order for release: provisioning switch (`s25-db-plan` / `s25-db-provision`), then this application. The migration (version 20261119150000) sits
-  between S21 and S23 on purpose, so the S23 and S24 switches still accept it as part of the live prefix. Provision it before the
-  S23 and S24 migrations are applied; if those are applied first, renumber it after them and re-pin the switch.
+- Order for release: provisioning switch (`s25-db-plan` / `s25-db-provision`), then this application. The migration (version 20261119400000) sorts after S24 (20261119300000) and is the last deferred entry.
 - Known limit: when the next live message arrives, the existing writer recomputes the conversation counts and the lead's
   `wa_first_inbound_at` / `wa_first_reply_at` from ALL stored events, history included. That reflects the true first contact
   but is not a first-response alert (alerts use the monitor, which skips history).

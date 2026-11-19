@@ -74,7 +74,7 @@ test("the committed manifest describes this tree", () => {
   assert.equal(manifest.deferred_contract[9].file, "20261112100100_notification_warning_type.sql");
   assert.equal(manifest.deferred_contract[10].file, "20261118200000_whatsapp_ctwa_leads.sql");
   assert.equal(manifest.deferred_contract[11].file, "20261119100000_whatsapp_followup_monitor.sql");
-  assert.equal(manifest.deferred_contract[12].file, "20261119150000_whatsapp_history_backfill.sql");
+  assert.equal(manifest.deferred_contract[12].file, "20261119400000_whatsapp_history_backfill.sql");
   assert.match(manifest.deferred_contract[0].file, /^20260818000000_money_direct_write_contract_phase\.sql$/);
   assert.equal(manifest.deferred_contract[1].file, "20261019104004_whatsapp_pilot_events.sql");
   assert.equal(manifest.deferred_contract[2].file, "20261022194620_whatsapp_privacy_lifecycle.sql");

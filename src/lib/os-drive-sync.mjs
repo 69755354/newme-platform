@@ -243,15 +243,13 @@ export function planCtwaColumnX(phoneCol, clidCol, leads, cfg = DEFAULTS, owned 
   return { writes, unchanged, unmatched, ambiguous, manual, conflicts };
 }
 
-// ---------- provenance marks (colour + note on every cell the program writes) ----------
+// ---------- provenance marks (blue fill + note on every cell the program writes; people's cells are never formatted) ----------
 export const BLUE = Object.freeze({ red: 0.85, green: 0.92, blue: 1 });   // written by OS
-export const YELLOW = Object.freeze({ red: 1, green: 0.95, blue: 0.6 });  // a person changed an OS value
 export const HEADER_NOTE = "本表全部由 OS 自动写入，请勿手改";
 export const dubaiStamp = (ms) => new Date(ms + 4 * 3_600_000).toISOString().slice(0, 16).replace("T", " ");
 /** Short, phone-free label of a lead: first 7 characters of the public reference, then stars. */
 export const maskRef = (ref) => `${cell(ref).slice(0, 7)}****`;
 export const noteWritten = (ms, ref) => `OS 同步 迪拜时间 ${dubaiStamp(ms)}｜来源：OS｜线索 ${maskRef(ref)}`;
-export const noteEdited = (ms) => `人工修改于 ${dubaiStamp(ms)}，OS 不再覆盖`;
 export const noteUpdated = (ms, last) => `OS 更新 迪拜时间 ${dubaiStamp(ms)}｜上次 ${last ?? "首次"}`;
 
 /** What read-back must find for each op: [{row, col, value?, bg?, note?}] (rowbg is checked on its first cell). */

@@ -12,8 +12,8 @@ import { pathToFileURL } from "node:url";
 import { buildMetaIdRows, leadRef } from "../src/lib/meta-ids-export.mjs";
 import { createSheetsClient, loadServiceAccount } from "../src/lib/google-sheets-client.mjs";
 import {
-  BLUE, DEFAULTS, HEADER_NOTE, SyncError, YELLOW, a1Tab, assertWithinCap, buildWritePolicy, columnIndex, columnLetter, diffCellReadBack, diffReadBack, expectedFromOps,
-  dubaiStamp, noteEdited, noteUpdated, noteWritten, dubaiDay, formatReport, guardSheets,
+  BLUE, DEFAULTS, HEADER_NOTE, SyncError, a1Tab, assertWithinCap, buildWritePolicy, columnIndex, columnLetter, diffCellReadBack, diffReadBack, expectedFromOps,
+  dubaiStamp, noteUpdated, noteWritten, dubaiDay, formatReport, guardSheets,
   maxIso, normalizeState, parseCsv, planCtwaColumnX, planMetaIdsUpsert, reconcileMetaIds, shouldAlert, sinceFromCursor,
 } from "../src/lib/os-drive-sync.mjs";
 
@@ -198,10 +198,9 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
     meta_updates: planA.updates.length, meta_appends: planA.appends.length, meta_unchanged: planA.unchanged, meta_duplicate_keys: planA.duplicateSheetKeys,
     x_writes: planB.writes.length, x_manual_skipped: planB.manual.length, x_unchanged: planB.unchanged, x_unmatched: planB.unmatched.length, x_ambiguous: planB.ambiguous.length,
   });
-  // people changed a value this program wrote earlier: mark it yellow once (not again until it changes again)
-  const marks = planB.manual.filter((m) => m.edited && state.x_manual_marked[m.lead_ref] !== hashText(m.current));
-  summary.x_marks = marks.length;
-  const planned = planA.updates.length + planA.appends.length + planB.writes.length + marks.length;
+  // a person's value is never touched and never formatted: it is only counted, and logged once per distinct value
+  const manualNew = planB.manual.filter((m) => state.x_manual_marked[m.lead_ref] !== hashText(m.current));
+  const planned = planA.updates.length + planA.appends.length + planB.writes.length;
   summary.planned_writes = planned;
 
   if (args.dryRun) {
@@ -248,16 +247,16 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
     await applyOps(guarded, cfg.metaSheetId, titles.meta, metaOps);
     if (!state.meta_header_noted) { state.meta_header_noted = true; changes.push({ ts, sheet: "meta_ids", action: "header_note", row: 1 }); }
   }
-  if (planB.writes.length || marks.length) {
+  if (planB.writes.length) {
     const col = columnIndex(cfg.clidColumn); const nowMs = now();
     const ops = [
       ...planB.writes.map((w) => ({ kind: "cell", row: w.row, col, value: w.value, bg: BLUE, note: noteWritten(nowMs, w.lead_ref) })),
-      ...marks.map((m) => ({ kind: "cell", row: m.row, col, bg: YELLOW, note: noteEdited(nowMs) })),
     ];
     await applyOps(guarded, cfg.salesSheetId, cfg.salesTab, ops);
     for (const w of planB.writes) changes.push({ ts, sheet: "home_owners_x", action: "write", row: w.row, lead_ref: w.lead_ref, value: w.value, note: noteWritten(nowMs, w.lead_ref) });
-    for (const m of marks) { changes.push({ ts, sheet: "home_owners_x", action: "mark_edited_by_person", row: m.row, lead_ref: m.lead_ref, note: noteEdited(nowMs) }); state.x_manual_marked[m.lead_ref] = hashText(m.current); }
   }
+  // no sheet write for these: only the NAS log (no cell text) and a hash in the state so each value is logged once
+  for (const m of manualNew) { changes.push({ ts, sheet: "home_owners_x", action: "skipped_manual_value", row: m.row, lead_ref: m.lead_ref, edited_after_os_write: m.edited }); state.x_manual_marked[m.lead_ref] = hashText(m.current); }
 
   for (const w of planB.writes) { state.x_written[w.lead_ref] = w.value; delete state.x_manual_marked[w.lead_ref]; }
 

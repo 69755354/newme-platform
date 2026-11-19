@@ -8,7 +8,7 @@ import { META_IDS_HEADER } from "../../src/lib/meta-ids-export.mjs";
 import { createSheetsClient } from "../../src/lib/google-sheets-client.mjs";
 import {
   backoffDelayMs, buildWritePolicy, columnIndex, columnLetter, guardSheets, phoneKey, phoneKeysFromCell, planCtwaColumnX,
-  planMetaIdsUpsert, retryAfterMs, BLUE, YELLOW, HEADER_NOTE, noteWritten, noteEdited, shouldAlert, sinceFromCursor, maskPhone, assertWithinCap, DEFAULTS,
+  planMetaIdsUpsert, retryAfterMs, BLUE, HEADER_NOTE, noteWritten, shouldAlert, sinceFromCursor, maskPhone, assertWithinCap, DEFAULTS,
 } from "../../src/lib/os-drive-sync.mjs";
 import { createIo, parseArgs, runReconcile, runSync } from "../../scripts/os-drive-nas-sync.mjs";
 
@@ -213,22 +213,23 @@ test("meta sheet: header note once, new and updated rows blue, updated cells car
   assert.equal(t.sheets.writes.filter((w) => w.format && w.range === "'Registry'!A1").length, 1, "header note written only once");
 });
 
-test("a person edits a value the program wrote: yellow mark and note once, value never overwritten", async () => {
+test("a person edits a value the program wrote: left alone, no format write, logged once", async () => {
   const sales = salesGrid([sRow("+971500000001")]);
   const leads = [lead(1)];
   const t = setup(leads, { [META]: metaGrid(), [SALES]: sales });
   await t.run();
-  assert.equal(sales[1][23], "CLID_1_abcdefghij");
   sales[1][23] = "hand-edited";
   leads[0].updated_at = "2026-11-20T06:00:00.000Z";
+  const before = t.sheets.writes.filter((w) => w.id === SALES).length;
   const r = await t.run();
-  assert.equal(r.summary.x_marks, 1); assert.equal(sales[1][23], "hand-edited");
-  assert.deepEqual(t.sheets.fmt[`${SALES}:2,23`].bg, YELLOW);
-  assert.equal(t.sheets.fmt[`${SALES}:2,23`].note, noteEdited(t.clock.t));
-  const before = t.sheets.writes.length; leads[0].updated_at = "2026-11-20T06:30:00.000Z";
-  const again = await t.run();
-  assert.equal(again.summary.x_marks, 0); assert.equal(t.sheets.writes.length, before, "marked once, not every run");
-  assert.ok(readFileSync(t.io.changesFile("20261120").file, "utf8").includes("mark_edited_by_person"));
+  assert.equal(r.summary.x_manual_skipped, 1); assert.equal(sales[1][23], "hand-edited");
+  assert.equal(t.sheets.writes.filter((w) => w.id === SALES).length, before, "nothing written to the sales sheet");
+  assert.deepEqual(t.sheets.fmt[`${SALES}:2,23`].bg, BLUE, "colour is still the one OS set earlier");
+  leads[0].updated_at = "2026-11-20T06:30:00.000Z";
+  await t.run();
+  const log = readFileSync(t.io.changesFile("20261120").file, "utf8");
+  assert.equal(log.split("skipped_manual_value").length - 1, 1, "logged once per distinct value");
+  assert.ok(!log.includes("hand-edited"), "the person's text is not copied anywhere");
 });
 
 test("guard: format requests only reach already-allowed cells; anything else is refused", async () => {
@@ -236,9 +237,9 @@ test("guard: format requests only reach already-allowed cells; anything else is 
   const g = guardSheets(sheets, buildWritePolicy({ ...DEFAULTS, metaTab: "Registry" }));
   await g.batchUpdateCells(SALES, "Home-owners", [{ kind: "cell", row: 2, col: 23, value: "x", bg: BLUE, note: "n" }]);
   const refuse = (id, tab, op) => assert.rejects(async () => g.batchUpdateCells(id, tab, [op]), /not allowed|outside|header|unknown|unexpected/);
-  await refuse(SALES, "Home-owners", { kind: "cell", row: 2, col: 22, bg: YELLOW });          // column W
-  await refuse(SALES, "Home-owners", { kind: "cell", row: 1, col: 23, bg: YELLOW });          // header row
-  await refuse(SALES, "Home-owners", { kind: "rowbg", row: 2, c1: 0, c2: 23, bg: YELLOW });   // whole row
+  await refuse(SALES, "Home-owners", { kind: "cell", row: 2, col: 22, bg: BLUE });          // column W
+  await refuse(SALES, "Home-owners", { kind: "cell", row: 1, col: 23, bg: BLUE });          // header row
+  await refuse(SALES, "Home-owners", { kind: "rowbg", row: 2, c1: 0, c2: 23, bg: BLUE });   // whole row
   await refuse(SALES, "Home-owners", { kind: "headernote", row: 1, col: 0, note: "x" });      // header note only on the OS sheet
   await refuse(SALES, "Other tab", { kind: "cell", row: 2, col: 23, bg: BLUE });
   await refuse(SALES, "Home-owners", { kind: "deleteRow", row: 2 });

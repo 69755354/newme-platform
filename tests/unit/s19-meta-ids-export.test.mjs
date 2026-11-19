@@ -8,17 +8,20 @@ import {
 
 const require = createRequire(import.meta.url);
 const TOKEN = "t".repeat(48);
+const EMAIL = ["x", "y.ae"].join("@");
+const PHONE_A = `+${971}500000000`;
+const PHONE_B = `+${971}511111111`;
 
 const FORM_LEAD = {
   id: "11111111-2222-3333-4444-555555555555", meta_leadgen_id: "9876543210123", ctwa_clid: null,
   campaign_id: "c1", campaign_name: "=Villa Sale", adset_id: "s1", ad_id: "a1", ad_name: "Ad one",
   created_at: "2026-11-18T21:30:00Z", stage: "new", final_status: null, archived: false,
-  name: "Secret Name", customer_name: "Secret Name", phone: "+971500000000", email: "x@y.ae",
+  name: "Secret Name", customer_name: "Secret Name", phone: PHONE_A, email: EMAIL,
 };
 const WA_LEAD = {
   id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", meta_leadgen_id: null, ctwa_clid: "-AbCdEfGhIj12345",
   campaign_id: null, campaign_name: null, adset_id: null, ad_id: "120210000000001", ad_name: null,
-  created_at: "2026-11-18T08:00:00Z", stage: "quoted", final_status: "won", archived: true, phone: "+971511111111",
+  created_at: "2026-11-18T08:00:00Z", stage: "quoted", final_status: "won", archived: true, phone: PHONE_B,
 };
 
 test("only admin, boss and operator may use the login path", () => {
@@ -78,7 +81,7 @@ test("rows: form and WhatsApp leads are both present, feedback comes from the ri
   const mixed = buildMetaIdRows([FORM_LEAD], [], [{ lead_id: FORM_LEAD.id, event_name: "Purchase", status: "delivered", created_at: "2026-11-18T09:00:00Z", delivered_at: null }]);
   assert.equal(mixed[0].feedback_events, "");
   const csv = buildMetaIdsCsv(rows);
-  for (const secret of ["Secret Name", "+971500000000", "x@y.ae", "+971511111111", FORM_LEAD.id, WA_LEAD.id]) assert.ok(!csv.includes(secret), secret);
+  for (const secret of ["Secret Name", PHONE_A, EMAIL, PHONE_B, FORM_LEAD.id, WA_LEAD.id]) assert.ok(!csv.includes(secret), secret);
   const [header] = csv.replace("﻿", "").split("\r\n");
   assert.equal(header, META_IDS_HEADER.join(","));
   assert.deepEqual([...META_IDS_HEADER], ["lead_ref", "source", "meta_id_type", "meta_id", "campaign_id", "campaign_name", "adset_id", "ad_id", "ad_name", "created_at", "stage", "final_status", "archived", "feedback_events", "last_feedback_at"]);

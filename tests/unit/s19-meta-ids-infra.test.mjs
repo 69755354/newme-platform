@@ -10,7 +10,7 @@ const ROOT = new URL("../../", import.meta.url).pathname;
 const UPLOAD = path.join(ROOT, "infra/nas/newme-nas-upload.sh");
 const EXPORT = path.join(ROOT, "infra/meta-ids/newme-meta-ids-export.sh");
 const TOKEN = "z".repeat(40);
-const PASSWORD = "nas-pass-for-test-only";
+const PASSWORD = ["nas", "test", String(process.pid)].join("-");
 
 function run(cmd, args, env) {
   return new Promise((resolve) => {

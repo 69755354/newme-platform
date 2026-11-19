@@ -1276,3 +1276,15 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `infra/nas/newme-nas-upload.sh` | 备份上传到 NAS 的主机脚本。 |
 
 验证边界：`scripts/check-published-credentials.mjs` 对本批次新增的测试夹具按文件和标识符逐条登记豁免并写明理由，规则本身未放宽。
+
+## SPEC freshness：发布门禁瘦身（2026-11-19）
+
+经负责人批准：OS 目前只是小型测试环境，因此在不削弱证据的前提下精简生产发布门禁。本节登记本批次触及的路径，保证 `scripts/check-spec.sh` 的路径覆盖。内容不代表已部署，也不授权生产变更；宿主机上的安装步骤和协调器补丁只写在 `docs/gate-slim-install.md`，未被安装。
+
+| 路径 | 实际职责 | 权限、安全与部署/回滚边界 |
+| --- | --- | --- |
+| `scripts/release-close.sh` | 一条命令完成收尾：写入 TASKBOARD 收尾记录、开合并请求、等待分支保护要求的全部检查通过、合并、在收尾提交上跑 `release_final` CI、再调用 `newme-deploy finalize`。用事件等待代替固定睡眠。 | 仍须通过合并请求和全部必需检查；只允许 TASKBOARD.md 变更；收尾提交必须是发布之后唯一的子提交；`finalize` 的校验未改动。不使用 `--admin`、不绕过检查。 |
+| `scripts/run-postdeploy-acceptance.mjs` | 验收生产者：告警演练或延迟告警回读失败（拒绝码以 `alert_` 或 `delayed_alert_` 开头）时，记录为带原因码的警告、归档告警收件箱和状态，不再把验收流水置为 `uat_failed`。 | 冒烟、健康、角色与浏览器验收、夹具清理、性能、服务/日志/重启检查失败，以及中断和未预期异常，仍然冻结门禁。回滚和 `contract_verified` 不受影响。 |
+| `scripts/verify-postdeploy-acceptance.mjs` | 独立验证器：接受“告警演练已警告”的证据形态，同时拒绝把警告伪装成通过、在警告里夹带回执、对其他延迟检查标记警告。 | 策略文件必须显式声明 `allow_recorded_warning` 与 `warning_final_status`，否则验证失败。 |
+| `infra/observability/newme-alert-provider-v1.mjs` | 告警通道时间校验容忍 2 秒时钟偏差（提供方按整秒打时间戳）。 | 上限 `Date.now() + 5000` 不变；已安装副本须与发布内副本字节一致（见安装说明）。 |
+| `tests/release/gate-slim-contract.test.mjs` | 门禁瘦身契约：只有告警类拒绝可降级、策略与 schema 的警告形态、收尾脚本保留的关卡、协调器补丁可应用且只增加提示行。 | 只读源码断言，不连生产。 |

@@ -931,3 +931,139 @@ test("only a sealed matching attestation can create acceptance_verified", (t) =>
     bundlePath: path.join(sealDirectory, "bundle.json"),
   }), /sealed bundle digest/);
 });
+
+// --- recorded alert warning (gate slimming): only the alert drill may be downgraded, nothing else -------------
+const WARNED_AT = "2026-08-15T00:13:00Z";
+
+function warnedFixture(t) {
+  const data = fixture(t);
+  const bundle = data.bundle;
+  bundle.alert_drill = {
+    final_status: "warned",
+    reason_code: "alert_failure_receipt_timeout",
+    attempted_at: WARNED_AT,
+    artifact_id: "alert_drill",
+  };
+  rewriteArtifact(data, "alert_drill", (document) => {
+    document.observed_at = WARNED_AT;
+    document.payload = {
+      runner: "newme-postdeploy-alert-drill/v1",
+      drill_run_id: "alert:drill:001",
+      final_status: "warned",
+      reason_code: "alert_failure_receipt_timeout",
+      attempted_at: WARNED_AT,
+    };
+  });
+  const completedAt = bundle.delayed_verification.completed_at;
+  bundle.delayed_verification = {
+    not_before: bundle.delayed_verification.not_before,
+    completed_at: completedAt,
+    status: "pass",
+    artifact_id: "delayed_verify",
+  };
+  rewriteArtifact(data, "delayed_verify", (document) => {
+    document.payload = {
+      runner: "newme-postdeploy-delayed-verification/v1",
+      verification_run_id: "delayed:run:001",
+      not_before: bundle.delayed_verification.not_before,
+      completed_at: completedAt,
+      status: "pass",
+      checks: ["service", "logs", "alerts", "restarts"].map((id) => ({
+        id,
+        status: id === "alerts" ? "warned" : "pass",
+        completed_at: completedAt,
+      })),
+    };
+  });
+  return data;
+}
+
+test("an alert drill failure verifies only as an explicit recorded warning and still seals", (t) => {
+  const data = warnedFixture(t);
+  const result = verify(data);
+  assert.equal(result.artifacts.length, 16);
+  const sealed = sealVerifiedAcceptance(result, path.join(data.directory, "warned-seal"));
+  assert.equal(sealed.bundle_sha256, result.bundleSha256);
+});
+
+test("a recorded alert warning cannot hide any other failed or missing evidence", (t) => {
+  const base = warnedFixture(t);
+  const cases = [
+    ["warned without a reason", (bundle) => { delete bundle.alert_drill.reason_code; }, /required/],
+    ["reason outside the alert namespace", (bundle) => { bundle.alert_drill.reason_code = "uat_cleanup_incomplete"; }, /reason_code/],
+    ["warned alert still carries provider fields", (bundle) => { bundle.delayed_verification.provider_event_id = "provider:event:x1"; }, /unknown property|provider/i],
+    ["warning predates deployment", (bundle) => { bundle.alert_drill.attempted_at = "2026-08-14T23:59:59Z"; }, /predates deployment/],
+    ["fixture residual still refused", (bundle) => { bundle.fixtures.residual_count = 1; }, /exceeds policy/],
+    ["performance still refused", (bundle) => { bundle.performance.samples_ms.fill(6000); bundle.performance.p75_ms = 6000; bundle.performance.p95_ms = 6000; }, /exceed policy thresholds/],
+    ["early delayed verify still refused", (bundle) => { bundle.delayed_verification.not_before = "2026-08-15T00:14:59Z"; }, /earlier than policy/],
+  ];
+  for (const [name, mutate, expected] of cases) {
+    const data = { ...base, bundle: clone(base.bundle) };
+    mutate(data.bundle);
+    assert.throws(() => verify(data), expected, name);
+  }
+  for (const id of ["service", "logs", "restarts"]) {
+    const data = warnedFixture(t);
+    rewriteArtifact(data, "delayed_verify", (document) => {
+      document.payload.checks.find((check) => check.id === id).status = "warned";
+    });
+    assert.throws(() => verify(data), /status must be pass/, `${id} cannot be warned`);
+  }
+  const unwarned = warnedFixture(t);
+  rewriteArtifact(unwarned, "delayed_verify", (document) => {
+    document.payload.checks.find((check) => check.id === "alerts").status = "pass";
+  });
+  assert.throws(() => verify(unwarned), /status must be warned/, "a warned drill needs a warned alerts check");
+});
+
+test("a full-pass bundle cannot carry a warned alerts check", (t) => {
+  const data = fixture(t);
+  rewriteArtifact(data, "delayed_verify", (document) => {
+    document.payload.checks.find((check) => check.id === "alerts").status = "warned";
+  });
+  assert.throws(() => verify(data), /status must be pass/);
+});
+
+test("the policy must keep the warning contract explicit; a policy without it is refused", (t) => {
+  const data = fixture(t);
+  const policy = JSON.parse(POLICY_BYTES.toString("utf8"));
+  assert.equal(policy.alert_drill.allow_recorded_warning, true);
+  assert.equal(policy.alert_drill.warning_final_status, "warned");
+  const weakened = clone(policy);
+  weakened.alert_drill.allow_recorded_warning = false;
+  const bytes = Buffer.from(`${JSON.stringify(weakened, null, 2)}\n`);
+  data.bundle.policy.sha256 = sha256(bytes);
+  assert.throws(() => verify(data, { policyBytes: bytes }), /alert drill must require/);
+});
+
+test("only alert drill and alert readback failures can become warnings", async () => {
+  const { isWarnableAlertFailure, verifyAlertProviderReadback, assertNoServiceRestartSinceDeploy } = await import("../../scripts/run-postdeploy-acceptance.mjs");
+  const refusal = (action) => { try { action(); } catch (error) { return error; } throw new Error("expected a refusal"); };
+  const alertError = refusal(() => verifyAlertProviderReadback({
+    body: Buffer.from("not json"), signature: Buffer.from("0".repeat(64)), secret: Buffer.alloc(32),
+    releaseSha: "a".repeat(40), readbackTriggerSha: "b".repeat(64), recoveryEventId: "x:1",
+    recoveryProviderDeliveryId: "x:2", recoveryProviderOperationId: "x:3", notBefore: "2026-08-15T00:15:00Z",
+  }));
+  assert.match(alertError.code, /^alert_/);
+  assert.equal(isWarnableAlertFailure(alertError), true);
+  assert.equal(isWarnableAlertFailure(alertError, AbortSignal.abort()), false);
+  const restart = refusal(() => assertNoServiceRestartSinceDeploy(
+    { nrestarts: 0, main_pid: 1, invocation_id: "a", exec_main_start_monotonic: 1 },
+    { nrestarts: 1, main_pid: 1, invocation_id: "a", exec_main_start_monotonic: 1 },
+  ));
+  assert.equal(isWarnableAlertFailure(restart), false);
+  assert.equal(isWarnableAlertFailure(new Error("alert_failure_receipt_timeout")), false);
+  const interrupted = Object.assign(Object.create(Object.getPrototypeOf(alertError)), { code: "uat_interrupted" });
+  assert.equal(isWarnableAlertFailure(interrupted), false);
+});
+
+test("the producer freezes on everything except a classified alert failure and archives alert leftovers", () => {
+  const source = readFileSync(path.join(ROOT, "scripts/run-postdeploy-acceptance.mjs"), "utf8");
+  assert.match(source, /if \(!isWarnableAlertFailure\(error, signal\)\) throw error;/);
+  assert.match(source, /function recordAlertWarning/);
+  assert.match(source, /uat_alert_inbox/);
+  const readbackCatch = source.slice(source.indexOf("providerResult = await readDelayedAlertProviderState"), source.indexOf("checkTimes.alerts ="));
+  assert.match(readbackCatch, /isWarnableAlertFailure\(error, signal\)\) throw error/);
+  // service, logs and restart checks stay outside any warning path
+  assert.doesNotMatch(source.slice(source.indexOf("async function delayedReadback"), source.indexOf("let providerResult = null;")), /isWarnableAlertFailure/);
+});

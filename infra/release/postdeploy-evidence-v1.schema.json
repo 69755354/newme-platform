@@ -104,25 +104,40 @@
       }
     },
     "alert_drill": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["failure_event_id", "recovery_event_id", "failure_provider_delivery_id", "recovery_provider_delivery_id", "failure_provider_operation_id", "recovery_provider_operation_id", "failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256", "failed_at", "recovered_at", "final_status", "artifact_id"],
-      "properties": {
-        "failure_event_id": { "$ref": "#/$defs/eventId" },
-        "recovery_event_id": { "$ref": "#/$defs/eventId" },
-        "failure_provider_delivery_id": { "$ref": "#/$defs/eventId" },
-        "recovery_provider_delivery_id": { "$ref": "#/$defs/eventId" },
-        "failure_provider_operation_id": { "$ref": "#/$defs/eventId" },
-        "recovery_provider_operation_id": { "$ref": "#/$defs/eventId" },
-        "failure_trigger_sha256": { "$ref": "#/$defs/sha256" },
-        "recovery_trigger_sha256": { "$ref": "#/$defs/sha256" },
-        "failure_receipt_sha256": { "$ref": "#/$defs/sha256" },
-        "recovery_receipt_sha256": { "$ref": "#/$defs/sha256" },
-        "failed_at": { "$ref": "#/$defs/timestamp" },
-        "recovered_at": { "$ref": "#/$defs/timestamp" },
-        "final_status": { "const": "ok" },
-        "artifact_id": { "$ref": "#/$defs/identifier" }
-      }
+      "oneOf": [
+      {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["failure_event_id", "recovery_event_id", "failure_provider_delivery_id", "recovery_provider_delivery_id", "failure_provider_operation_id", "recovery_provider_operation_id", "failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256", "failed_at", "recovered_at", "final_status", "artifact_id"],
+          "properties": {
+            "failure_event_id": { "$ref": "#/$defs/eventId" },
+            "recovery_event_id": { "$ref": "#/$defs/eventId" },
+            "failure_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+            "recovery_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+            "failure_provider_operation_id": { "$ref": "#/$defs/eventId" },
+            "recovery_provider_operation_id": { "$ref": "#/$defs/eventId" },
+            "failure_trigger_sha256": { "$ref": "#/$defs/sha256" },
+            "recovery_trigger_sha256": { "$ref": "#/$defs/sha256" },
+            "failure_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "recovery_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "failed_at": { "$ref": "#/$defs/timestamp" },
+            "recovered_at": { "$ref": "#/$defs/timestamp" },
+            "final_status": { "const": "ok" },
+            "artifact_id": { "$ref": "#/$defs/identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["final_status", "reason_code", "attempted_at", "artifact_id"],
+          "properties": {
+            "final_status": { "const": "warned" },
+            "reason_code": { "type": "string", "pattern": "^(?:alert|delayed_alert)_[a-z0-9_]{1,50}$" },
+            "attempted_at": { "$ref": "#/$defs/timestamp" },
+            "artifact_id": { "$ref": "#/$defs/identifier" }
+          }
+        }
+      ]
     },
     "performance": {
       "type": "object",
@@ -142,21 +157,36 @@
       }
     },
     "delayed_verification": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["not_before", "completed_at", "status", "provider_trigger_sha256", "provider_event_id", "provider_delivery_id", "provider_query_id", "provider_receipt_sha256", "provider_observed_at", "artifact_id"],
-      "properties": {
-        "not_before": { "$ref": "#/$defs/timestamp" },
-        "completed_at": { "$ref": "#/$defs/timestamp" },
-        "status": { "const": "pass" },
-        "provider_trigger_sha256": { "$ref": "#/$defs/sha256" },
-        "provider_event_id": { "$ref": "#/$defs/eventId" },
-        "provider_delivery_id": { "$ref": "#/$defs/eventId" },
-        "provider_query_id": { "$ref": "#/$defs/eventId" },
-        "provider_receipt_sha256": { "$ref": "#/$defs/sha256" },
-        "provider_observed_at": { "$ref": "#/$defs/timestamp" },
-        "artifact_id": { "$ref": "#/$defs/identifier" }
-      }
+      "oneOf": [
+      {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["not_before", "completed_at", "status", "provider_trigger_sha256", "provider_event_id", "provider_delivery_id", "provider_query_id", "provider_receipt_sha256", "provider_observed_at", "artifact_id"],
+          "properties": {
+            "not_before": { "$ref": "#/$defs/timestamp" },
+            "completed_at": { "$ref": "#/$defs/timestamp" },
+            "status": { "const": "pass" },
+            "provider_trigger_sha256": { "$ref": "#/$defs/sha256" },
+            "provider_event_id": { "$ref": "#/$defs/eventId" },
+            "provider_delivery_id": { "$ref": "#/$defs/eventId" },
+            "provider_query_id": { "$ref": "#/$defs/eventId" },
+            "provider_receipt_sha256": { "$ref": "#/$defs/sha256" },
+            "provider_observed_at": { "$ref": "#/$defs/timestamp" },
+            "artifact_id": { "$ref": "#/$defs/identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["not_before", "completed_at", "status", "artifact_id"],
+          "properties": {
+            "not_before": { "$ref": "#/$defs/timestamp" },
+            "completed_at": { "$ref": "#/$defs/timestamp" },
+            "status": { "const": "pass" },
+            "artifact_id": { "$ref": "#/$defs/identifier" }
+          }
+        }
+      ]
     },
     "artifacts": {
       "type": "array",
@@ -298,6 +328,16 @@
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
         "status": { "const": "pass" },
+        "completed_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "delayedCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "completed_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "status": { "enum": ["pass", "warned"] },
         "completed_at": { "$ref": "#/$defs/timestamp" }
       }
     },
@@ -499,26 +539,42 @@
         "observed_at": { "$ref": "#/$defs/timestamp" },
         "receipt": { "$ref": "#/$defs/receipt" },
         "payload": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["runner", "drill_run_id", "failure_event_id", "recovery_event_id", "failure_provider_delivery_id", "recovery_provider_delivery_id", "failure_provider_operation_id", "recovery_provider_operation_id", "failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256", "failed_at", "recovered_at", "final_status"],
-          "properties": {
-            "runner": { "const": "newme-postdeploy-alert-drill/v1" },
-            "drill_run_id": { "$ref": "#/$defs/eventId" },
-            "failure_event_id": { "$ref": "#/$defs/eventId" },
-            "recovery_event_id": { "$ref": "#/$defs/eventId" },
-            "failure_provider_delivery_id": { "$ref": "#/$defs/eventId" },
-            "recovery_provider_delivery_id": { "$ref": "#/$defs/eventId" },
-            "failure_provider_operation_id": { "$ref": "#/$defs/eventId" },
-            "recovery_provider_operation_id": { "$ref": "#/$defs/eventId" },
-            "failure_trigger_sha256": { "$ref": "#/$defs/sha256" },
-            "recovery_trigger_sha256": { "$ref": "#/$defs/sha256" },
-            "failure_receipt_sha256": { "$ref": "#/$defs/sha256" },
-            "recovery_receipt_sha256": { "$ref": "#/$defs/sha256" },
-            "failed_at": { "$ref": "#/$defs/timestamp" },
-            "recovered_at": { "$ref": "#/$defs/timestamp" },
-            "final_status": { "const": "ok" }
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["runner", "drill_run_id", "failure_event_id", "recovery_event_id", "failure_provider_delivery_id", "recovery_provider_delivery_id", "failure_provider_operation_id", "recovery_provider_operation_id", "failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256", "failed_at", "recovered_at", "final_status"],
+              "properties": {
+                "runner": { "const": "newme-postdeploy-alert-drill/v1" },
+                "drill_run_id": { "$ref": "#/$defs/eventId" },
+                "failure_event_id": { "$ref": "#/$defs/eventId" },
+                "recovery_event_id": { "$ref": "#/$defs/eventId" },
+                "failure_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+                "recovery_provider_delivery_id": { "$ref": "#/$defs/eventId" },
+                "failure_provider_operation_id": { "$ref": "#/$defs/eventId" },
+                "recovery_provider_operation_id": { "$ref": "#/$defs/eventId" },
+                "failure_trigger_sha256": { "$ref": "#/$defs/sha256" },
+                "recovery_trigger_sha256": { "$ref": "#/$defs/sha256" },
+                "failure_receipt_sha256": { "$ref": "#/$defs/sha256" },
+                "recovery_receipt_sha256": { "$ref": "#/$defs/sha256" },
+                "failed_at": { "$ref": "#/$defs/timestamp" },
+                "recovered_at": { "$ref": "#/$defs/timestamp" },
+                "final_status": { "const": "ok" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["runner", "drill_run_id", "final_status", "reason_code", "attempted_at"],
+              "properties": {
+                "runner": { "const": "newme-postdeploy-alert-drill/v1" },
+                "drill_run_id": { "$ref": "#/$defs/eventId" },
+                "final_status": { "const": "warned" },
+                "reason_code": { "type": "string", "pattern": "^(?:alert|delayed_alert)_[a-z0-9_]{1,50}$" },
+                "attempted_at": { "$ref": "#/$defs/timestamp" }
+              }
+            }
+          ]
         }
       }
     },
@@ -558,23 +614,40 @@
         "observed_at": { "$ref": "#/$defs/timestamp" },
         "receipt": { "$ref": "#/$defs/receipt" },
         "payload": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["runner", "verification_run_id", "not_before", "completed_at", "status", "checks", "provider_trigger_sha256", "provider_event_id", "provider_delivery_id", "provider_query_id", "provider_receipt_sha256", "provider_observed_at"],
-          "properties": {
-            "runner": { "const": "newme-postdeploy-delayed-verification/v1" },
-            "verification_run_id": { "$ref": "#/$defs/eventId" },
-            "not_before": { "$ref": "#/$defs/timestamp" },
-            "completed_at": { "$ref": "#/$defs/timestamp" },
-            "status": { "const": "pass" },
-            "checks": { "type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true, "items": { "$ref": "#/$defs/passingCheck" } },
-            "provider_trigger_sha256": { "$ref": "#/$defs/sha256" },
-            "provider_event_id": { "$ref": "#/$defs/eventId" },
-            "provider_delivery_id": { "$ref": "#/$defs/eventId" },
-            "provider_query_id": { "$ref": "#/$defs/eventId" },
-            "provider_receipt_sha256": { "$ref": "#/$defs/sha256" },
-            "provider_observed_at": { "$ref": "#/$defs/timestamp" }
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["runner", "verification_run_id", "not_before", "completed_at", "status", "checks", "provider_trigger_sha256", "provider_event_id", "provider_delivery_id", "provider_query_id", "provider_receipt_sha256", "provider_observed_at"],
+              "properties": {
+                "runner": { "const": "newme-postdeploy-delayed-verification/v1" },
+                "verification_run_id": { "$ref": "#/$defs/eventId" },
+                "not_before": { "$ref": "#/$defs/timestamp" },
+                "completed_at": { "$ref": "#/$defs/timestamp" },
+                "status": { "const": "pass" },
+                "checks": { "type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true, "items": { "$ref": "#/$defs/delayedCheck" } },
+                "provider_trigger_sha256": { "$ref": "#/$defs/sha256" },
+                "provider_event_id": { "$ref": "#/$defs/eventId" },
+                "provider_delivery_id": { "$ref": "#/$defs/eventId" },
+                "provider_query_id": { "$ref": "#/$defs/eventId" },
+                "provider_receipt_sha256": { "$ref": "#/$defs/sha256" },
+                "provider_observed_at": { "$ref": "#/$defs/timestamp" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["runner", "verification_run_id", "not_before", "completed_at", "status", "checks"],
+              "properties": {
+                "runner": { "const": "newme-postdeploy-delayed-verification/v1" },
+                "verification_run_id": { "$ref": "#/$defs/eventId" },
+                "not_before": { "$ref": "#/$defs/timestamp" },
+                "completed_at": { "$ref": "#/$defs/timestamp" },
+                "status": { "const": "pass" },
+                "checks": { "type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true, "items": { "$ref": "#/$defs/delayedCheck" } }
+              }
+            }
+          ]
         }
       }
     },

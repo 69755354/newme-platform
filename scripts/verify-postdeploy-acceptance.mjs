@@ -387,7 +387,7 @@ function verifyPolicy(policy) {
   ) {
     fail("policy fixture cleanup must require exact cleanup and zero residuals");
   }
-  exactKeys(policy.alert_drill, ["runner", "require_canonical_trigger", "require_provider_receipts", "require_notifier_owned_provider_delivery", "require_distinct_event_ids", "final_status"], "policy.alert_drill");
+  exactKeys(policy.alert_drill, ["runner", "require_canonical_trigger", "require_provider_receipts", "require_notifier_owned_provider_delivery", "require_distinct_event_ids", "final_status", "allow_recorded_warning", "warning_final_status"], "policy.alert_drill");
   if (
     policy.alert_drill.runner !== ALERT_RUNNER
     || policy.alert_drill.require_canonical_trigger !== true
@@ -395,6 +395,8 @@ function verifyPolicy(policy) {
     || policy.alert_drill.require_notifier_owned_provider_delivery !== true
     || policy.alert_drill.require_distinct_event_ids !== true
     || policy.alert_drill.final_status !== "ok"
+    || policy.alert_drill.allow_recorded_warning !== true
+    || policy.alert_drill.warning_final_status !== "warned"
   ) {
     fail("policy alert drill must require canonical triggers, provider receipts, distinct events, and final ok");
   }
@@ -531,14 +533,17 @@ function sameStringSet(left, right) {
   return left.size === right.size && [...left].every((value) => right.has(value));
 }
 
-function verifyPassingChecks(checks, expectedIds, label, nowMs) {
+function verifyPassingChecks(checks, expectedIds, label, nowMs, { warnedIds = [] } = {}) {
   const values = nonEmptyArray(checks, label, { minimum: expectedIds.length, maximum: expectedIds.length });
   const byId = new Map();
   for (const [index, check] of values.entries()) {
     const checkLabel = `${label}[${index}]`;
     exactKeys(check, ["id", "status", "completed_at"], checkLabel);
     stringMatching(check.id, IDENTIFIER, `${checkLabel}.id`);
-    if (check.status !== "pass") fail(`${checkLabel}.status must be pass`);
+    // A recorded alert warning replaces "pass" with "warned" for exactly the named check and nothing else.
+    if (check.status !== (warnedIds.includes(check.id) ? "warned" : "pass")) {
+      fail(`${checkLabel}.status must be ${warnedIds.includes(check.id) ? "warned" : "pass"}`);
+    }
     if (byId.has(check.id)) fail(`${label} contains duplicate ${JSON.stringify(check.id)}`);
     const completedAt = timestamp(check.completed_at, `${checkLabel}.completed_at`);
     assertNotFuture(completedAt, nowMs, `${checkLabel}.completed_at`);
@@ -1218,46 +1223,57 @@ function verifyArtifactContracts({
     || fixtureArtifact.document.observed_at !== bundle.fixtures.verified_at
   ) fail("fixture artifact does not exactly match the bundle cleanup claim");
 
+  const alertWarned = bundle.alert_drill.final_status === policy.alert_drill.warning_final_status;
   const alertArtifact = artifactsById.get(bundle.alert_drill.artifact_id);
   if (alertArtifact.kind !== "alert_drill") fail("alert evidence must use an alert_drill artifact");
   const alertPayload = alertArtifact.document.payload;
-  exactKeys(alertPayload, [
-    "runner",
-    "drill_run_id",
-    "failure_event_id",
-    "recovery_event_id",
-    "failure_provider_delivery_id",
-    "recovery_provider_delivery_id",
-    "failure_provider_operation_id",
-    "recovery_provider_operation_id",
-    "failure_trigger_sha256",
-    "recovery_trigger_sha256",
-    "failure_receipt_sha256",
-    "recovery_receipt_sha256",
-    "failed_at",
-    "recovered_at",
-    "final_status",
-  ], "alert artifact payload");
-  if (alertPayload.runner !== policy.alert_drill.runner || alertPayload.runner !== ALERT_RUNNER) fail("alert artifact runner is not canonical");
-  stringMatching(alertPayload.drill_run_id, EVENT_ID, "alert artifact payload.drill_run_id");
-  for (const key of [
-    "failure_event_id",
-    "recovery_event_id",
-    "failure_provider_delivery_id",
-    "recovery_provider_delivery_id",
-    "failure_provider_operation_id",
-    "recovery_provider_operation_id",
-    "failure_trigger_sha256",
-    "recovery_trigger_sha256",
-    "failure_receipt_sha256",
-    "recovery_receipt_sha256",
-    "failed_at",
-    "recovered_at",
-    "final_status",
-  ]) {
-    if (alertPayload[key] !== bundle.alert_drill[key]) fail(`alert artifact ${key} does not match the bundle alert claim`);
+  if (alertWarned) {
+    exactKeys(alertPayload, ["runner", "drill_run_id", "final_status", "reason_code", "attempted_at"], "alert warning artifact payload");
+    if (alertPayload.runner !== policy.alert_drill.runner || alertPayload.runner !== ALERT_RUNNER) fail("alert artifact runner is not canonical");
+    stringMatching(alertPayload.drill_run_id, EVENT_ID, "alert artifact payload.drill_run_id");
+    for (const key of ["final_status", "reason_code", "attempted_at"]) {
+      if (alertPayload[key] !== bundle.alert_drill[key]) fail(`alert artifact ${key} does not match the bundle alert claim`);
+    }
+    if (alertArtifact.document.observed_at !== bundle.alert_drill.attempted_at) fail("alert artifact observed_at must equal attempted_at");
+  } else {
+    exactKeys(alertPayload, [
+      "runner",
+      "drill_run_id",
+      "failure_event_id",
+      "recovery_event_id",
+      "failure_provider_delivery_id",
+      "recovery_provider_delivery_id",
+      "failure_provider_operation_id",
+      "recovery_provider_operation_id",
+      "failure_trigger_sha256",
+      "recovery_trigger_sha256",
+      "failure_receipt_sha256",
+      "recovery_receipt_sha256",
+      "failed_at",
+      "recovered_at",
+      "final_status",
+    ], "alert artifact payload");
+    if (alertPayload.runner !== policy.alert_drill.runner || alertPayload.runner !== ALERT_RUNNER) fail("alert artifact runner is not canonical");
+    stringMatching(alertPayload.drill_run_id, EVENT_ID, "alert artifact payload.drill_run_id");
+    for (const key of [
+      "failure_event_id",
+      "recovery_event_id",
+      "failure_provider_delivery_id",
+      "recovery_provider_delivery_id",
+      "failure_provider_operation_id",
+      "recovery_provider_operation_id",
+      "failure_trigger_sha256",
+      "recovery_trigger_sha256",
+      "failure_receipt_sha256",
+      "recovery_receipt_sha256",
+      "failed_at",
+      "recovered_at",
+      "final_status",
+    ]) {
+      if (alertPayload[key] !== bundle.alert_drill[key]) fail(`alert artifact ${key} does not match the bundle alert claim`);
+    }
+    if (alertArtifact.document.observed_at !== bundle.alert_drill.recovered_at) fail("alert artifact observed_at must equal recovered_at");
   }
-  if (alertArtifact.document.observed_at !== bundle.alert_drill.recovered_at) fail("alert artifact observed_at must equal recovered_at");
 
   const performanceArtifact = artifactsById.get(bundle.performance.artifact_id);
   if (performanceArtifact.kind !== "performance") fail("performance evidence must use a performance artifact");
@@ -1276,32 +1292,41 @@ function verifyArtifactContracts({
   const delayedArtifact = artifactsById.get(bundle.delayed_verification.artifact_id);
   if (delayedArtifact.kind !== "delayed_verification") fail("delayed evidence must use a delayed_verification artifact");
   const delayedPayload = delayedArtifact.document.payload;
-  exactKeys(delayedPayload, [
-    "runner",
-    "verification_run_id",
-    "not_before",
-    "completed_at",
-    "status",
-    "checks",
-    "provider_trigger_sha256",
-    "provider_event_id",
-    "provider_delivery_id",
-    "provider_query_id",
-    "provider_receipt_sha256",
-    "provider_observed_at",
-  ], "delayed artifact payload");
+  if (alertWarned) {
+    exactKeys(delayedPayload, ["runner", "verification_run_id", "not_before", "completed_at", "status", "checks"], "delayed warning artifact payload");
+  } else {
+    exactKeys(delayedPayload, [
+      "runner",
+      "verification_run_id",
+      "not_before",
+      "completed_at",
+      "status",
+      "checks",
+      "provider_trigger_sha256",
+      "provider_event_id",
+      "provider_delivery_id",
+      "provider_query_id",
+      "provider_receipt_sha256",
+      "provider_observed_at",
+    ], "delayed artifact payload");
+  }
   if (delayedPayload.runner !== policy.delayed_verification.runner || delayedPayload.runner !== DELAYED_RUNNER) fail("delayed artifact runner is not canonical");
   stringMatching(delayedPayload.verification_run_id, EVENT_ID, "delayed artifact payload.verification_run_id");
+  const delayedClaimKeys = alertWarned
+    ? ["not_before", "completed_at", "status"]
+    : [
+      "not_before",
+      "completed_at",
+      "status",
+      "provider_trigger_sha256",
+      "provider_event_id",
+      "provider_delivery_id",
+      "provider_query_id",
+      "provider_receipt_sha256",
+      "provider_observed_at",
+    ];
   if (
-    delayedPayload.not_before !== bundle.delayed_verification.not_before
-    || delayedPayload.completed_at !== bundle.delayed_verification.completed_at
-    || delayedPayload.status !== bundle.delayed_verification.status
-    || delayedPayload.provider_trigger_sha256 !== bundle.delayed_verification.provider_trigger_sha256
-    || delayedPayload.provider_event_id !== bundle.delayed_verification.provider_event_id
-    || delayedPayload.provider_delivery_id !== bundle.delayed_verification.provider_delivery_id
-    || delayedPayload.provider_query_id !== bundle.delayed_verification.provider_query_id
-    || delayedPayload.provider_receipt_sha256 !== bundle.delayed_verification.provider_receipt_sha256
-    || delayedPayload.provider_observed_at !== bundle.delayed_verification.provider_observed_at
+    delayedClaimKeys.some((key) => delayedPayload[key] !== bundle.delayed_verification[key])
     || delayedArtifact.document.observed_at !== bundle.delayed_verification.completed_at
   ) fail("delayed artifact does not exactly match the bundle delayed-verification claim");
   const delayedChecks = verifyPassingChecks(
@@ -1309,6 +1334,7 @@ function verifyArtifactContracts({
     policy.delayed_verification.required_checks,
     "delayed artifact payload.checks",
     nowMs,
+    { warnedIds: alertWarned ? ["alerts"] : [] },
   );
   const delayedNotBefore = timestamp(bundle.delayed_verification.not_before, "bundle.delayed_verification.not_before");
   const delayedCompletedAt = timestamp(bundle.delayed_verification.completed_at, "bundle.delayed_verification.completed_at");
@@ -1609,48 +1635,60 @@ export function verifyPostdeployAcceptance({
   assertNotFuture(paymentVoided, nowMs, "bundle.fixtures.payment_voided_at");
   referenceArtifact(bundle.fixtures.artifact_id, "bundle.fixtures.artifact_id");
 
-  exactKeys(bundle.alert_drill, [
-    "failure_event_id",
-    "recovery_event_id",
-    "failure_provider_delivery_id",
-    "recovery_provider_delivery_id",
-    "failure_provider_operation_id",
-    "recovery_provider_operation_id",
-    "failure_trigger_sha256",
-    "recovery_trigger_sha256",
-    "failure_receipt_sha256",
-    "recovery_receipt_sha256",
-    "failed_at",
-    "recovered_at",
-    "final_status",
-    "artifact_id",
-  ], "bundle.alert_drill");
-  stringMatching(bundle.alert_drill.failure_event_id, EVENT_ID, "bundle.alert_drill.failure_event_id");
-  stringMatching(bundle.alert_drill.recovery_event_id, EVENT_ID, "bundle.alert_drill.recovery_event_id");
-  stringMatching(bundle.alert_drill.failure_provider_delivery_id, EVENT_ID, "bundle.alert_drill.failure_provider_delivery_id");
-  stringMatching(bundle.alert_drill.recovery_provider_delivery_id, EVENT_ID, "bundle.alert_drill.recovery_provider_delivery_id");
-  stringMatching(bundle.alert_drill.failure_provider_operation_id, EVENT_ID, "bundle.alert_drill.failure_provider_operation_id");
-  stringMatching(bundle.alert_drill.recovery_provider_operation_id, EVENT_ID, "bundle.alert_drill.recovery_provider_operation_id");
-  for (const field of ["failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256"]) {
-    stringMatching(bundle.alert_drill[field], SHA256, `bundle.alert_drill.${field}`);
+  const alertWarned = bundle.alert_drill?.final_status === policy.alert_drill.warning_final_status;
+  let alertEvidenceAt;
+  if (alertWarned) {
+    exactKeys(bundle.alert_drill, ["final_status", "reason_code", "attempted_at", "artifact_id"], "bundle.alert_drill");
+    stringMatching(bundle.alert_drill.reason_code, /^(?:alert|delayed_alert)_[a-z0-9_]{1,50}$/, "bundle.alert_drill.reason_code");
+    alertEvidenceAt = timestamp(bundle.alert_drill.attempted_at, "bundle.alert_drill.attempted_at");
+    if (alertEvidenceAt < deployedAt) fail("alert drill attempt predates deployment");
+    assertNotFuture(alertEvidenceAt, nowMs, "bundle.alert_drill.attempted_at");
+    referenceArtifact(bundle.alert_drill.artifact_id, "bundle.alert_drill.artifact_id");
+  } else {
+    exactKeys(bundle.alert_drill, [
+      "failure_event_id",
+      "recovery_event_id",
+      "failure_provider_delivery_id",
+      "recovery_provider_delivery_id",
+      "failure_provider_operation_id",
+      "recovery_provider_operation_id",
+      "failure_trigger_sha256",
+      "recovery_trigger_sha256",
+      "failure_receipt_sha256",
+      "recovery_receipt_sha256",
+      "failed_at",
+      "recovered_at",
+      "final_status",
+      "artifact_id",
+    ], "bundle.alert_drill");
+    stringMatching(bundle.alert_drill.failure_event_id, EVENT_ID, "bundle.alert_drill.failure_event_id");
+    stringMatching(bundle.alert_drill.recovery_event_id, EVENT_ID, "bundle.alert_drill.recovery_event_id");
+    stringMatching(bundle.alert_drill.failure_provider_delivery_id, EVENT_ID, "bundle.alert_drill.failure_provider_delivery_id");
+    stringMatching(bundle.alert_drill.recovery_provider_delivery_id, EVENT_ID, "bundle.alert_drill.recovery_provider_delivery_id");
+    stringMatching(bundle.alert_drill.failure_provider_operation_id, EVENT_ID, "bundle.alert_drill.failure_provider_operation_id");
+    stringMatching(bundle.alert_drill.recovery_provider_operation_id, EVENT_ID, "bundle.alert_drill.recovery_provider_operation_id");
+    for (const field of ["failure_trigger_sha256", "recovery_trigger_sha256", "failure_receipt_sha256", "recovery_receipt_sha256"]) {
+      stringMatching(bundle.alert_drill[field], SHA256, `bundle.alert_drill.${field}`);
+    }
+    if (bundle.alert_drill.failure_event_id === bundle.alert_drill.recovery_event_id) fail("alert failure and recovery event IDs must differ");
+    if (bundle.alert_drill.failure_provider_delivery_id === bundle.alert_drill.recovery_provider_delivery_id) {
+      fail("alert failure and recovery provider delivery IDs must differ");
+    }
+    if (bundle.alert_drill.failure_provider_operation_id === bundle.alert_drill.recovery_provider_operation_id) {
+      fail("alert failure and recovery provider operation IDs must differ");
+    }
+    if (bundle.alert_drill.failure_trigger_sha256 === bundle.alert_drill.recovery_trigger_sha256) {
+      fail("alert failure and recovery canonical trigger digests must differ");
+    }
+    if (bundle.alert_drill.final_status !== policy.alert_drill.final_status) fail("alert drill final_status is not ok");
+    const failedAt = timestamp(bundle.alert_drill.failed_at, "bundle.alert_drill.failed_at");
+    const recoveredAt = timestamp(bundle.alert_drill.recovered_at, "bundle.alert_drill.recovered_at");
+    if (failedAt < deployedAt) fail("alert drill failure predates deployment");
+    if (recoveredAt <= failedAt) fail("alert recovery must occur after failure");
+    assertNotFuture(recoveredAt, nowMs, "bundle.alert_drill.recovered_at");
+    referenceArtifact(bundle.alert_drill.artifact_id, "bundle.alert_drill.artifact_id");
+    alertEvidenceAt = recoveredAt;
   }
-  if (bundle.alert_drill.failure_event_id === bundle.alert_drill.recovery_event_id) fail("alert failure and recovery event IDs must differ");
-  if (bundle.alert_drill.failure_provider_delivery_id === bundle.alert_drill.recovery_provider_delivery_id) {
-    fail("alert failure and recovery provider delivery IDs must differ");
-  }
-  if (bundle.alert_drill.failure_provider_operation_id === bundle.alert_drill.recovery_provider_operation_id) {
-    fail("alert failure and recovery provider operation IDs must differ");
-  }
-  if (bundle.alert_drill.failure_trigger_sha256 === bundle.alert_drill.recovery_trigger_sha256) {
-    fail("alert failure and recovery canonical trigger digests must differ");
-  }
-  if (bundle.alert_drill.final_status !== policy.alert_drill.final_status) fail("alert drill final_status is not ok");
-  const failedAt = timestamp(bundle.alert_drill.failed_at, "bundle.alert_drill.failed_at");
-  const recoveredAt = timestamp(bundle.alert_drill.recovered_at, "bundle.alert_drill.recovered_at");
-  if (failedAt < deployedAt) fail("alert drill failure predates deployment");
-  if (recoveredAt <= failedAt) fail("alert recovery must occur after failure");
-  assertNotFuture(recoveredAt, nowMs, "bundle.alert_drill.recovered_at");
-  referenceArtifact(bundle.alert_drill.artifact_id, "bundle.alert_drill.artifact_id");
 
   exactKeys(bundle.performance, ["samples_ms", "p75_ms", "p95_ms", "measured_at", "artifact_id"], "bundle.performance");
   const samples = nonEmptyArray(bundle.performance.samples_ms, "bundle.performance.samples_ms", {
@@ -1671,39 +1709,43 @@ export function verifyPostdeployAcceptance({
   assertNotFuture(measuredAt, nowMs, "bundle.performance.measured_at");
   referenceArtifact(bundle.performance.artifact_id, "bundle.performance.artifact_id");
 
-  exactKeys(bundle.delayed_verification, [
-    "not_before",
-    "completed_at",
-    "status",
-    "provider_trigger_sha256",
-    "provider_event_id",
-    "provider_delivery_id",
-    "provider_query_id",
-    "provider_receipt_sha256",
-    "provider_observed_at",
-    "artifact_id",
-  ], "bundle.delayed_verification");
+  exactKeys(bundle.delayed_verification, alertWarned
+    ? ["not_before", "completed_at", "status", "artifact_id"]
+    : [
+      "not_before",
+      "completed_at",
+      "status",
+      "provider_trigger_sha256",
+      "provider_event_id",
+      "provider_delivery_id",
+      "provider_query_id",
+      "provider_receipt_sha256",
+      "provider_observed_at",
+      "artifact_id",
+    ], "bundle.delayed_verification");
   if (bundle.delayed_verification.status !== "pass") fail("delayed verification status must be pass");
   const notBefore = timestamp(bundle.delayed_verification.not_before, "bundle.delayed_verification.not_before");
   const delayedCompleted = timestamp(bundle.delayed_verification.completed_at, "bundle.delayed_verification.completed_at");
-  stringMatching(bundle.delayed_verification.provider_trigger_sha256, SHA256, "bundle.delayed_verification.provider_trigger_sha256");
-  stringMatching(bundle.delayed_verification.provider_event_id, EVENT_ID, "bundle.delayed_verification.provider_event_id");
-  stringMatching(bundle.delayed_verification.provider_delivery_id, EVENT_ID, "bundle.delayed_verification.provider_delivery_id");
-  stringMatching(bundle.delayed_verification.provider_query_id, EVENT_ID, "bundle.delayed_verification.provider_query_id");
-  stringMatching(bundle.delayed_verification.provider_receipt_sha256, SHA256, "bundle.delayed_verification.provider_receipt_sha256");
-  const providerObservedAt = timestamp(bundle.delayed_verification.provider_observed_at, "bundle.delayed_verification.provider_observed_at");
   const minimumNotBefore = deployedAt + policy.delayed_verification.minimum_delay_seconds * 1000;
   if (notBefore < minimumNotBefore) fail("delayed verification not_before is earlier than policy permits");
   if (delayedCompleted < notBefore) fail("delayed verification completed before not_before");
-  if (providerObservedAt < notBefore || providerObservedAt > delayedCompleted) {
-    fail("delayed provider readback was not freshly observed inside the delayed interval");
-  }
-  if (
-    bundle.delayed_verification.provider_event_id !== bundle.alert_drill.recovery_event_id
-    || bundle.delayed_verification.provider_delivery_id !== bundle.alert_drill.recovery_provider_delivery_id
-    || bundle.delayed_verification.provider_query_id === bundle.alert_drill.recovery_provider_operation_id
-  ) {
-    fail("delayed provider readback is not bound to the recovered alert through a distinct provider query");
+  if (!alertWarned) {
+    stringMatching(bundle.delayed_verification.provider_trigger_sha256, SHA256, "bundle.delayed_verification.provider_trigger_sha256");
+    stringMatching(bundle.delayed_verification.provider_event_id, EVENT_ID, "bundle.delayed_verification.provider_event_id");
+    stringMatching(bundle.delayed_verification.provider_delivery_id, EVENT_ID, "bundle.delayed_verification.provider_delivery_id");
+    stringMatching(bundle.delayed_verification.provider_query_id, EVENT_ID, "bundle.delayed_verification.provider_query_id");
+    stringMatching(bundle.delayed_verification.provider_receipt_sha256, SHA256, "bundle.delayed_verification.provider_receipt_sha256");
+    const providerObservedAt = timestamp(bundle.delayed_verification.provider_observed_at, "bundle.delayed_verification.provider_observed_at");
+    if (providerObservedAt < notBefore || providerObservedAt > delayedCompleted) {
+      fail("delayed provider readback was not freshly observed inside the delayed interval");
+    }
+    if (
+      bundle.delayed_verification.provider_event_id !== bundle.alert_drill.recovery_event_id
+      || bundle.delayed_verification.provider_delivery_id !== bundle.alert_drill.recovery_provider_delivery_id
+      || bundle.delayed_verification.provider_query_id === bundle.alert_drill.recovery_provider_operation_id
+    ) {
+      fail("delayed provider readback is not bound to the recovered alert through a distinct provider query");
+    }
   }
   assertNotFuture(delayedCompleted, nowMs, "bundle.delayed_verification.completed_at");
   referenceArtifact(bundle.delayed_verification.artifact_id, "bundle.delayed_verification.artifact_id");
@@ -1715,7 +1757,7 @@ export function verifyPostdeployAcceptance({
     ...browserCompletedTimes,
     ...flowCompletedTimes,
     fixtureVerified,
-    recoveredAt,
+    alertEvidenceAt,
     measuredAt,
     delayedCompleted,
   );

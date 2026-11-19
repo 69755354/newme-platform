@@ -481,7 +481,7 @@ test("the runner never asks the program to archive the rest, allow side effects 
 test("the deploy wrapper gates the data-import operations like the other additive switches", () => {
   const wrapper = fs.readFileSync(new URL("../../infra/systemd/newme-deploy.sh", import.meta.url), "utf8");
   assert.match(wrapper, /data-import-plan\|data-import-apply\|data-import-rollback\) ;;/);
-  assert.match(wrapper, /\|data-import-plan\|data-import-apply\|data-import-rollback>" >&2/);
+  assert.match(wrapper, /\|data-import-plan\|data-import-apply\|data-import-rollback(?:\|[a-z0-9-]+)*>" >&2/);
   const start = wrapper.indexOf('= data-import-plan ]');
   const block = wrapper.slice(start, wrapper.indexOf('case "$DB_TRANSITION_OPERATION" in', start));
   assert.match(block, /merge-base --is-ancestor "\$ROLLBACK_SHA" "\$SHA"/);

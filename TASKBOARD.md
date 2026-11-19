@@ -1157,3 +1157,15 @@ p75 103 ms / p95 155 ms, within policy. The delayed verification passed at `2026
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:9dc8e41baf921c88273b9a946a3a777e5701727609a1d59b3b288bfa76899499 -->
+
+## OS fix S24 lead dispatch and duplicate review technical acceptance (2026-11-19)
+
+Release `c02bad70313cae06492ce32ee18c3c0a4e87f2eb` (S24 lead dispatch and duplicate review, migration 20261119300000 applied through s24 provisioning) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-19T22:06:27Z`, replacing the finalized release `4a73ada2`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 49 ms / p95 62 ms, within policy. The delayed verification passed at `2026-11-19T22:23:35Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:be14b911c3868950e5deeb1bf6d9e02415f83a0dbfb30e73c1e05c68d5226664 -->

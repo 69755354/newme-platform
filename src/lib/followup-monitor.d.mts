@@ -15,6 +15,6 @@ export function isWorkingDay(ms: number, config?: FollowupConfig): boolean;
 export function workingElapsedMs(fromMs: number, toMs: number, config?: FollowupConfig): number;
 export function windowBounds(firstInboundMs: number, config?: FollowupConfig): { startMs: number; endMs: number };
 export function mergeContacts(outboundMs: number[], mergeMinutes?: number): number[];
-export function evaluateFollowup(input: { events: FollowupEvent[]; now: number | string; config?: FollowupConfig }): FollowupResult;
+export function evaluateFollowup(input: { events: FollowupEvent[]; now: number | string; config?: FollowupConfig; silenceRules?: boolean }): FollowupResult;
 export function buildFollowupNote(input: { result: FollowupResult; previous: { state: FollowupState; abandonRisk: boolean } | null; now: number | string; config?: FollowupConfig; leadName?: string }):
   { note: string; notificationType: "warning" | "reminder"; title: string; body: string } | null;

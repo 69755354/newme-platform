@@ -165,3 +165,12 @@ test("abandon risk on and off each get a note", () => {
   const off = buildFollowupNote({ result: { ...result, abandonRisk: false }, previous: { state: result.state, abandonRisk: true }, now, config: cfg });
   assert.match(off.note, /解除|cleared/i);
 });
+
+test("past the new and contacted stages only the first-response rule applies", () => {
+  const events = [inb(dubai("2026-11-16", "09:00")), out(dubai("2026-11-16", "09:10"))];
+  const r = evaluateFollowup({ events, now: dubai("2026-11-20", "09:00"), config: cfg, silenceRules: false });
+  assert.equal(r.state, "normal");
+  assert.equal(r.abandonRisk, false);
+  const waiting = evaluateFollowup({ events: [inb(dubai("2026-11-16", "09:00"))], now: dubai("2026-11-16", "15:00"), config: cfg, silenceRules: false });
+  assert.equal(waiting.state, "overdue");
+});

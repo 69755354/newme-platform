@@ -112,8 +112,10 @@ const iso = (ms) => (ms === null ? null : new Date(ms).toISOString());
 /**
  * events: [{ direction: "inbound" | "outbound", occurredAt }] over every conversation of the lead.
  * Returns the metrics, the state (normal | at_risk | overdue), the reasons that opened it and the abandon-risk flag.
+ * silenceRules=false (leads past the new and contacted stages) keeps only the first-response rule: no
+ * silence rule and no abandon risk.
  */
-export function evaluateFollowup({ events, now, config = resolveFollowupConfig() }) {
+export function evaluateFollowup({ events, now, config = resolveFollowupConfig(), silenceRules = true }) {
   const inbound = [];
   const outbound = [];
   for (const event of Array.isArray(events) ? events : []) {
@@ -143,6 +145,10 @@ export function evaluateFollowup({ events, now, config = resolveFollowupConfig()
     if (waitedMin > config.firstResponseOverdueMinutes) rank = 2;
     else if (waitedMin > config.firstResponseAtRiskMinutes) rank = 1;
     if (rank) result.reasons.push("first_response");
+  }
+  if (!silenceRules) {
+    result.state = ["normal", "at_risk", "overdue"][rank];
+    return result;
   }
   const silentHours = workingElapsedMs(lastOutbound ?? firstInbound, nowMs, config) / HOUR;
   let silenceRank = 0;

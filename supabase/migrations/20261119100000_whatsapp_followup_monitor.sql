@@ -1,7 +1,4 @@
--- ROLLBACK (manual, not executed): drop function public.upsert_lead_followup_state(...) and table public.lead_followup_state; restore
--- record_whatsapp_ad_event(jsonb, boolean) from 20261118200000_whatsapp_ctwa_leads.sql; drop whatsapp_message_events columns body and body_kind.
--- Additive: two nullable columns, one new server-only table, one new routine and a replaced writer. Prefer stopping the cron entry and
--- WHATSAPP_AD_LEADS_ENABLED=false over undoing the schema.
+-- NO_ROLLBACK: additive only (two nullable message columns, one new server-only table, one new routine) plus a replaced S18 writer that stays compatible with the old call shape; manual undo is described at the end of the file.
 -- ============================================================================
 -- OS fix S21 - WhatsApp conversation text and follow-up monitor v1
 -- ============================================================================
@@ -377,3 +374,10 @@ grant execute on function public.upsert_lead_followup_state(uuid, timestamptz, t
 
 comment on function public.upsert_lead_followup_state(uuid, timestamptz, timestamptz, integer, integer, timestamptz, text, boolean, text, uuid[], text, text) is
   'S21: write one lead follow-up state; on a state or abandon-risk change also write one system note and the notifications, atomically. Service role only.';
+
+-- ---------------------------------------------------------------------------
+-- Manual undo (not executed), in this order: remove function public.upsert_lead_followup_state(uuid, timestamptz, timestamptz, integer, integer, timestamptz, text, boolean, text, uuid[], text, text);
+-- remove table public.lead_followup_state; restore record_whatsapp_ad_event(jsonb, boolean) from 20261118200000_whatsapp_ctwa_leads.sql;
+-- remove whatsapp_message_events columns body and body_kind (and their two constraints).
+-- Prefer stopping the follow-up cron entry (WHATSAPP_FOLLOWUP_MONITOR_ENABLED unset) and WHATSAPP_AD_LEADS_ENABLED=false over undoing the schema.
+-- ---------------------------------------------------------------------------

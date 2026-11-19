@@ -1,0 +1,23 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/check-whatsapp-followups (every hour 09:30-19:30 Asia/Dubai)
+# STATUS: after-flag
+# install only together with WHATSAPP_FOLLOWUP_MONITOR_ENABLED=true; the first line is the schedule table's time, the others repeat it hourly
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 Asia/Dubai
+OnCalendar=*-*-* 10:30:00 Asia/Dubai
+OnCalendar=*-*-* 11:30:00 Asia/Dubai
+OnCalendar=*-*-* 12:30:00 Asia/Dubai
+OnCalendar=*-*-* 13:30:00 Asia/Dubai
+OnCalendar=*-*-* 14:30:00 Asia/Dubai
+OnCalendar=*-*-* 15:30:00 Asia/Dubai
+OnCalendar=*-*-* 16:30:00 Asia/Dubai
+OnCalendar=*-*-* 17:30:00 Asia/Dubai
+OnCalendar=*-*-* 18:30:00 Asia/Dubai
+OnCalendar=*-*-* 19:30:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@check-whatsapp-followups.service
+
+[Install]
+WantedBy=timers.target

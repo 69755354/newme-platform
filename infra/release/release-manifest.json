@@ -245,7 +245,7 @@
       "$comment": "WhatsApp conversation text and follow-up monitor (S21): two nullable message columns, one server-only state table, one service-role routine and the replaced S18 writer. Inert until the follow-up cron entry is installed.",
       "version": "20261119100000",
       "file": "20261119100000_whatsapp_followup_monitor.sql",
-      "sha256": "1e649a0c6dbc4117980a1c0942bbb067c45bb0f78146b3e7949a5de747e1a50b"
+      "sha256": "afa2212f9f3cf1a08ab384adebea9b316146a0fce5bd5f547bb3f97cb1576d8a"
     }
   ],
   "companions": [

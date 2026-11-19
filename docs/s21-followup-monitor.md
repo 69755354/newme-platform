@@ -30,8 +30,7 @@ All times are stored in UTC and evaluated in the configured time zone (default A
 | Working calendar | Monday to Friday in Dubai, configurable weekend and holiday list; the window skips non-working days |
 | Last outbound | latest outbound message time over all linked conversations |
 
-Working hours are not used to shift the first inbound time in v1 (the stated rule counts raw
-minutes). It is a single configuration point if the business wants it later.
+`first_response_minutes` is stored as raw minutes. The state rules measure elapsed time with non-working days removed (a Friday evening message is not overdue on Saturday), and silence rules apply to the new and contacted stages only; later stages keep the first-response rule alone. Working hours inside a day are not used in v1.
 
 ## 3. Follow-up status
 
@@ -75,7 +74,7 @@ state change; never repeated while the state is unchanged. The cron processes at
 
 ## 6. System note wording
 
-Chinese and English in one line, for example:
+Chinese and English, two lines, for example:
 `[系统] 客户 10:05 来信，11:40 才首次回复（超过 1 小时） / [System] Customer wrote at 10:05, first reply only at 11:40 (over 1 hour).`
 Times are shown in the configured time zone.
 
@@ -91,4 +90,4 @@ Confidence: 0.9 explicit unit and keyword, 0.6 keyword only, below 0.5 dropped. 
 ## 8. Rollout
 
 Database: one additive migration (columns, one table, one function, replaced writer). Application:
-the webhook stores text only when the S21 columns exist; the cron route is inert until a cron entry is added by the operator. Rollback: stop the cron entry; the new columns and table are unused by older code.
+the webhook stores text only when the S21 columns exist; the cron route `/api/cron/check-whatsapp-followups` answers Disabled until `WHATSAPP_FOLLOWUP_MONITOR_ENABLED=true`, and its timer (hourly 09:30-19:30 Dubai, marked `after-flag`) is installed by the operator. Rollback: stop the cron entry; the new columns and table are unused by older code.

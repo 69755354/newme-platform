@@ -63,7 +63,8 @@ export async function GET(request: Request) {
     .from("profiles")
     .select("id,email,full_name,role,is_active")
   const eligibleProfilesQuery = filterLeadTransferCandidateQuery(
-    profilesQuery as never
+    profilesQuery as never,
+    { hideSystemAccounts: true, viewerId: user.id },
   ) as typeof profilesQuery
 
   const [leadsResult, profilesResult, kpiResult] = await Promise.all([

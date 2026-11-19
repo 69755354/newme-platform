@@ -6,6 +6,7 @@ import { isActiveLead, isWonLead, leadSourceKey, wonLeadValue, type MetricLead }
 type PerfLead = MetricLead & { id: string };
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +44,12 @@ export async function GET(request: NextRequest) {
   try {
     if (isCEO) {
       // ── Management: whole team ──
-      const { data: reps } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, role")
-        .in("role", ["sales", "admin"]);
+      const { data: reps } = await excludeSystemAccountsQuery(
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, role")
+          .in("role", ["sales", "admin"]),
+      );
 
       const repList = reps ?? [];
       const repIds = repList.map((r: any) => r.id);

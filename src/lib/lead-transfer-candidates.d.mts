@@ -19,8 +19,14 @@ export interface LeadTransferCandidateQuery<T> {
   };
 }
 
+export interface LeadTransferCandidateOptions {
+  hideSystemAccounts?: boolean;
+  viewerId?: string | null;
+}
+
 export function filterLeadTransferCandidateQuery<T>(
   query: LeadTransferCandidateQuery<T>,
+  options?: LeadTransferCandidateOptions,
 ): T;
 
 export interface VisibleLeadOwnerReference {

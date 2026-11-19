@@ -6,6 +6,7 @@ import { countsAsCash } from "@/lib/payment-state.mjs"
 import { fetchAllRows, LIST_MAX_ROWS } from "@/lib/fetch-all-rows.mjs"
 import { dubaiDateKey, dubaiMonthBounds, dubaiMonthKey } from "@/lib/dubai-time.mjs"
 import { isWonInPeriod, wonLeadValue } from "@/lib/lead-metrics.mjs"
+import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs"
 
 /**
  * GET /api/pipeline/list — leads, the sales roster, and the caller's own KPI actuals.
@@ -61,10 +62,13 @@ export async function GET(request: Request) {
       if (isSales) q = q.eq("assigned_to", userId)
       return q.order("updated_at", { ascending: false }).order("id", { ascending: true }).range(from, to)
     }, { maxRows: LIST_MAX_ROWS }).then((result) => ({ data: result.data, error: result.error, total: result.total, truncated: result.truncated })),
-    supabase
-      .from("profiles")
-      .select("id,email,role,full_name")
-      .in("role", ["admin", "sales", "operator", "boss"]),
+    excludeSystemAccountsQuery(
+      supabase
+        .from("profiles")
+        .select("id,email,role,full_name")
+        .in("role", ["admin", "sales", "operator", "boss"]),
+      { viewerId: userId },
+    ),
   ])
 
   // A failed read must never look like "no leads" / "no sales people".

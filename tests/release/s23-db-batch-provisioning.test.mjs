@@ -49,7 +49,9 @@ test('the S23 provisioning gate pins exactly one reviewed migration and its post
   assert.match(S23_POSTURE[0],/visit_reports/);
   assert.match(S23_POSTURE[0],/visit_report_set_plan_approval/);
   assert.match(S23_POSTURE[0],/flag_overdue_visit_reports/);
-  assert.match(S23_POSTURE[0],/has_column_privilege\('service_role','public\.visit_reports','plan_approval','UPDATE'\)/);
+  assert.match(S23_POSTURE[0],/has_column_privilege\('service_role',to_regclass\('public\.visit_reports'\),'plan_approval','UPDATE'\)/);
+  // the posture query runs on a database that does not have the tables yet: it must answer false, not fail
+  assert.doesNotMatch(S23_POSTURE[0],/FROM public\.|'public\.visit_reports','(?:result|plan_approval)'/);
   assert.match(S23_PRIOR[0],/to_regclass\('public\.visit_reports'\) IS NULL/);
   assert.match(S23_PRIOR[0],/to_regclass\('public\.opportunities'\) IS NULL/);
   for(const text of [...S23_POSTURE,...S23_PRIOR]){

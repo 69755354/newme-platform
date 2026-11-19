@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { readSessionIdentity } from "@/lib/session-identity";
+import { useContext, useState, useEffect } from "react";
+import { readSessionIdentity, type SessionOutcome } from "@/lib/session-identity";
+import { PageIdentityContext, SessionHandoffContext } from "@/lib/session-contexts";
 
 export interface UserRoleInfo {
   role: string | null;
@@ -24,11 +25,18 @@ export function useUserRole(): UserRoleInfo {
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const pageIdentity = useContext(PageIdentityContext);
+  const handoff = useContext(SessionHandoffContext);
 
   useEffect(() => {
+    // A page above already resolved the identity: nothing to ask (S22).
+    if (pageIdentity) return;
     let cancelled = false;
     (async () => {
-      const outcome = await readSessionIdentity();
+      const handed = handoff?.take() ?? null;
+      const outcome: SessionOutcome = handed
+        ? { status: "active", identity: handed }
+        : await readSessionIdentity();
       if (cancelled) return;
       if (outcome.status === "unavailable") return;
       if (outcome.status === "active") {
@@ -39,6 +47,17 @@ export function useUserRole(): UserRoleInfo {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  if (pageIdentity) {
+    const inheritedRole = pageIdentity.role || "sales";
+    return {
+      role: inheritedRole,
+      userId: pageIdentity.userId,
+      isCEO: inheritedRole === "admin" || inheritedRole === "boss" || inheritedRole === "operator",
+      isSales: inheritedRole === "sales",
+      loading: false,
+    };
+  }
 
   return {
     role,

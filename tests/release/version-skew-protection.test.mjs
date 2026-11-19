@@ -240,7 +240,6 @@ test("no on-load identity lookup goes through the getCurrentUser() server action
     "src/hooks/useRequireRole.ts",
     "src/hooks/useUserRole.ts",
     "src/hooks/useAuthRedirect.ts",
-    "src/app/(dashboard)/analytics/_components/PaymentTracker.tsx",
   ];
   for (const file of callers) {
     const source = read(file);
@@ -248,6 +247,12 @@ test("no on-load identity lookup goes through the getCurrentUser() server action
     assert.doesNotMatch(source, /getCurrentUser\(\)\.then|await getCurrentUser\(/, `${file} must not call the getCurrentUser() server action`);
     assert.match(source, /readSessionIdentity/, `${file} must read GET /api/auth/me through the shared reader`);
   }
+  // S22: the payment tracker no longer asks for the identity itself; it takes
+  // the user id from useRequireRole, which reads it through the shared reader
+  // (asserted above) or from the page that already did.
+  const tracker = read("src/app/(dashboard)/analytics/_components/PaymentTracker.tsx");
+  assert.equal(tracker.includes("@/app/actions/auth"), false, "PaymentTracker must not call the getCurrentUser() server action");
+  assert.match(tracker, /useRequireRole\(/, "PaymentTracker takes its identity from useRequireRole");
   // The action itself still exists for /change-password; nothing under the
   // dashboard tree may import it for an on-load lookup.
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>

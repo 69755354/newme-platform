@@ -31,6 +31,11 @@
 - S18（PR #526）：WhatsApp「点击进 WhatsApp」广告的点击编号 ctwa_clid 入库并自动建/对线索，回传 Conversions API for Business Messaging。webhook 现有 `src/app/api/whatsapp/webhook/route.ts`，别名 `src/app/api/meta/whatsapp-webhook/route.ts`；线索详情面板 `src/app/(dashboard)/leads/[id]/LeadWhatsAppAdPanel.tsx`；市场导出 `src/app/api/leads/whatsapp-ads/export/route.ts`；迁移 `20261118200000_whatsapp_ctwa_leads.sql`。
 - 供应链：glob/minimatch 已降为中危、picomatch 公告撤回，S17 登记的三条高危例外过期移除，登记表恢复为空。
 
+## 2026-11-19 S19–S21 发布批次：编号总表、跟进监控
+
+- 发布批次 1（已上线 100006be）：Meta 编号总表导出 `src/app/api/export/meta-ids/route.ts`、每日取数与 NAS 上传脚本 `infra/meta-ids/newme-meta-ids-export.sh`、`infra/nas/newme-nas-upload.sh`；测试账号对真人不可见（`src/lib/system-accounts.mjs`）；数据导入门禁操作与 S21 开关。
+- S21 应用：WhatsApp 对话正文入库、首次响应/联系次数/跟进状态：线索页卡片 `src/app/(dashboard)/leads/[id]/LeadFollowupCard.tsx`、接口 `src/app/api/leads/[id]/followup/route.ts`、定时接口 `src/app/api/cron/check-whatsapp-followups/route.ts`（默认关闭）；迁移 `20261119100000_whatsapp_followup_monitor.sql`。
+
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。
 
@@ -1260,5 +1265,14 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `tests/database/role-permissions.py` | 数据库用例：按角色的权限矩阵，包括运营可关闭线索、合同创建按角色、设计师与财务的收窄。 |
 | `tests/database/s16-contract-owner-and-notifications.py` | 数据库用例：通知表放行 contract_created、reminder、task、digest 且仍拒绝未知值；转合同后合同负责人是线索负责人，销售能提交审批；线索无负责人时的退回顺序；warning 类型通知可写入。 |
 | `scripts/phase-tool-drill.sh` | 两阶段迁移工具演练：在最小回放底座上执行延后阶段前，补上生产已有、底座缺少的对象（线索文件表、线索工作流阶段表及触发器、项目经理与指派列、客户指派销售列、报价折扣列），使角色收窄迁移里“有表才建”的部分在演练库上与生产一致，规则检查才读得到真值；迁移文件和规则检查本身不变。 |
+| `src/lib/early-fetch.ts` | 页面提前发出请求、稍后由面板接手：只能接手一次、最多保留十秒，不是缓存（首页预警条）。 |
+| `src/lib/session-handoff.ts` | 布局刚验过的身份只交给紧接着出现的第一个页面，三秒过期，之后的页面仍实时验证。 |
+| `src/lib/session-contexts.ts` | 上述交接与“页面已解析身份”两个上下文。 |
+| `src/lib/page-identity.ts` | 页面已解析角色时，下层组件直接使用，不再各自请求会话。 |
+| `src/app/(dashboard)/dashboard/_components/AlertPanel.tsx` | 首页预警条：接手首页提前发出的预警请求。 |
+| `src/app/(dashboard)/leads/[id]/missing.ts` | 判定线索不存在（无记录、PGRST116、编号不是合法 uuid），页面直接显示“未找到”。 |
+| `src/app/api/export/meta-ids/route.ts` | Meta 线索编号导出（令牌校验，不缓存）。 |
+| `infra/meta-ids/newme-meta-ids-export.sh` | Meta 线索编号导出的主机脚本。 |
+| `infra/nas/newme-nas-upload.sh` | 备份上传到 NAS 的主机脚本。 |
 
 验证边界：`scripts/check-published-credentials.mjs` 对本批次新增的测试夹具按文件和标识符逐条登记豁免并写明理由，规则本身未放宽。

@@ -39,6 +39,7 @@ import {
   describeLeadTransferEvent,
 } from "@/lib/lead-transfer-history.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { isLeadMissing } from "./missing";
 
 /* ─── Types ─── */
 export interface ProjectInfoDraft {
@@ -64,6 +65,8 @@ export interface UseLeadDetailDataReturn {
   projectInfoDraft: ProjectInfoDraft;
   setProjectInfoDraft: React.Dispatch<React.SetStateAction<ProjectInfoDraft>>;
   loading: boolean;
+  /** The lead does not exist (or is not visible to this caller): a final answer. */
+  notFound: boolean;
   error: string | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   fetchData: () => Promise<void>;
@@ -89,6 +92,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   // P0-1 fetchData: 11 serial awaits → 2 parallel Promise.allSettled batches
   // ──────────────────────────────────────────────────────────────────────────
@@ -106,6 +110,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
     if (!leadId) return;
     setLoading(true);
     setError(null);
+    setNotFound(false);
     const perfMark = typeof performance !== "undefined" ? performance.now() : 0;
     try {
       // Ensure auth session is set before any queries (fixes setSession race)
@@ -225,6 +230,13 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
         return;
       }
       const leadPayload = leadRes.value;
+      // S22: a lead that does not exist is a final answer. It used to fall
+      // through to the error / empty paths below, and an id that is not a
+      // valid uuid was treated as a failure to retry. Stop and say "not found".
+      if (isLeadMissing(leadPayload)) {
+        setNotFound(true);
+        return;
+      }
       if (leadPayload.error) {
         // supabase-js reports a request cut short by navigation as a result error.
         onFetchFailure(leadPayload.error, () => {
@@ -421,6 +433,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
     projectInfoDraft,
     setProjectInfoDraft,
     loading,
+    notFound,
     error,
     setError,
     fetchData,

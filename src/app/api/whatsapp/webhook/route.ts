@@ -78,7 +78,8 @@ export async function POST(request: Request) {
     if (pilotFailed) return reply({ error: "event_write_failed" }, 503);
     // Click-to-WhatsApp attribution: match or create the lead and keep the ad click id. It runs
     // for the same verified body, is idempotent per message id and customer phone, and a failure
-    // makes Meta retry the whole delivery, so no ad lead is lost. Only ids and times are stored.
+    // makes Meta retry the whole delivery, so no ad lead is lost. Ids, times and the text of text messages are
+    // stored (S21); media links and ad body text never are.
     let adFailed = false;
     if (adLeadsEnabled()) {
       try {

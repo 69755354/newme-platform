@@ -11,6 +11,7 @@ import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmWonForContract } from "@/lib/meta-crm-events";
 import { enqueueWhatsAppPurchaseForContract } from "@/lib/whatsapp-capi.mjs";
+import { enqueueWebsitePurchaseForContract } from "@/lib/website-capi-valued";
 import { ensurePendingApproval } from "@/lib/contract-approval-rows.mjs";
 
 /**
@@ -311,6 +312,15 @@ export async function PATCH(
         logger.warn(
           { err: waErr, request_id, operation: "contract_set_status", contract_id: contractId },
           "[API Contracts Detail] WhatsApp Purchase feedback not queued",
+        );
+      }
+      // Website leads report a Purchase (contract amount) to the website dataset.
+      try {
+        await enqueueWebsitePurchaseForContract(supabaseAdmin, contractId);
+      } catch (webErr) {
+        logger.warn(
+          { err: webErr, request_id, operation: "contract_set_status", contract_id: contractId },
+          "[API Contracts Detail] Website Purchase feedback not queued",
         );
       }
     }

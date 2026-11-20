@@ -101,6 +101,7 @@ function patchWorld({ approvals, failInsert = false, dispatchFails = false }) {
     "@/lib/supabase-admin": { supabaseAdmin: admin },
     "@/lib/meta-crm-events": { enqueueMetaCrmWonForContract: async () => {} },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppPurchaseForContract: async () => {} },
+    "@/lib/website-capi-valued": { enqueueWebsitePurchaseForContract: async () => "skipped" },
     "@/lib/notification-dispatch": {
       dispatchPersistedNotification: async ({ input }) => {
         events.push(["notify", input.type, approvals.filter((row) => row.status === "pending").length]);

@@ -3,8 +3,14 @@
 // idempotent enqueue that never throws into a salesperson's action, and a sender that
 // reads the server-side token from the environment only.
 import { normalizeCtwaClid } from "./whatsapp-ctwa.mjs";
+import { latestQuotationAmount } from "./quote-amount.mjs";
+import { deterministicUuid, hashedContactKeys } from "./capi-hash.mjs";
 
 export const WA_CAPI_EVENTS = Object.freeze(["LeadSubmitted", "QualifiedLead", "Purchase"]);
+// Events that carry the deal amount. InitiateCheckout is the valued "quotation with an amount sent" signal: Meta's
+// business-messaging list has no dedicated quote event, and Purchase must stay for the signed deal. It is not in
+// WA_CAPI_EVENTS (the queue table's allow-list) so it travels through the business_events outbox instead (no schema change).
+export const WA_VALUED_EVENTS = Object.freeze(["InitiateCheckout", "Purchase"]);
 
 // Progress key (pipeline stage or lead-detail milestone) -> Meta event. This follows the form
 // funnel in meta-crm-events.ts, where "Qualified" is the optimisation target and is reached at
@@ -22,8 +28,8 @@ export const WA_STAGE_EVENTS = Object.freeze({
 export const WA_CAPI_EVENT_MAX_AGE_SECONDS = 7 * 86_400;
 const WABA_ID = /^[0-9]{5,32}$/;
 
-export function buildWhatsAppCapiPayload({ eventId, wabaId, ctwaClid, eventName, eventTime, value = null, currency = null }) {
-  if (!WA_CAPI_EVENTS.includes(eventName)) throw new Error("Invalid WhatsApp event name");
+export function buildWhatsAppCapiPayload({ eventId, wabaId, ctwaClid, eventName, eventTime, value = null, currency = null, hashedPhone = null }) {
+  if (!WA_CAPI_EVENTS.includes(eventName) && !WA_VALUED_EVENTS.includes(eventName)) throw new Error("Invalid WhatsApp event name");
   if (typeof wabaId !== "string" || !WABA_ID.test(wabaId)) throw new Error("Invalid WhatsApp business account id");
   const clid = normalizeCtwaClid(ctwaClid);
   if (!clid) throw new Error("Invalid click id");
@@ -36,10 +42,12 @@ export function buildWhatsAppCapiPayload({ eventId, wabaId, ctwaClid, eventName,
     user_data: { whatsapp_business_account_id: wabaId, ctwa_clid: clid },
   };
   if (typeof eventId === "string" && eventId) event.event_id = eventId;
-  if (eventName === "Purchase") {
+  // Optional SHA-256 phone hash (see hashedContactKeys); anything else is ignored, never sent in clear.
+  if (Array.isArray(hashedPhone) && hashedPhone.length && hashedPhone.every((h) => /^[0-9a-f]{64}$/.test(h))) event.user_data.ph = hashedPhone;
+  if (WA_VALUED_EVENTS.includes(eventName)) {
     const amount = Number(value);
     if (!Number.isFinite(amount) || amount < 0 || typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) {
-      throw new Error("Purchase needs a value and a currency");
+      throw new Error("A valued event needs a value and a currency");
     }
     event.custom_data = { currency, value: amount };
   }
@@ -91,7 +99,7 @@ export async function enqueueWhatsAppCapiEvent(db, leadId, eventName, { value = 
     const waba = conversation?.data?.waba_id;
     if (conversation?.error || typeof waba !== "string" || !WABA_ID.test(waba)) return "skipped";
     const row = { lead_id: leadId, waba_id: waba, ctwa_clid: clid, event_name: eventName, event_time: nowSeconds };
-    if (eventName === "Purchase") {
+    if (WA_VALUED_EVENTS.includes(eventName)) {
       const amount = Number(value);
       if (!Number.isFinite(amount) || amount <= 0 || typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) return "skipped";
       row.value = amount;
@@ -106,9 +114,46 @@ export async function enqueueWhatsAppCapiEvent(db, leadId, eventName, { value = 
 }
 
 /** Stage or milestone key -> event (QualifiedLead from requirement_confirmed on). */
-export async function enqueueWhatsAppCapiForProgress(db, leadId, progressKey) {
+export async function enqueueWhatsAppCapiForProgress(db, leadId, progressKey, opts = {}) {
   const eventName = WA_STAGE_EVENTS[progressKey];
-  return eventName ? enqueueWhatsAppCapiEvent(db, leadId, eventName) : "skipped";
+  const result = eventName ? await enqueueWhatsAppCapiEvent(db, leadId, eventName) : "skipped";
+  // The quotation step also reports the quoted amount (main signal); skipped while there is no amount yet.
+  if (progressKey === "quotation_submitted" || progressKey === "quotation") await enqueueWhatsAppQuoteForLead(db, leadId, opts);
+  return result;
+}
+
+export const WA_QUOTE_OUTBOX_TYPE = "meta_capi_lead_delivery";
+
+/**
+ * Quotation with an amount sent: valued InitiateCheckout for a click-to-WhatsApp lead, via the business_events outbox
+ * (one row per lead, deterministic id). `attempt(db, row)` tries one delivery now; the retry tool owns it afterwards.
+ */
+export async function enqueueWhatsAppQuoteForLead(db, leadId, { attempt = /** @type {Function | null} */ (null), env = process.env,
+  nowSeconds = Math.floor(Date.now() / 1000) } = {}) {
+  try {
+    const lead = await db.from("leads").select("ctwa_clid, phone").eq("id", leadId).maybeSingle();
+    const clid = normalizeCtwaClid(lead?.data?.ctwa_clid);
+    if (lead?.error || !clid) return "skipped";
+    const conversation = await db.from("whatsapp_conversations").select("waba_id")
+      .eq("lead_id", leadId).eq("first_ctwa_clid", clid).limit(1).maybeSingle();
+    const waba = conversation?.data?.waba_id;
+    if (conversation?.error || typeof waba !== "string" || !WABA_ID.test(waba)) return "skipped";
+    const amount = await latestQuotationAmount(db, leadId);
+    if (!amount) return "skipped";
+    const eventId = `wa-quote:${leadId}`;
+    const hashedPhone = env.WA_CAPI_SEND_HASHED_PHONE === "true" ? hashedContactKeys({ phone: lead.data.phone }).ph ?? null : null;
+    const payload = buildWhatsAppCapiPayload({ eventId, wabaId: waba, ctwaClid: clid, eventName: "InitiateCheckout",
+      eventTime: nowSeconds, value: amount.value, currency: amount.currency, hashedPhone });
+    const id = deterministicUuid(eventId);
+    const eventData = { status: "pending", attempts: 0, queued_at: new Date(nowSeconds * 1000).toISOString(), event_id: eventId, payload };
+    const inserted = await db.from("business_events").insert({ id, lead_id: leadId, event_type: WA_QUOTE_OUTBOX_TYPE,
+      description: "Meta CAPI WhatsApp InitiateCheckout delivery", event_data: eventData }).select("id").maybeSingle();
+    if (inserted.error) return "skipped"; // 23505: already queued for this lead
+    if (attempt) { try { await attempt(db, { id, event_data: eventData }); } catch { /* the retry tool picks it up */ } }
+    return "queued";
+  } catch {
+    return "skipped";
+  }
 }
 
 /** A lead whose quality is rated good or normal is a qualified lead. */
@@ -116,7 +161,7 @@ export async function enqueueWhatsAppCapiForQuality(db, leadId, quality) {
   return quality === "good" || quality === "normal" ? enqueueWhatsAppCapiEvent(db, leadId, "QualifiedLead") : "skipped";
 }
 
-async function activeContractAmount(db, leadId) {
+export async function activeContractAmount(db, leadId) {
   const { data, error } = await db.from("contracts").select("contract_amount, currency")
     .eq("lead_id", leadId).eq("status", "active").order("created_at", { ascending: false }).limit(1);
   const row = Array.isArray(data) ? data[0] : null;

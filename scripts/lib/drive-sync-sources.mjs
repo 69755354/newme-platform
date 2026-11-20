@@ -86,6 +86,9 @@ export function buildLeadChanges(tabs, modified) {
       identity: { fingerprint: fingerprintOf(key), leadgen: leadgenCand, phone_digits: phoneN?.digits ?? phoneDigits(phoneRaw), email },
       owned, followup_text: fb.text || undefined, contact_days_filled: fb.days, first_contact_at: first.iso ?? undefined,
       contact_rule: norm(s?.["Contact rule"]) || undefined,
+      // Optional columns (not in `required`): the register's sales-reported stage and quote amount (AED).
+      opp_stage: norm(r?.["Opportunity stage"]) || undefined,
+      quote_value: norm(r?.["Quote value AED"]) || norm(s?.["Quote value AED"]) || norm(s?.["Quote amount AED"]) || undefined,
       insertable,
       insert_fields: { customer_name: norm(r?.Client) || norm(s?.Client) || undefined, phone: phoneN?.e164 || phoneRaw || undefined, email: email || undefined, source: OS_SOURCES.has(channel) ? channel : "unknown", source_channel: master ? PREFIX_CHANNEL[master[1]] : "legacy_sheet", meta_leadgen_id: leadgenCand || undefined, campaign_id: strip(r?.["Campaign ID"], "c:") || undefined, adset_id: strip(r?.["Adset ID"], "as:") || undefined, ad_id: strip(r?.["Ad ID"], "ag:") || undefined, campaign_name: norm(r?.Campaign) || undefined, ad_name: norm(r?.Ad) || undefined, location: norm(r?.Location) || norm(s?.Area) || undefined, notes: pick("Requirement / Context") || undefined, created_at: received.iso || undefined },
       owner_alias: lc(r?.["Assigned to"]) || undefined,

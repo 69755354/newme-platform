@@ -4,18 +4,37 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { buildMetaCrmPayload, sendMetaCrmPayload } from "../src/lib/meta-crm-events.ts";
+import { activeContractAmount } from "../src/lib/whatsapp-capi.mjs";
+import { latestQuotationAmount } from "../src/lib/quote-amount.mjs";
+import { buildMetaCrmPayload, hashedContactKeys, sendMetaCrmPayload } from "../src/lib/meta-crm-events.ts";
 import { META_CRM_EVENT_MAX_AGE_SECONDS } from "../src/lib/meta-lead-ads.mjs";
 
 // Meta accepts CRM events well inside its 28-day window; intake shares this limit.
 const MAX_AGE_SECONDS = META_CRM_EVENT_MAX_AGE_SECONDS;
 const MAX_ATTEMPTS = 5;
 
+/** Looked up at send time so no contact data or amount is copied into the queue table. Failures degrade to a plain event. */
+async function enrichment(db, row, env) {
+  const extra = {};
+  try {
+    if ((row.event_name === "Won" || row.event_name === "Quoted") && row.lead_id) {
+      // Quoted reports the quoted amount (main signal); Won the signed contract amount.
+      const amount = row.event_name === "Won" ? await activeContractAmount(db, row.lead_id) : await latestQuotationAmount(db, row.lead_id);
+      if (amount) { extra.value = amount.value; extra.currency = amount.currency; }
+    }
+    if (env.META_CRM_SEND_HASHED_CONTACT === "true" && row.lead_id) {
+      const { data } = await db.from("leads").select("phone, email").eq("id", row.lead_id).maybeSingle();
+      if (data) extra.match = hashedContactKeys(data);
+    }
+  } catch { /* plain event */ }
+  return extra;
+}
+
 export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock = () => Date.now(),
-  send = sendMetaCrmPayload } = {}) {
+  send = sendMetaCrmPayload, env = process.env } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid send limit");
   const queue = await db.from("meta_crm_stage_events")
-    .select("id, meta_leadgen_id, event_name, event_time, status, attempts, lease_id, lease_until")
+    .select("id, lead_id, meta_leadgen_id, event_name, event_time, status, attempts, lease_id, lease_until")
     .in("status", ["pending", "failed", "sending"]).lt("attempts", MAX_ATTEMPTS)
     .order("created_at", { ascending: true }).limit(limit);
   if (queue.error) throw new Error("Meta CRM queue unavailable");
@@ -48,7 +67,10 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock
       let payload;
       try {
         if (ageSeconds > MAX_AGE_SECONDS) throw new Error("age");
-        payload = buildMetaCrmPayload({ leadgenId: row.meta_leadgen_id, eventName: row.event_name, eventTime: row.event_time, eventId: row.id });
+        // Quoted carries the quotation amount and Won the contract amount; hashed phone/email are opt-in (META_CRM_SEND_HASHED_CONTACT=true)
+        // until Meta's acceptance of extra keys next to lead_id is confirmed with a test event.
+        const extra = await enrichment(db, row, env);
+        payload = buildMetaCrmPayload({ leadgenId: row.meta_leadgen_id, eventName: row.event_name, eventTime: row.event_time, eventId: row.id, ...extra });
       } catch {
         await db.from("meta_crm_stage_events").update({ status: "review_required" })
           .eq("id", row.id).eq("status", row.status).eq("attempts", row.attempts);

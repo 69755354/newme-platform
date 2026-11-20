@@ -1337,3 +1337,15 @@ p75 57 ms / p95 88 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:5c24a495b65ce3ebb551c7ff2ca872b0c053120ff9a07bed428315ad42c7864b -->
+
+## OS fix S32 tasks constraint NOT VALID technical acceptance (2026-11-20)
+
+Release `b83ef84c3de50f9b81a5f0e2eac1166ebabbcc08` (S32 migration 20261120200000 applied through s32 provisioning (restorable tasks table)) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T21:20:52Z`, replacing the finalized release `099370dc`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 53 ms / p95 62 ms, within policy. The delayed verification passed at `2026-11-20T21:37:58Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:fca24f1f6b251e9cf3b806a8c59abfa55b5746ed5df1ce14fefc22659352d1cc -->

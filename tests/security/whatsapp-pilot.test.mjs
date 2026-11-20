@@ -90,7 +90,7 @@ test("webhook route fails closed, validates challenge and retries storage failur
     upsert: async (rows, options) => { calls.push({ table, rows, options }); return { error: failStorage ? { code: "unavailable" } : null }; },
   }) };
   admin.rpc = async () => ({ data: { duplicate: false }, error: null });
-  const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"), "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs") });
+  const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"), "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs"), "@/lib/whatsapp-history.mjs": require("../../src/lib/whatsapp-history.mjs"), "@/lib/whatsapp-history.mjs": require("../../src/lib/whatsapp-history.mjs") });
   try {
     Date.now = () => now;
     delete process.env.WHATSAPP_PILOT_ENABLED;
@@ -106,7 +106,7 @@ test("webhook route fails closed, validates challenge and retries storage failur
     assert.deepEqual(calls[0].options, { onConflict: "channel_id,message_id", ignoreDuplicates: true });
     failStorage = true;
     assert.equal((await route.POST(request())).status, 503);
-    const big = new Request("https://example.test", { method: "POST", headers: { "content-type": "application/json" }, body: "x".repeat(1024 * 1024 + 1) });
+    const big = new Request("https://example.test", { method: "POST", headers: { "content-type": "application/json" }, body: "x".repeat(3 * 1024 * 1024 + 1) });
     assert.equal((await route.POST(big)).status, 413);
   } finally { process.env = saved; Date.now = savedClock; }
 });
@@ -149,7 +149,7 @@ test("webhook drops a batch that ages out during parsing, preserves fresh rows, 
   }), rpc: async () => ({ data: { duplicate: false }, error: null }) };
   const actual = require("../../src/lib/whatsapp-pilot.mjs");
   const route = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", {
-    "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs"),
+    "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs"), "@/lib/whatsapp-history.mjs": require("../../src/lib/whatsapp-history.mjs"),
     "@/lib/whatsapp-pilot.mjs": { ...actual, extractWhatsAppEvents: (...args) => {
       const rows = actual.extractWhatsAppEvents(...args);
       clock += 1000; // Represents elapsed time while parsing a batch, before dispatch.
@@ -211,7 +211,7 @@ test("alias route shares the handler; META_APP_SECRET signs; history and sync fi
   const admin = { from: () => ({ select: () => ({ eq: async () => ({ data: [channel], error: null }) }), upsert: async (r) => { writes.push(r); return { error: null }; } }),
     rpc: async (n, a) => { rpcs.push([n, a]); return { data: {}, error: null }; } };
   const mocks = { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"),
-    "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs") };
+    "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs"), "@/lib/whatsapp-history.mjs": require("../../src/lib/whatsapp-history.mjs") };
   const real = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", mocks);
   const alias = loadRoute("../../src/app/api/meta/whatsapp-webhook/route.ts", { ...mocks, "@/app/api/whatsapp/webhook/route": real });
   const savedClock = Date.now;
@@ -247,7 +247,7 @@ test("pilot write failure answers 503 and the ad path is not touched, on both pa
     upsert: async () => ({ error: failPilot ? { code: "55000" } : null }) }),
     rpc: async (n, a) => { rpcs.push([n, a]); return { data: {}, error: null }; } };
   const mocks = { "next/server": nextMock, "@/lib/supabase-admin": { supabaseAdmin: admin }, "@/lib/whatsapp-pilot.mjs": require("../../src/lib/whatsapp-pilot.mjs"),
-    "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs") };
+    "@/lib/whatsapp-ctwa.mjs": require("../../src/lib/whatsapp-ctwa.mjs"), "@/lib/whatsapp-ctwa-ingest.mjs": require("../../src/lib/whatsapp-ctwa-ingest.mjs"), "@/lib/whatsapp-history.mjs": require("../../src/lib/whatsapp-history.mjs") };
   const real = loadRoute("../../src/app/api/whatsapp/webhook/route.ts", mocks);
   const alias = loadRoute("../../src/app/api/meta/whatsapp-webhook/route.ts", { ...mocks, "@/app/api/whatsapp/webhook/route": real });
   try {

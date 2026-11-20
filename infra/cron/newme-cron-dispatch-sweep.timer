@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/dispatch-sweep (08:20 Asia/Dubai, daily)
+# STATUS: after-flag
+# install only together with DISPATCH_SWEEP_ENABLED=true
+
+[Timer]
+OnCalendar=*-*-* 08:20:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@dispatch-sweep.service
+
+[Install]
+WantedBy=timers.target

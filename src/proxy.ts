@@ -21,6 +21,8 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
   // S23: the pages and the APIs behind them serve exactly these roles (sales see their own leads).
   "/opportunities": ["admin", "boss", "operator", "sales"],
   "/visits": ["admin", "boss", "operator", "sales"],
+  // S24: the dispatch workbench and its APIs serve exactly the staff roles.
+  "/dispatch": ["admin", "boss", "operator"],
 };
 
 const PUBLIC_API_PATHS = new Set([
@@ -51,6 +53,8 @@ const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
   // Meta ID registry export: the handler authenticates itself (login role OR read-only export token); exact path only.
   // A forced-password session is still refused by the proxy; token callers carry no session at all.
   "/api/export/meta-ids",
+  // Drive -> OS sync ingest (S29): machine token (DRIVE_SYNC_INGEST_TOKEN) checked by the handler, off unless DRIVE_SYNC_INGEST_ENABLED=true; exact path only.
+  "/api/sync/drive-ingest",
 ]);
 const EXTERNAL_AUTHORIZED_API_PREFIXES = ["/api/cron/"];
 const AUTH_TIMEOUT_MS = 3_000;
@@ -410,6 +414,7 @@ export const config = {
     "/projects/:path*",
     "/opportunities/:path*",
     "/visits/:path*",
+    "/dispatch/:path*",
     "/products/:path*",
     // /cable-costing is an authenticated employee tool under src/app/(dashboard);
     // listing it keeps the edge checks (is_active revocation, forced-password-change

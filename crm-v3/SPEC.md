@@ -31,10 +31,17 @@
 - S18（PR #526）：WhatsApp「点击进 WhatsApp」广告的点击编号 ctwa_clid 入库并自动建/对线索，回传 Conversions API for Business Messaging。webhook 现有 `src/app/api/whatsapp/webhook/route.ts`，别名 `src/app/api/meta/whatsapp-webhook/route.ts`；线索详情面板 `src/app/(dashboard)/leads/[id]/LeadWhatsAppAdPanel.tsx`；市场导出 `src/app/api/leads/whatsapp-ads/export/route.ts`；迁移 `20261118200000_whatsapp_ctwa_leads.sql`。
 - 供应链：glob/minimatch 已降为中危、picomatch 公告撤回，S17 登记的三条高危例外过期移除，登记表恢复为空。
 
+## 2026-11-20 S29 云盘表格 → OS 只读同步（第一版，默认关闭）
+
+- 读取脚本 `scripts/drive-to-os-sync.mjs`（`--run-now`，默认预演，`--apply` 才写）、只读表格客户端 `scripts/lib/drive-sheets-readonly.mjs`、表与行规范化 `scripts/lib/drive-sync-sources.mjs`；共享规则 `src/lib/drive-sync.mjs`（字段归属、匹配、冲突、幂等哈希、写入上限）。云盘文件只读，营销表 Lead Quality Feedback 页永不读取。
+- 写入只经 `src/app/api/sync/drive-ingest/route.ts`：默认关闭（`DRIVE_SYNC_INGEST_ENABLED`），令牌常量时间比较、限速、每次条数上限、失败即停的追加式日志、写后核对通知/任务/回传四表不变；不做迁移，用 activities（来源 drive_sync）与 `raw_import_data.drive_sync`。
+- 定时单元 `infra/drive-sync/newme-drive-sync.service|timer`（迪拜 02:30 与 13:00，after-flag）；说明 `docs/s29-drive-to-os-sync.md`；测试 `tests/unit/s29-drive-sync.test.mjs`。
+
 ## 2026-11-19 S19–S21 发布批次：编号总表、跟进监控
 
 - 发布批次 1（已上线 100006be）：Meta 编号总表导出 `src/app/api/export/meta-ids/route.ts`、每日取数与 NAS 上传脚本 `infra/meta-ids/newme-meta-ids-export.sh`、`infra/nas/newme-nas-upload.sh`；测试账号对真人不可见（`src/lib/system-accounts.mjs`）；数据导入门禁操作与 S21 开关。
 - S21 应用：WhatsApp 对话正文入库、首次响应/联系次数/跟进状态：线索页卡片 `src/app/(dashboard)/leads/[id]/LeadFollowupCard.tsx`、接口 `src/app/api/leads/[id]/followup/route.ts`、定时接口 `src/app/api/cron/check-whatsapp-followups/route.ts`（默认关闭）；迁移 `20261119100000_whatsapp_followup_monitor.sql`。
+- S25 应用：WhatsApp 共存一次性同步（聊天历史 `history`、通讯录 `smb_app_state_sync`）经现有 webhook `src/app/api/whatsapp/webhook/route.ts` 入库：解析 `src/lib/whatsapp-history.mjs`，写入 `whatsapp_message_events`（`backfilled=true`，按消息编号去重）与 `whatsapp_synced_contacts`；历史不建线索、不发提醒、不推 Meta、不影响首次响应监控（`check-whatsapp-followups` 只读 `backfilled=false`）；开关 `WHATSAPP_HISTORY_SYNC_ENABLED`；迁移 `20261119400000_whatsapp_history_backfill.sql`，说明 `docs/s25-whatsapp-history.md`。
 
 ## 2026-11-19 S23 商机与拜访报告（PR #538，迁移 20261119200000 经 s23 开关提供）
 
@@ -43,6 +50,12 @@
 - 逾期提醒 `src/app/api/cron/check-visit-overdue/route.ts`：默认关闭（`VISIT_OVERDUE_ALERTS_ENABLED`），不装定时器，不触发 Meta 回传。
 - 界面：线索详情页的商机卡 `src/app/(dashboard)/leads/[id]/LeadOpportunitiesCard.tsx` 与拜访卡 `src/app/(dashboard)/leads/[id]/LeadVisitsCard.tsx`；列表页 `src/app/(dashboard)/opportunities/page.tsx`（`opportunities-client.tsx`）、`src/app/(dashboard)/visits/page.tsx`（`visits-client.tsx`）；组件 `src/components/opportunity-visit/OpportunityPanel.tsx`、`VisitPanel.tsx`、`shared.ts`。侧边栏未改。
 - 同批已并入主线、此前未登记的文件：Meta 编号导出 `src/app/api/export/meta-ids/route.ts`、`infra/meta-ids/newme-meta-ids-export.sh`；NAS 上传 `infra/nas/newme-nas-upload.sh`。
+
+## 2026-11-19 S24 线索派发与重复审核（功能对等 G2/G3）
+
+- 七个派发状态（已派发 / 资料待补 / 待核电话 / 未分配 / 重复待审 / 重复不派发 / 已排除测试）由数据库例程 `evaluate_lead_dispatch` 统一判定，不改 leads 表，设计见 `docs/s24-dispatch-review.md`；迁移 `20261119300000_lead_dispatch_and_review.sql`（经 s24 开关上线）。
+- 行政工作台页面 `src/app/(dashboard)/dispatch/page.tsx`、`src/app/(dashboard)/dispatch/dispatch-client.tsx`、`src/components/dispatch/DispatchWorkbench.tsx`、`src/components/dispatch/shared.ts`；线索页标签 `src/app/(dashboard)/leads/[id]/LeadDispatchCard.tsx`，挂载于 `src/app/(dashboard)/leads/[id]/page.tsx`。
+- 接口：`src/app/api/dispatch/queue/route.ts`、`src/app/api/dispatch/refresh/route.ts`、`src/app/api/dispatch/[leadId]/route.ts`、`src/app/api/dispatch/[leadId]/decide/route.ts`、`src/app/api/duplicates/route.ts`、`src/app/api/duplicates/[id]/route.ts`、`src/app/api/duplicates/[id]/resolve/route.ts`、`src/app/api/duplicates/[id]/reopen/route.ts`；定时接口 `src/app/api/cron/dispatch-sweep/route.ts`（默认关闭）；共用 `src/lib/lead-dispatch-api.ts`、`src/lib/lead-dispatch.mjs`；路由权限 `src/proxy.ts`；中英文案 `src/lib/i18n/translations.ts`；类型指纹 `src/types/database.ts`。全表回填是发布门禁执行的脚本 `scripts/s24-dispatch-backfill.sql`，应用内没有批量按钮。
 
 ## 项目一句话
 NewMe CRM 自托管 (systemd + Next.js 15 + Supabase + Sentry/PostHog) on `app.newme.ae`。

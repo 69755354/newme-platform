@@ -13,7 +13,15 @@ import { fileURLToPath } from "node:url";
 const script = fileURLToPath(new URL("../../infra/alerts/newme-whatsapp-alert.sh", import.meta.url));
 const TOKEN = "FAKE-ACCESS-TOKEN-VALUE";
 
-async function fixture({ status = 200, body = '{"messages":[{"id":"wamid.X"}]}', perRecipient } = {}) {
+const TG_TOKEN = "123456789:FAKEbotTOKENvalueABCDEFGHIJ";
+function providerFile(root, mode = 0o600, extra = {}) {
+  const file = join(root, "provider.json");
+  writeFileSync(file, JSON.stringify({ provider_version: "newme-alert-provider-telegram/v1", bot_token: TG_TOKEN, chat_id: -1001234567890, bot_user_id: 123456789, ...extra }));
+  chmodSync(file, mode);
+  return file;
+}
+
+async function fixture({ status = 200, body = '{"messages":[{"id":"wamid.X"}]}', perRecipient, tgStatus = 200 } = {}) {
   const requests = [];
   const server = http.createServer((req, res) => {
     let raw = "";
@@ -21,7 +29,12 @@ async function fixture({ status = 200, body = '{"messages":[{"id":"wamid.X"}]}',
     req.on("end", () => {
       let parsed = null;
       try { parsed = JSON.parse(raw); } catch { /* recorded as null */ }
-      requests.push({ method: req.method, url: req.url, auth: req.headers.authorization, type: req.headers["content-type"], body: parsed });
+      requests.push({ method: req.method, url: req.url, auth: req.headers.authorization, type: req.headers["content-type"], body: parsed, raw });
+      if (req.url.startsWith("/bot")) {
+        res.writeHead(tgStatus, { "content-type": "application/json" });
+        res.end(tgStatus === 200 ? '{"ok":true,"result":{"message_id":7}}' : '{"ok":false,"error_code":401,"description":"Unauthorized"}');
+        return;
+      }
       const code = perRecipient ? perRecipient(parsed?.to) : status;
       res.writeHead(code, { "content-type": "application/json" });
       res.end(code >= 400 ? '{"error":{"message":"template not approved","code":132001}}' : body);
@@ -38,6 +51,9 @@ async function fixture({ status = 200, body = '{"messages":[{"id":"wamid.X"}]}',
     ALERT_WHATSAPP_PHONE_NUMBER_ID: "100200300",
     ALERT_WHATSAPP_RECIPIENTS: "+15550000001, 15550000002",
     ALERT_STATE_DIR: join(root, "state"),
+    // Never the host's real provider file: tests that want the fallback write their own.
+    ALERT_TELEGRAM_PROVIDER_CONFIG: join(root, "no-provider.json"),
+    ALERT_TELEGRAM_API_BASE: `http://127.0.0.1:${server.address().port}`,
   };
   const run = (args, extra = {}) => new Promise((resolve) => {
     execFile("sh", [script, ...args], { env: { ...env, ...extra }, encoding: "utf8" }, (error, stdout, stderr) => {
@@ -172,8 +188,8 @@ test("an env file readable by others is refused", async () => {
 });
 
 test("Telegram stays available as an option and also checks the HTTP status", async () => {
-  const f = await fixture({ status: 401, body: "{}" });
-  const r = await f.run(["k", "failure", "x"], { ALERT_CHANNEL: "telegram", TELEGRAM_BOT_TOKEN: "FAKE-TG", TELEGRAM_CHAT_ID: "-1", ALERT_TELEGRAM_API_BASE: f.env.ALERT_WHATSAPP_API_BASE });
+  const f = await fixture({ tgStatus: 401 });
+  const r = await f.run(["k", "failure", "x"], { ALERT_CHANNEL: "telegram", TELEGRAM_BOT_TOKEN: "FAKE-TG", TELEGRAM_CHAT_ID: "-1" });
   assert.equal(r.status, 1);
   assert.equal(f.requests.length, 1);
   assert.match(f.requests[0].url, /^\/botFAKE-TG\/sendMessage/);
@@ -218,6 +234,93 @@ test("with no usable state directory at all the alert is sent once, exits 1 and 
   assert.equal(r.status, 1);
   assert.match(r.stderr, /no writable state directory/);
   assert.equal(f.requests.length, 2, "delivered once to each recipient");
+  f.close();
+});
+
+// ---- Telegram fallback (audit 2026-11-20 F1: the WhatsApp template did not exist, so no alert ever arrived) ----
+test("WhatsApp 404 falls back to the release gate's Telegram bot: exit 0, both outcomes logged, nothing secret printed", async () => {
+  const f = await fixture({ status: 404 });
+  const provider = providerFile(f.root);
+  const r = await f.run(["db-backup", "failure", "database backup failed"], { ALERT_TELEGRAM_PROVIDER_CONFIG: provider });
+  assert.equal(r.status, 0, r.stderr);
+  const tg = f.requests.filter((x) => x.url.startsWith("/bot"));
+  assert.equal(f.requests.length - tg.length, 2, "both WhatsApp recipients were tried first");
+  assert.equal(tg.length, 1);
+  assert.equal(tg[0].url, `/bot${TG_TOKEN}/sendMessage`);
+  const form = new URLSearchParams(tg[0].raw);
+  assert.equal(form.get("chat_id"), "-1001234567890");
+  assert.match(form.get("text"), /^\[故障\] db-backup: database backup failed .*Telegram 备用/);
+  const log = readFileSync(join(f.env.ALERT_STATE_DIR, "alerts.log"), "utf8");
+  assert.match(log, /db-backup failure FAILED HTTP 404/);
+  assert.match(log, /db-backup failure delivered via telegram \(fallback\) HTTP 200/);
+  assert.match(r.stderr, /FAILED: HTTP 404/, "the WhatsApp failure is still visible in the journal");
+  assert.ok(existsSync(join(f.env.ALERT_STATE_DIR, "db-backup.state")), "a fallback delivery counts as alerted");
+  for (const out of [r.stdout, r.stderr, log]) assert.ok(!out.includes(TG_TOKEN) && !out.includes(TOKEN));
+  f.close();
+});
+
+test("one WhatsApp recipient failing also sends the Telegram copy", async () => {
+  const f = await fixture({ perRecipient: (to) => (to === "15550000001" ? 500 : 200) });
+  const r = await f.run(["k", "failure", "x"], { ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(f.requests.filter((x) => x.url.startsWith("/bot")).length, 1);
+  f.close();
+});
+
+test("WhatsApp delivered: Telegram is not used", async () => {
+  const f = await fixture();
+  const r = await f.run(["k", "failure", "x"], { ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(f.requests.filter((x) => x.url.startsWith("/bot")).length, 0);
+  f.close();
+});
+
+test("WhatsApp not configured at all still alerts through Telegram (the 11-13..11-18 'token is not set' gap)", async () => {
+  const f = await fixture();
+  const r = await f.run(["k", "failure", "x"], { ALERT_WHATSAPP_ACCESS_TOKEN: "", ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root, 0o400) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(f.requests.length, 1);
+  assert.ok(f.requests[0].url.startsWith("/bot"));
+  assert.match(readFileSync(join(f.env.ALERT_STATE_DIR, "alerts.log"), "utf8"), /FAILED whatsapp not configured: ALERT_WHATSAPP_ACCESS_TOKEN is not set/);
+  f.close();
+});
+
+test("explicit TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID win over the provider file", async () => {
+  const f = await fixture({ status: 404 });
+  const r = await f.run(["k", "failure", "x"], { ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root), TELEGRAM_BOT_TOKEN: "42:explicit", TELEGRAM_CHAT_ID: "-5" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(f.requests.at(-1).url, "/bot42:explicit/sendMessage");
+  f.close();
+});
+
+test("both channels failing exits 1 and logs both failures", async () => {
+  const f = await fixture({ status: 404, tgStatus: 401 });
+  const r = await f.run(["k", "failure", "x"], { ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root) });
+  assert.equal(r.status, 1);
+  const log = readFileSync(join(f.env.ALERT_STATE_DIR, "alerts.log"), "utf8");
+  assert.match(log, /FAILED HTTP 404/);
+  assert.match(log, /FAILED telegram \(fallback\) HTTP 401/);
+  assert.ok(!existsSync(join(f.env.ALERT_STATE_DIR, "k.state")));
+  f.close();
+});
+
+test("a provider file others can read, or with the wrong shape, is not used as a fallback", async () => {
+  for (const [mode, extra] of [[0o644, {}], [0o600, { provider_version: "other" }], [0o600, { bot_token: "nope" }]]) {
+    const f = await fixture({ status: 404 });
+    const r = await f.run(["k", "failure", "x"], { ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root, mode, extra) });
+    assert.equal(r.status, 1, `mode ${mode.toString(8)} ${JSON.stringify(extra)}`);
+    assert.equal(f.requests.filter((x) => x.url.startsWith("/bot")).length, 0);
+    assert.match(readFileSync(join(f.env.ALERT_STATE_DIR, "alerts.log"), "utf8"), /FAILED no Telegram fallback/);
+    assert.ok(!r.stderr.includes(TG_TOKEN));
+    f.close();
+  }
+});
+
+test("WhatsApp misconfigured and no Telegram fallback is a configuration error naming both", async () => {
+  const f = await fixture();
+  const r = await f.run(["k", "failure", "x"], { ALERT_WHATSAPP_PHONE_NUMBER_ID: "" });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /PHONE_NUMBER_ID is not set; Telegram fallback unavailable: telegram is not configured/);
   f.close();
 });
 

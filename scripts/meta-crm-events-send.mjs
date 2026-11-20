@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Prepared operator tool. Default is read-only; no scheduler is installed here.
+// Operator tool, default read-only. Scheduled with --execute by infra/systemd/newme-meta-crm-send.timer.
 // Sends queued Meta CRM stage events. Credentials come only from the server environment.
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -9,17 +9,31 @@ import { META_CRM_EVENT_MAX_AGE_SECONDS } from "../src/lib/meta-lead-ads.mjs";
 
 // Meta accepts CRM events well inside its 28-day window; intake shares this limit.
 const MAX_AGE_SECONDS = META_CRM_EVENT_MAX_AGE_SECONDS;
+const MAX_ATTEMPTS = 5;
 
 export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock = () => Date.now(),
   send = sendMetaCrmPayload } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid send limit");
   const queue = await db.from("meta_crm_stage_events")
     .select("id, meta_leadgen_id, event_name, event_time, status, attempts, lease_id, lease_until")
-    .in("status", ["pending", "failed", "sending"]).lt("attempts", 5)
+    .in("status", ["pending", "failed", "sending"]).lt("attempts", MAX_ATTEMPTS)
     .order("created_at", { ascending: true }).limit(limit);
   if (queue.error) throw new Error("Meta CRM queue unavailable");
   const summary = { mode: execute ? "execute" : "dry_run", examined: 0,
-    delivered: 0, failed: 0, busy: 0, review_required: 0, errors: 0 };
+    delivered: 0, failed: 0, busy: 0, review_required: 0, errors: 0, exhausted: 0 };
+  // Rows that ran out of attempts are never picked up again; without this count they would sit
+  // in the queue forever while every run reports success (same rule as whatsapp-capi-send.mjs).
+  const exhausted = await db.from("meta_crm_stage_events").select("id")
+    .in("status", ["pending", "failed"]).gte("attempts", MAX_ATTEMPTS).limit(100);
+  if (exhausted.error) throw new Error("Meta CRM queue unavailable");
+  summary.exhausted = (exhausted.data || []).length;
+  // Park them once (execute only): this run still counts them and fails, so one alert goes out; the next run is
+  // clean again instead of failing every 10 minutes for the same rows.
+  if (execute && summary.exhausted) {
+    const parked = await db.from("meta_crm_stage_events").update({ status: "review_required" })
+      .in("id", exhausted.data.map((r) => r.id)).in("status", ["pending", "failed"]).gte("attempts", MAX_ATTEMPTS);
+    if (parked.error) summary.errors++;
+  }
   for (const row of queue.data || []) {
     summary.examined++;
     if (!execute) continue;
@@ -34,7 +48,7 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock
       let payload;
       try {
         if (ageSeconds > MAX_AGE_SECONDS) throw new Error("age");
-        payload = buildMetaCrmPayload({ leadgenId: row.meta_leadgen_id, eventName: row.event_name, eventTime: row.event_time });
+        payload = buildMetaCrmPayload({ leadgenId: row.meta_leadgen_id, eventName: row.event_name, eventTime: row.event_time, eventId: row.id });
       } catch {
         await db.from("meta_crm_stage_events").update({ status: "review_required" })
           .eq("id", row.id).eq("status", row.status).eq("attempts", row.attempts);
@@ -78,7 +92,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
       const summary = await sendMetaCrmEvents(db, { execute: args.includes("--execute") });
       console.log(JSON.stringify(summary));
-      if (summary.errors || summary.failed || summary.review_required) process.exitCode = 1;
+      if (summary.errors || summary.failed || summary.review_required || summary.exhausted) process.exitCode = 1;
     } catch {
       console.error("Meta CRM send did not complete; inspect aggregate queue health before retrying.");
       process.exitCode = 1;

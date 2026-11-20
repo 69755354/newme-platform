@@ -25,6 +25,23 @@
 > ⚠️ **COMPACT 后:用户最后 3 条消息 > 本文件 > handoff 摘要**
 > (本文件是参考手册,不是圣经。compaction 时用户的尾消息是唯一权威。)
 
+## 2026-11-19 S27 广告页修复（应用层，未发布）
+
+依据 `fixes/ADS-PAGE-AUDIT-20261119.md`。口径：广告回报只算到线索（花费、线索、单线索成本），不用报价、合同或成交金额，不算 ROAS。Meta 广告账户当前欠费，本次不调用任何 Meta 写接口、不改投放。
+
+| 文件 | 职责 |
+|---|---|
+| `src/lib/ads-leads.mjs` | 广告线索判定（含 ctwa_clid / ad_id 的点击进 WhatsApp 线索）、按 ad_id 分组并读时补名称、迪拜日期窗口、按周（迪拜周一）花费与线索、花费新鲜度（超过 3 天为过期）。 |
+| `src/app/api/dashboard/ads-roi/route.ts` | 花费与线索取同一迪拜日期窗口（默认近 30 天，`days` 或 `since`+`until` 可选）；去掉成交金额与 ROAS；新增按周、按广告拆分，`data_last_updated`、`spend_stale`；花费分页读取（原先单次最多 1000 行）。 |
+| `src/app/api/ads/leads/route.ts` | 角色白名单与页面一致（admin/boss/operator），其余角色返回空列表；多返回 ad_id/campaign_id/adset_id/ctwa_clid/created_at。 |
+| `src/app/(dashboard)/ads/page.tsx` | 去掉报价、成交、金额列；按广告编号分组；时间窗口；boss/admin 另见花费、单线索成本、按周与按广告成本表和过期提示。 |
+| `src/app/(dashboard)/analytics/_components/AdsROI.tsx` | 去掉成交金额、ROAS、成交率；加窗口选择、更新日期、过期横幅、按周按广告表。 |
+| `src/app/api/cron/ads-sync/route.ts` + `infra/cron/newme-cron-ads-sync.timer` | 每日 06:20（迪拜）同步近 7 天花费，复用原子替换函数；默认关闭，需 `ADS_SYNC_CRON_ENABLED=true` 且广告账户恢复后再装定时器（install: after-flag）。 |
+| `src/lib/meta-ads-insights.mjs` | 默认同步窗口按迪拜日期（昨天往前 7 天）。 |
+| `tests/unit/ads-leads.test.mjs` | 上述口径、窗口、过期、白名单与定时接口的固定检查。 |
+
+后续（需要数据库迁移，走 newme-deploy 门禁，本次未做）：给 `ad_spend` 增加 ad_id / campaign_id 列并让同步写入，之后花费才能按编号而不是名称与线索对应；`/api/analytics/summary` 里的 adsRoi 副本仍按全部历史花费对全部线索，页面不使用它，已去掉金额与 ROAS 字段。
+
 ## 2026-11-19 S17 运行层 + S18 WhatsApp 广告线索
 
 - S17（已上线 7e5049e1）：告警发送器 `infra/alerts/newme-whatsapp-alert.sh`（WhatsApp 模板消息）；NAS 主动拉取 `infra/backup/newme-nas-pull-setup.sh`、只读强制命令 `infra/backup/newme-nas-rsync-ro.sh`；定时接口调用 `infra/cron/newme-cron-call.sh`。
@@ -1297,3 +1314,8 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `infra/nas/newme-nas-upload.sh` | 备份上传到 NAS 的主机脚本。 |
 
 验证边界：`scripts/check-published-credentials.mjs` 对本批次新增的测试夹具按文件和标识符逐条登记豁免并写明理由，规则本身未放宽。
+
+## 2026-11-20 S28 OS 到云盘表格与 NAS 的增量推送（第一版，默认关闭）
+
+- 工作程序 `scripts/os-drive-nas-sync.mjs`（每 5 分钟增量、`--reconcile` 每晚对账、`--dry-run` 只读演练）；纯函数 `src/lib/os-drive-sync.mjs`（电话规范化、按键对号入座、写入白名单、总闸、退避）；表格客户端 `src/lib/google-sheets-client.mjs`；单元模板 `infra/os-drive-sync/newme-os-drive-sync.service`、`infra/os-drive-sync/newme-os-drive-reconcile.service` 及对应定时器，开关 OS_DRIVE_SYNC_ENABLED 默认关；说明见 `docs/s28-drive-nas-sync.md`。
+- 只写两处：Meta 编号表（原地更新、追加、不删）与销售表 Home-owners 页 X 列的单个格子；每次写后读回核对；超过 200 格总闸一格不写；无数据库迁移。

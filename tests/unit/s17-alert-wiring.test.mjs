@@ -55,7 +55,7 @@ test("with the real sender, failure -> pass(+info) -> failure alerts twice, and 
   const port = await new Promise((resolve) => api.stdout.once("data", (d) => resolve(Number(String(d).trim()))));
   const hits = { get length() { return ex(countFile) ? Number(rd(countFile, "utf8")) : 0; } };
   const dir = mk(join(tmpdir(), "newme-sj-real-"));
-  const env = { PATH: process.env.PATH, ALERT_SENDER: join(root, "infra/alerts/newme-whatsapp-alert.sh"), ALERT_ENV_FILE: join(dir, "none"), ALERT_STATE_DIR: join(dir, "state"),
+  const env = { PATH: process.env.PATH, ALERT_SENDER: join(root, "infra/alerts/newme-whatsapp-alert.sh"), ALERT_ENV_FILE: join(dir, "none"), ALERT_STATE_DIR: join(dir, "state"), ALERT_TELEGRAM_PROVIDER_CONFIG: join(dir, "no-provider.json"),
     ALERT_WHATSAPP_API_BASE: `http://127.0.0.1:${port}`, ALERT_WHATSAPP_ACCESS_TOKEN: "t", ALERT_WHATSAPP_PHONE_NUMBER_ID: "1", ALERT_WHATSAPP_RECIPIENTS: "15550000001", SYNTH_NOTIFY_PASS: "1" };
   await sendAlert(env, "FAILED", false); const afterFirst = hits.length;
   await sendAlert({ ...env, SYNTH_MODE: "staging" }, "PASSED", true);          // staging pass must not close production

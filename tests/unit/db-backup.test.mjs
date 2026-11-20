@@ -53,7 +53,9 @@ esac`);
   const backups = join(root, "backups");
   const env = (extra = {}) => ({
     PATH: `${bin}:${process.env.PATH}`, BACKUP_ENV_FILE: join(root, "none.env"), NEWME_DB_URL_FILE: urlFile, BACKUP_KEY_FILE: keyFile,
-    BACKUP_DIR: backups, BACKUP_ALERT_SCRIPT: join(bin, "alert.sh"), PG_BIN: bin, DRILL_ROOT: join(root, "drill"), DRILL_PG_USER: userInfo().username, DRILL_PG_PORT: "5439", HOME: root, TMPDIR: root, ...extra,
+    BACKUP_DIR: backups, BACKUP_ALERT_SCRIPT: join(bin, "alert.sh"), PG_BIN: bin, DRILL_ROOT: join(root, "drill"), DRILL_PG_USER: userInfo().username, DRILL_PG_PORT: "5439", HOME: root, TMPDIR: root,
+    // Hermetic freshness runs: no grace-date surprise, never the host's NAS push state or alert log.
+    DRILL_REQUIRED_FROM: "2999-01-01", NAS_PUSH_STATE_DIR: join(root, "no-nas-push"), ALERT_STATE_DIR: join(root, "alerts"), ...extra,
   });
   const backup = (args = [], extra = {}) => spawnSync("bash", [infra("newme-db-backup.sh"), ...args], { encoding: "utf8", env: env(extra) });
   const drill = (args = [], extra = {}) => spawnSync("bash", [infra("newme-restore-drill.sh"), ...args], { encoding: "utf8", env: env(extra) });
@@ -403,17 +405,64 @@ test("connection strings with control characters (raw or percent-encoded) are re
   }
 });
 
-test("freshness: the monthly drill must have passed within 35 days once it is in use", () => {
+test("freshness: the weekly drill must have passed within 9 days once it is in use", () => {
   const run = (s, extra = {}) => spawnSync("bash", [infra("newme-backup-freshness.sh")], { encoding: "utf8", env: s.env(extra) });
   const s = setupBackup();
-  assert.equal(run(s).status, 0, "no stamp and drill not required: not checked");
+  const before = run(s);
+  assert.equal(before.status, 0, "no stamp, before the grace date: not a failure yet");
+  assert.match(before.stderr, /becomes a failure on 2999-01-01/);
   const stamp = join(s.backups, ".restore-drill-last-pass");
-  assert.equal(run(s, { DRILL_REQUIRED: "1" }).status, 1);
+  assert.equal(run(s, { DRILL_REQUIRED: "1" }).status, 0, "missing stamp: alert only, the unit stays green");
   assert.match(s.log(), /alert db-restore-drill-freshness failure .*no restore drill has passed yet/);
-  writeFileSync(stamp, ""); utimesSync(stamp, hoursAgo(24 * 36), hoursAgo(24 * 36));
+  writeFileSync(stamp, ""); utimesSync(stamp, hoursAgo(24 * 10), hoursAgo(24 * 10));
   assert.equal(run(s).status, 1);
-  assert.match(s.log(), /alert db-restore-drill-freshness failure .*36 days old \(limit 35\)/);
-  utimesSync(stamp, hoursAgo(24 * 20), hoursAgo(24 * 20));
+  assert.match(s.log(), /alert db-restore-drill-freshness failure .*10 days old \(limit 9\)/);
+  utimesSync(stamp, hoursAgo(24 * 3), hoursAgo(24 * 3));
   assert.equal(run(s).status, 0);
   assert.match(s.log(), /alert db-restore-drill-freshness recovery/);
+});
+
+test("freshness: after the grace date a MISSING drill stamp raises an alert, not a skip (audit F3)", () => {
+  const run = (s, extra = {}) => spawnSync("bash", [infra("newme-backup-freshness.sh")], { encoding: "utf8", env: s.env(extra) });
+  const s = setupBackup();
+  const r = run(s, { DRILL_REQUIRED_FROM: "2020-01-01" });
+  assert.equal(r.status, 0, "own key only, so OnFailure does not send a second message every hour");
+  assert.match(r.stderr, /ERROR: no restore drill has passed yet/);
+  assert.match(s.log(), /alert db-restore-drill-freshness failure .*no restore drill has passed yet \(required since 2020-01-01\)/);
+  assert.ok(!/db-restore-drill-freshness recovery/.test(s.log()));
+  const today = new Date().toISOString().slice(0, 10);
+  const due = setupBackup();
+  run(due, { DRILL_REQUIRED_FROM: today });
+  assert.match(due.log(), /alert db-restore-drill-freshness failure/, "the grace date itself is already due");
+  assert.equal(run(s, { DRILL_REQUIRED_FROM: "tomorrow" }).status, 2, "a malformed date is a configuration error");
+  const src = readFileSync(infra("newme-backup-freshness.sh"), "utf8");
+  assert.match(src, /DRILL_REQUIRED_FROM="\$\{DRILL_REQUIRED_FROM:-2026-12-01\}"/);
+  assert.match(src, /DRILL_MAX_DAYS="\$\{DRILL_MAX_DAYS:-9\}"/);
+});
+
+test("the restore drill timer is weekly, after the nightly backup, and marked after-flag", () => {
+  const timer = readFileSync(infra("newme-restore-drill.timer"), "utf8");
+  assert.match(timer, /^OnCalendar=Sun \*-\*-\* 23:15:00 UTC$/m);
+  assert.match(timer, /^Persistent=true$/m);
+  assert.match(timer, /^# STATUS: after-flag$/m);
+  assert.match(timer, /^WantedBy=timers\.target$/m);
+  assert.match(readFileSync(infra("newme-db-backup.timer"), "utf8"), /^OnCalendar=\*-\*-\* 21:30:00 UTC$/m, "the drill runs 1h45 after the backup");
+});
+
+test("an alert that is not delivered is never silent: journal + alerts.log, and the OnFailure handler exits 1", () => {
+  const s = setupBackup();
+  const failing = join(s.root, "bin", "alert-fails.sh");
+  writeFileSync(failing, "#!/bin/sh\necho 'newme-whatsapp-alert: k failure delivery FAILED: HTTP 404' >&2\nexit 1\n"); chmodSync(failing, 0o755);
+  const r = spawnSync("bash", [infra("newme-backup-onfailure.sh"), "newme-db-backup.service"], { encoding: "utf8", env: s.env({ BACKUP_ALERT_SCRIPT: failing }) });
+  assert.equal(r.status, 1, "the alert unit fails, so systemctl --failed shows it");
+  assert.match(r.stderr, /delivery FAILED: HTTP 404/, "the sender's own reason reaches the journal");
+  assert.match(r.stderr, /ERROR: alert delivery failed \(sender exit 1\)/);
+  assert.match(readFileSync(join(s.root, "alerts", "alerts.log"), "utf8"), /db-backup failure FAILED sender exit 1/);
+  const missing = spawnSync("bash", [infra("newme-backup-onfailure.sh"), "newme-db-backup.service"], { encoding: "utf8", env: s.env({ BACKUP_ALERT_SCRIPT: join(s.root, "nope.sh") }) });
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /alert sender .* is missing or not executable/);
+  // A failing sender never stops the freshness check itself (set -e must not trip on it).
+  const fresh = spawnSync("bash", [infra("newme-backup-freshness.sh")], { encoding: "utf8", env: s.env({ BACKUP_ALERT_SCRIPT: failing }) });
+  assert.equal(fresh.status, 0, fresh.stderr);
+  assert.match(fresh.stderr, /OK: newest backup/);
 });

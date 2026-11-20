@@ -71,7 +71,7 @@ cleanup_and_alert() {
   [ -n "$WORK" ] && rm -rf "$WORK"
   if [ "$rc" -ne 0 ] && [ "$ALERTED" != 1 ]; then
     ALERTED=1
-    send_alert failure "monthly restore drill FAILED (exit $rc${FAIL_LINE:+, line $FAIL_LINE})"
+    send_alert failure "weekly restore drill FAILED (exit $rc${FAIL_LINE:+, line $FAIL_LINE})"
   fi
   exit "$rc"
 }
@@ -182,7 +182,7 @@ ELAPSED=$(( $(date +%s) - STARTED ))
 TABLES="$(wc -l < "$BACKUP_FILE.counts.tsv")"
 if [ "$FAILS" -ne 0 ]; then
   ALERTED=1
-  send_alert failure "monthly restore drill FAILED: $FAILS of $TABLES tables differ (restore errors: $ERRORS)"
+  send_alert failure "weekly restore drill FAILED: $FAILS of $TABLES tables differ (restore errors: $ERRORS)"
   backup_log "DRILL FAILED: $FAILS of $TABLES tables differ, restore errors $ERRORS"
   exit 1
 fi
@@ -195,5 +195,5 @@ if [ "$UNEXPECTED" -gt 0 ]; then
   send_alert failure "restore drill: all $TABLES table counts match, but $UNEXPECTED unexpected restore error categories; see journal unit newme-restore-drill"
   exit 0
 fi
-send_alert recovery "monthly restore drill passed: $TABLES tables match in ${ELAPSED}s"
+send_alert recovery "weekly restore drill passed: $TABLES tables match in ${ELAPSED}s"
 exit 0

@@ -4,6 +4,9 @@ import { NextResponse } from "next/server";
 import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import { ADS_ATTRIBUTION_COLUMNS } from "@/lib/lead-metrics.mjs";
 
+/** Roles the /ads page lets in. Keep in step with useRequireRole on the page. */
+const ADS_PAGE_ROLES = ["admin", "boss", "operator"];
+
 export async function GET(request: Request) {
   const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "") ?? undefined;
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -20,7 +23,9 @@ export async function GET(request: Request) {
     .single();
 
   const role = profile?.role ?? "sales";
-  if (role === "sales") {
+  // Same whitelist as the page (src/app/(dashboard)/ads/page.tsx useRequireRole): any other role,
+  // finance included, gets no rows instead of every non-sales role being let through.
+  if (!ADS_PAGE_ROLES.includes(role)) {
     return NextResponse.json({ role, leads: [] });
   }
 

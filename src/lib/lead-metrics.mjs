@@ -49,7 +49,7 @@ export const LEAD_METRIC_COLUMNS =
 
 /** Columns the two ads-attribution pages group and count by. */
 export const ADS_ATTRIBUTION_COLUMNS =
-  "archived,source,source_platform,campaign_name,utm_campaign,meta_campaign,adset_name,ad_name,stage,final_status,quotation_value,quality,ai_quality";
+  "archived,source,source_platform,created_at,ctwa_clid,campaign_id,campaign_name,utm_campaign,meta_campaign,adset_id,adset_name,ad_id,ad_name,stage,final_status,quotation_value,quality,ai_quality";
 
 /** Source of the daily production check lead (S7). It is never a customer. */
 export const SYNTHETIC_QA_SOURCE = "synthetic_qa";

@@ -19,11 +19,21 @@
 #   ALERT_WHATSAPP_API_VERSION      Graph API version, default v26.0 (same as the review tools)
 #   ALERT_STATE_DIR                 default /var/lib/newme-alerts (state files and alerts.log)
 #   ALERT_REPEAT_HOURS              default 6
-#   ALERT_CHANNEL                   whatsapp (default) or telegram (optional, TELEGRAM_BOT_TOKEN/CHAT_ID)
+#   ALERT_CHANNEL                   whatsapp (default: WhatsApp first, Telegram as fallback) or telegram (Telegram only)
+#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID   optional explicit Telegram bot; when unset, the bot of the release gate's
+#                                   alert provider is used (ALERT_TELEGRAM_PROVIDER_CONFIG, default
+#                                   /etc/newme/postdeploy-alert-provider-v1.json, keys bot_token and chat_id; the file
+#                                   must be a regular file owned by the running user, mode 400 or 600)
 #
-# Exit status: 0 delivered (or nothing to send), 1 delivery failed, 2 usage or configuration error.
+# Fallback (audit 2026-11-20 F1): with the default channel, WhatsApp is tried first. If WhatsApp is not configured, or
+# any recipient is not delivered, the same alert is sent through Telegram. The call fails only when no channel
+# delivered it.
+#
+# Exit status: 0 delivered by at least one channel (or nothing to send), 1 no channel delivered it, 2 usage error or
+# no channel is configured at all.
 # Delivery is judged by the HTTP status AND the message id in the answer; every attempt leaves one
-# line in $ALERT_STATE_DIR/alerts.log and a failure also goes to stderr (the systemd journal).
+# line in $ALERT_STATE_DIR/alerts.log and a failure also goes to stderr (the systemd journal), even when the
+# fallback then delivers.
 set -u
 umask 077
 
@@ -46,7 +56,7 @@ if [ -e "$ENV_FILE" ]; then
   # Environment values already set win over the file.
   while IFS='=' read -r name value; do
     case "$name" in
-      ALERT_WHATSAPP_ACCESS_TOKEN|ALERT_WHATSAPP_PHONE_NUMBER_ID|ALERT_WHATSAPP_RECIPIENTS|ALERT_WHATSAPP_TEMPLATE|ALERT_WHATSAPP_LANGUAGE|ALERT_WHATSAPP_API_VERSION|ALERT_STATE_DIR|ALERT_REPEAT_HOURS|ALERT_CHANNEL|TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID)
+      ALERT_WHATSAPP_ACCESS_TOKEN|ALERT_WHATSAPP_PHONE_NUMBER_ID|ALERT_WHATSAPP_RECIPIENTS|ALERT_WHATSAPP_TEMPLATE|ALERT_WHATSAPP_LANGUAGE|ALERT_WHATSAPP_API_VERSION|ALERT_STATE_DIR|ALERT_REPEAT_HOURS|ALERT_CHANNEL|TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|ALERT_TELEGRAM_PROVIDER_CONFIG)
         eval "current=\${$name:-}"
         if [ -z "$current" ]; then
           value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
@@ -81,32 +91,107 @@ api_base_ok() {
   esac
 }
 
-if [ "$CHANNEL" = whatsapp ]; then
-  API_BASE="${ALERT_WHATSAPP_API_BASE:-https://graph.facebook.com}"
-  api_base_ok "$API_BASE" || fail_usage "ALERT_WHATSAPP_API_BASE must be https"
-  [ -n "${ALERT_WHATSAPP_ACCESS_TOKEN:-}" ] || fail_usage "ALERT_WHATSAPP_ACCESS_TOKEN is not set"
-  [ -n "${ALERT_WHATSAPP_PHONE_NUMBER_ID:-}" ] || fail_usage "ALERT_WHATSAPP_PHONE_NUMBER_ID is not set"
-  case "$ALERT_WHATSAPP_PHONE_NUMBER_ID" in *[!0-9]*) fail_usage "ALERT_WHATSAPP_PHONE_NUMBER_ID must be digits" ;; esac
-  case "$ALERT_WHATSAPP_ACCESS_TOKEN" in *[!A-Za-z0-9_.~+/=-]*) fail_usage "ALERT_WHATSAPP_ACCESS_TOKEN has unexpected characters" ;; esac
-  [ -n "${ALERT_WHATSAPP_RECIPIENTS:-}" ] || fail_usage "ALERT_WHATSAPP_RECIPIENTS is not set"
-  case "$TEMPLATE" in ''|*[!a-z0-9_]*) fail_usage "ALERT_WHATSAPP_TEMPLATE must be lowercase letters, digits, underscore" ;; esac
-  case "$LANGUAGE" in ''|*[!A-Za-z_]*) fail_usage "ALERT_WHATSAPP_LANGUAGE is invalid" ;; esac
-  case "$API_VERSION" in v[0-9]*) ;; *) fail_usage "ALERT_WHATSAPP_API_VERSION is invalid" ;; esac
+# Each channel's configuration is checked by a function that records the first problem instead of exiting, so a
+# broken WhatsApp configuration still lets the Telegram fallback deliver.
+WA_READY=0
+WA_PROBLEM=""
+TG_READY=0
+TG_LOADED=0
+TG_PROBLEM=""
+TG_TOKEN=""
+TG_CHAT=""
+
+wa_bad() { WA_PROBLEM="$1"; return 1; }
+whatsapp_config() {
+  WA_API_BASE="${ALERT_WHATSAPP_API_BASE:-https://graph.facebook.com}"
+  api_base_ok "$WA_API_BASE" || { wa_bad "ALERT_WHATSAPP_API_BASE must be https"; return 1; }
+  [ -n "${ALERT_WHATSAPP_ACCESS_TOKEN:-}" ] || { wa_bad "ALERT_WHATSAPP_ACCESS_TOKEN is not set"; return 1; }
+  [ -n "${ALERT_WHATSAPP_PHONE_NUMBER_ID:-}" ] || { wa_bad "ALERT_WHATSAPP_PHONE_NUMBER_ID is not set"; return 1; }
+  case "$ALERT_WHATSAPP_PHONE_NUMBER_ID" in *[!0-9]*) wa_bad "ALERT_WHATSAPP_PHONE_NUMBER_ID must be digits"; return 1 ;; esac
+  case "$ALERT_WHATSAPP_ACCESS_TOKEN" in *[!A-Za-z0-9_.~+/=-]*) wa_bad "ALERT_WHATSAPP_ACCESS_TOKEN has unexpected characters"; return 1 ;; esac
+  [ -n "${ALERT_WHATSAPP_RECIPIENTS:-}" ] || { wa_bad "ALERT_WHATSAPP_RECIPIENTS is not set"; return 1; }
+  case "$TEMPLATE" in ''|*[!a-z0-9_]*) wa_bad "ALERT_WHATSAPP_TEMPLATE must be lowercase letters, digits, underscore"; return 1 ;; esac
+  case "$LANGUAGE" in ''|*[!A-Za-z_]*) wa_bad "ALERT_WHATSAPP_LANGUAGE is invalid"; return 1 ;; esac
+  case "$API_VERSION" in v[0-9]*) ;; *) wa_bad "ALERT_WHATSAPP_API_VERSION is invalid"; return 1 ;; esac
   RECIPIENTS=""
   for raw in $(printf '%s' "$ALERT_WHATSAPP_RECIPIENTS" | tr ',;' '  '); do
     number="$(printf '%s' "$raw" | sed 's/^+//')"
     case "$number" in
-      ''|*[!0-9]*) fail_usage "ALERT_WHATSAPP_RECIPIENTS has an entry that is not an international number" ;;
+      ''|*[!0-9]*) wa_bad "ALERT_WHATSAPP_RECIPIENTS has an entry that is not an international number"; return 1 ;;
     esac
-    if [ "${#number}" -lt 7 ] || [ "${#number}" -gt 15 ]; then fail_usage "ALERT_WHATSAPP_RECIPIENTS has an entry with a wrong length"; fi
+    if [ "${#number}" -lt 7 ] || [ "${#number}" -gt 15 ]; then wa_bad "ALERT_WHATSAPP_RECIPIENTS has an entry with a wrong length"; return 1; fi
     RECIPIENTS="$RECIPIENTS $number"
   done
-  [ -n "$RECIPIENTS" ] || fail_usage "ALERT_WHATSAPP_RECIPIENTS is empty"
-else
-  API_BASE="${ALERT_TELEGRAM_API_BASE:-https://api.telegram.org}"
-  api_base_ok "$API_BASE" || fail_usage "ALERT_TELEGRAM_API_BASE must be https"
-  if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then fail_usage "telegram is not configured"; fi
-  case "$TELEGRAM_BOT_TOKEN" in *[!A-Za-z0-9_:.-]*) fail_usage "TELEGRAM_BOT_TOKEN has unexpected characters" ;; esac
+  [ -n "$RECIPIENTS" ] || { wa_bad "ALERT_WHATSAPP_RECIPIENTS is empty"; return 1; }
+  return 0
+}
+
+tg_bad() { TG_PROBLEM="$1"; return 1; }
+# Reads bot_token and chat_id from the provider file without ever printing them outside this process: python
+# writes them to its stdout, which is captured into shell variables, never logged and never put in an argument.
+read_provider_config() {
+  python3 -I - "$1" <<'PY'
+import json, os, re, stat, sys
+path = sys.argv[1]
+try:
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+except OSError:
+    sys.exit(3)
+with os.fdopen(fd, "rb") as handle:
+    meta = os.fstat(handle.fileno())
+    if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid() or stat.S_IMODE(meta.st_mode) not in (0o400, 0o600) or meta.st_size > 65536:
+        sys.exit(4)
+    try:
+        config = json.loads(handle.read().decode("utf-8"))
+    except Exception:
+        sys.exit(5)
+if not isinstance(config, dict):
+    sys.exit(5)
+token, chat = config.get("bot_token"), str(config.get("chat_id", ""))
+if config.get("provider_version") != "newme-alert-provider-telegram/v1" or not isinstance(token, str) \
+        or not re.fullmatch(r"\d{6,16}:[A-Za-z0-9_-]{20,128}", token) or not re.fullmatch(r"-?[1-9]\d{4,20}", chat):
+    sys.exit(6)
+sys.stdout.write(token + "\n" + chat + "\n")
+PY
+}
+telegram_config() {
+  TG_LOADED=1
+  TG_API_BASE="${ALERT_TELEGRAM_API_BASE:-https://api.telegram.org}"
+  api_base_ok "$TG_API_BASE" || { tg_bad "ALERT_TELEGRAM_API_BASE must be https"; return 1; }
+  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+    if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then tg_bad "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must both be set"; return 1; fi
+    TG_TOKEN="$TELEGRAM_BOT_TOKEN"; TG_CHAT="$TELEGRAM_CHAT_ID"
+  else
+    provider="${ALERT_TELEGRAM_PROVIDER_CONFIG:-/etc/newme/postdeploy-alert-provider-v1.json}"
+    [ -e "$provider" ] || { tg_bad "telegram is not configured (no TELEGRAM_BOT_TOKEN and no $provider)"; return 1; }
+    command -v python3 >/dev/null 2>&1 || { tg_bad "python3 is needed to read $provider"; return 1; }
+    pair="$(read_provider_config "$provider")"
+    rc=$?
+    case "$rc" in
+      0) ;;
+      4) tg_bad "$provider must be a regular file owned by the running user, mode 400 or 600"; return 1 ;;
+      *) tg_bad "$provider is unreadable or invalid (check $rc)"; return 1 ;;
+    esac
+    TG_TOKEN="$(printf '%s\n' "$pair" | sed -n 1p)"
+    TG_CHAT="$(printf '%s\n' "$pair" | sed -n 2p)"
+    pair=""
+  fi
+  case "$TG_TOKEN" in ''|*[!A-Za-z0-9_:.-]*) tg_bad "the Telegram bot token has unexpected characters"; return 1 ;; esac
+  case "$TG_CHAT" in ''|*[!0-9-]*) tg_bad "the Telegram chat id is invalid"; return 1 ;; esac
+  TG_READY=1
+  return 0
+}
+
+if [ "$CHANNEL" = whatsapp ]; then
+  if whatsapp_config; then WA_READY=1; fi
+fi
+if [ "$CHANNEL" = telegram ] || [ "$WA_READY" = 0 ]; then
+  telegram_config || true
+  if [ "$TG_READY" = 0 ]; then
+    if [ "$CHANNEL" = telegram ]; then fail_usage "$TG_PROBLEM"; fi
+    fail_usage "$WA_PROBLEM; Telegram fallback unavailable: $TG_PROBLEM"
+  fi
+  if [ "$CHANNEL" = whatsapp ]; then echo "newme-whatsapp-alert: WhatsApp is not usable ($WA_PROBLEM); using the Telegram fallback" >&2; fi
 fi
 
 # State directory: the configured one, then fallbacks (default /run/newme-alerts, then /tmp). The
@@ -177,10 +262,10 @@ trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
 mask() { n="$1"; printf '***%s' "$(printf '%s' "$n" | tail -c 4)"; }
 
-DELIVERY_FAILED=0
+WA_FAILED=0
+DELIVERED=0
 report_failure() {
   # $1 = what failed (no secrets)
-  DELIVERY_FAILED=1
   log_line "FAILED $1"
   echo "newme-whatsapp-alert: $KEY $EVENT delivery FAILED: $1" >&2
 }
@@ -191,7 +276,7 @@ error_detail() {
   printf '%s%s' "${code:+code $code }" "$msg"
 }
 
-if [ "$CHANNEL" = whatsapp ]; then
+send_whatsapp() {
   for number in $RECIPIENTS; do
     label_json="$(json_escape "$LABEL")"; key_json="$(json_escape "$KEY")"; text_json="$(json_escape "$TEXT")"
     cat > "$WORK/body.json" <<JSON
@@ -199,32 +284,58 @@ if [ "$CHANNEL" = whatsapp ]; then
 JSON
     # The token travels in a curl config on stdin, never in the argument list.
     printf 'url = "%s/%s/%s/messages"\nheader = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\n' \
-      "$API_BASE" "$API_VERSION" "$ALERT_WHATSAPP_PHONE_NUMBER_ID" "$ALERT_WHATSAPP_ACCESS_TOKEN" > "$WORK/curl.conf"
+      "$WA_API_BASE" "$API_VERSION" "$ALERT_WHATSAPP_PHONE_NUMBER_ID" "$ALERT_WHATSAPP_ACCESS_TOKEN" > "$WORK/curl.conf"
     http_code="$(curl -sS -m 20 -K "$WORK/curl.conf" -o "$WORK/resp.json" -w '%{http_code}' --data-binary "@$WORK/body.json" 2>"$WORK/curl.err")" || http_code="000"
     case "$http_code" in
       2??)
         if grep -q '"messages"' "$WORK/resp.json" 2>/dev/null && grep -q '"id"' "$WORK/resp.json" 2>/dev/null; then
           log_line "delivered to $(mask "$number") HTTP $http_code"
         else
-          report_failure "HTTP $http_code without a message id for $(mask "$number")"
+          WA_FAILED=1; report_failure "HTTP $http_code without a message id for $(mask "$number")"
         fi ;;
-      000) report_failure "no HTTP answer for $(mask "$number"): $(head -c 120 "$WORK/curl.err" | tr '\n' ' ')" ;;
-      *) report_failure "HTTP $http_code for $(mask "$number") $(error_detail "$WORK/resp.json")" ;;
+      000) WA_FAILED=1; report_failure "no HTTP answer for $(mask "$number"): $(head -c 120 "$WORK/curl.err" | tr '\n' ' ')" ;;
+      *) WA_FAILED=1; report_failure "HTTP $http_code for $(mask "$number") $(error_detail "$WORK/resp.json")" ;;
     esac
   done
-else
+  rm -f "$WORK/curl.conf"
+}
+
+send_telegram() {
+  # $1 = "fallback" when WhatsApp did not deliver, so the reader knows that channel is broken.
   MESSAGE="[$LABEL] $KEY: $TEXT"
-  printf 'url = "%s/bot%s/sendMessage"\n' "$API_BASE" "$TELEGRAM_BOT_TOKEN" > "$WORK/curl.conf"
+  [ "${1:-}" = fallback ] && MESSAGE="$MESSAGE (WhatsApp 未送达，本条走 Telegram 备用通道)"
+  printf 'url = "%s/bot%s/sendMessage"\n' "$TG_API_BASE" "$TG_TOKEN" > "$WORK/curl.conf"
   http_code="$(curl -sS -m 20 -K "$WORK/curl.conf" -o "$WORK/resp.json" -w '%{http_code}' \
-    --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$MESSAGE" 2>"$WORK/curl.err")" || http_code="000"
+    --data-urlencode "chat_id=$TG_CHAT" --data-urlencode "text=$MESSAGE" 2>"$WORK/curl.err")" || http_code="000"
+  rm -f "$WORK/curl.conf"
   if [ "$http_code" = 200 ] && grep -q '"ok":true' "$WORK/resp.json" 2>/dev/null; then
-    log_line "delivered via telegram HTTP $http_code"
+    log_line "delivered via telegram${1:+ ($1)} HTTP $http_code"
+    DELIVERED=1
   else
-    report_failure "telegram HTTP $http_code"
+    report_failure "telegram${1:+ ($1)} HTTP $http_code $(error_detail "$WORK/resp.json")"
+  fi
+}
+
+if [ "$CHANNEL" = telegram ]; then
+  send_telegram ""
+else
+  if [ "$WA_READY" = 1 ]; then
+    send_whatsapp
+    [ "$WA_FAILED" = 0 ] && DELIVERED=1
+  else
+    report_failure "whatsapp not configured: $WA_PROBLEM"
+  fi
+  if [ "$DELIVERED" = 0 ]; then
+    [ "$TG_LOADED" = 1 ] || telegram_config || true
+    if [ "$TG_READY" = 1 ]; then
+      send_telegram fallback
+    else
+      report_failure "no Telegram fallback: $TG_PROBLEM"
+    fi
   fi
 fi
 
-if [ "$DELIVERY_FAILED" = 1 ]; then exit 1; fi
+if [ "$DELIVERED" = 0 ]; then exit 1; fi
 if [ "$STATE_OK" = 0 ]; then
   [ "$EVENT" = failure ] && exit 1
   exit 0

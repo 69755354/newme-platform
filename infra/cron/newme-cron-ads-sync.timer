@@ -1,0 +1,13 @@
+[Unit]
+Description=NewMe scheduled call /api/cron/ads-sync (daily 06:20 Asia/Dubai)
+# STATUS: after-flag
+# install only together with ADS_SYNC_CRON_ENABLED=true and a paid, working Meta ad account; until then the route answers Disabled
+
+[Timer]
+OnCalendar=*-*-* 06:20:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-cron@ads-sync.service
+
+[Install]
+WantedBy=timers.target

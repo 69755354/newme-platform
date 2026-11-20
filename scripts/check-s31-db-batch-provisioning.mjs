@@ -21,7 +21,7 @@ export const S31_EVENTS = Object.freeze([
   Object.freeze({
     "version": "20261120100000",
     "file": "20261120100000_dispatch_and_history_corrections.sql",
-    "sha256": "7d9c25112239e36eedce2a5c9620d1645031e7897920431963bf884867aa21dd"
+    "sha256": "a51a5dba59b562e0149e60d8b711caa10f3ce2ecbbc8c542ecb8589306e556d6"
   }),
 ]);
 export const S31_PREDICATE_NAMES = Object.freeze([

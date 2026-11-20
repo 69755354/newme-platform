@@ -43,7 +43,7 @@ function fromGit(spec){
 test('the S31 provisioning gate pins exactly one reviewed migration and its posture predicate',()=>{
   assert.deepEqual(S31_EVENTS.map(x=>x.version),['20261120100000']);
   assert.deepEqual(S31_EVENTS.map(x=>x.file),['20261120100000_dispatch_and_history_corrections.sql']);
-  assert.equal(S31_EVENTS[0].sha256,'7d9c25112239e36eedce2a5c9620d1645031e7897920431963bf884867aa21dd');
+  assert.equal(S31_EVENTS[0].sha256,'a51a5dba59b562e0149e60d8b711caa10f3ce2ecbbc8c542ecb8589306e556d6');
   assert.deepEqual(S31_PREDICATE_NAMES,['s31-dispatch-and-history-corrections-present']);
   for(const routine of ['evaluate_lead_dispatch','dispatch_decide','sweep_lead_dispatch','dispatch_reevaluate_dependents','record_whatsapp_ad_event'])assert.match(S31_POSTURE[0],new RegExp(routine));
   assert.match(S31_POSTURE[0],/count\(\*\)=5/);

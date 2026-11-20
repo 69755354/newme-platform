@@ -1253,3 +1253,15 @@ p75 73 ms / p95 86 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:3d7bf9404d14b2686bbdb170eee0fa5eb201c1fff6647f2eb9ea3fce2c05069d -->
+
+## OS fix Ops alerts and restore drill technical acceptance (2026-11-20)
+
+Release `40d19fd605ac6549b12bcc46a05ce7fa35f8f736` (Alert Telegram fallback, NAS freshness, restore drill timer, Meta CRM send timer) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T08:24:28Z`, replacing the finalized release `9473599f`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 79 ms / p95 123 ms, within policy. The delayed verification passed at `2026-11-20T11:01:30Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:b7e0e1b5cbb0ae38d49c8d656448fada1b67ee1c4e07a5ff68f6f696f8f343c1 -->

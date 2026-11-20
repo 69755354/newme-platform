@@ -27,6 +27,13 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock
     .in("status", ["pending", "failed"]).gte("attempts", MAX_ATTEMPTS).limit(100);
   if (exhausted.error) throw new Error("Meta CRM queue unavailable");
   summary.exhausted = (exhausted.data || []).length;
+  // Park them once (execute only): this run still counts them and fails, so one alert goes out; the next run is
+  // clean again instead of failing every 10 minutes for the same rows.
+  if (execute && summary.exhausted) {
+    const parked = await db.from("meta_crm_stage_events").update({ status: "review_required" })
+      .in("id", exhausted.data.map((r) => r.id)).in("status", ["pending", "failed"]).gte("attempts", MAX_ATTEMPTS);
+    if (parked.error) summary.errors++;
+  }
   for (const row of queue.data || []) {
     summary.examined++;
     if (!execute) continue;
@@ -41,7 +48,7 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock
       let payload;
       try {
         if (ageSeconds > MAX_AGE_SECONDS) throw new Error("age");
-        payload = buildMetaCrmPayload({ leadgenId: row.meta_leadgen_id, eventName: row.event_name, eventTime: row.event_time });
+        payload = buildMetaCrmPayload({ leadgenId: row.meta_leadgen_id, eventName: row.event_name, eventTime: row.event_time, eventId: row.id });
       } catch {
         await db.from("meta_crm_stage_events").update({ status: "review_required" })
           .eq("id", row.id).eq("status", row.status).eq("attempts", row.attempts);

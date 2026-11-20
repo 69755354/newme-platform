@@ -75,3 +75,14 @@ test("both Meta senders run every 10 minutes the same way, alert on failure and 
     assert.ok(existsSync(join(root, script)), script);
   }
 });
+
+test("optional timers are enabled only after every installer check, and a rollback disables a timer it removes", () => {
+  const lastCheck = installer.indexOf("refresh-protection \"$SOURCE_SHA\"");
+  const drillEnable = installer.indexOf("systemctl enable --now newme-restore-drill.timer");
+  const crmEnable = installer.indexOf("systemctl enable --now newme-meta-crm-send.timer");
+  const done = installer.indexOf('echo "backup=$BACKUP rollback=');
+  assert.ok(lastCheck > 0 && lastCheck < drillEnable && drillEnable < crmEnable && crmEnable < done);
+  assert.ok(installer.search(/^systemd-analyze verify \/etc\/systemd\/system\/newme-platform\.service$/m) < drillEnable);
+  const rollback = read("scripts/rollback-systemd-assets.sh");
+  assert.match(rollback, /case "\$dest" in \/etc\/systemd\/system\/\*\.timer\) systemctl disable --now --no-reload "\$\{dest##\*\/\}" 2>\/dev\/null \|\| true ;; esac\n\s*rm -f -- "\$dest" \|\| return 1/);
+});

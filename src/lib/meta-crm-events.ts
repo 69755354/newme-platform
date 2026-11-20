@@ -44,6 +44,8 @@ export type MetaCrmPayload = {
   data: Array<{
     event_name: string;
     event_time: number;
+    /** Queue row id: lets Meta deduplicate a retry of the same stage event. */
+    event_id?: string;
     action_source: "system_generated";
     user_data: { lead_id: string };
     custom_data: { lead_event_source: "crm"; event_source: "crm" };
@@ -51,7 +53,7 @@ export type MetaCrmPayload = {
 };
 
 export function buildMetaCrmPayload(input: {
-  leadgenId: string; eventName: string; eventTime: number;
+  leadgenId: string; eventName: string; eventTime: number; eventId?: string;
 }): MetaCrmPayload {
   const leadId = normalizeLeadgenId(input.leadgenId);
   if (!leadId) throw new Error("Invalid Meta leadgen id");
@@ -59,6 +61,7 @@ export function buildMetaCrmPayload(input: {
     data: [{
       event_name: input.eventName,
       event_time: input.eventTime,
+      ...(input.eventId ? { event_id: String(input.eventId) } : {}),
       action_source: "system_generated",
       // Retain exact digits until the numeric JSON wire serializer.
       user_data: { lead_id: leadId },

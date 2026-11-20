@@ -38,7 +38,7 @@ if [ "$AGE_SECONDS" -gt $(( MAX_AGE_HOURS * 3600 )) ]; then
   backup_die "newest database backup is $(( AGE_SECONDS / 3600 )) hours old (limit ${MAX_AGE_HOURS}); the daily backup did not run or keeps failing" 1
 fi
 # Weekly drill (newme-restore-drill.timer). The pass stamp must be at most DRILL_MAX_DAYS (default 9) old. A MISSING
-# stamp is a failure from DRILL_REQUIRED_FROM on (UTC date, default 2026-12-01; the grace covers installing the server
+# stamp raises an alert (the unit stays green) from DRILL_REQUIRED_FROM on (UTC date, default 2026-12-01; the grace covers installing the server
 # package and the first weekly run), or at once with DRILL_REQUIRED=1. Before the grace date a missing stamp is only
 # logged. (Audit 2026-11-20 F3: a missing stamp used to skip the check for good, so a drill that never ran never alerted.)
 DRILL_STAMP="$BACKUP_DIR/.restore-drill-last-pass"
@@ -52,13 +52,18 @@ if [ "${DRILL_REQUIRED:-0}" = 1 ] || ! [[ "$TODAY" < "$DRILL_REQUIRED_FROM" ]]; 
 if [ -f "$DRILL_STAMP" ] || [ "$DRILL_DUE" = 1 ]; then
   BACKUP_ALERT_KEY=db-restore-drill-freshness
   if [ ! -f "$DRILL_STAMP" ]; then
-    backup_die "no restore drill has passed yet (required since $DRILL_REQUIRED_FROM); check newme-restore-drill.timer and that postgresql-17 is installed" 1
+    # Alert under the drill key only; the unit stays green (like the NAS checks below), otherwise OnFailure would send
+    # a second message under another key every hour.
+    DRILL_PROBLEM="no restore drill has passed yet (required since $DRILL_REQUIRED_FROM); check newme-restore-drill.timer and that postgresql-17 is installed"
+    backup_log "ERROR: $DRILL_PROBLEM"
+    send_alert failure "$DRILL_PROBLEM"
+  else
+    DRILL_AGE_DAYS=$(( ( $(date +%s) - $(stat -c '%Y' "$DRILL_STAMP") ) / 86400 ))
+    if [ "$DRILL_AGE_DAYS" -gt "$DRILL_MAX_DAYS" ]; then
+      backup_die "the last passing restore drill is $DRILL_AGE_DAYS days old (limit $DRILL_MAX_DAYS); the weekly drill did not run or keeps failing" 1
+    fi
+    send_alert recovery "restore drill is fresh (${DRILL_AGE_DAYS}d old)"
   fi
-  DRILL_AGE_DAYS=$(( ( $(date +%s) - $(stat -c '%Y' "$DRILL_STAMP") ) / 86400 ))
-  if [ "$DRILL_AGE_DAYS" -gt "$DRILL_MAX_DAYS" ]; then
-    backup_die "the last passing restore drill is $DRILL_AGE_DAYS days old (limit $DRILL_MAX_DAYS); the weekly drill did not run or keeps failing" 1
-  fi
-  send_alert recovery "restore drill is fresh (${DRILL_AGE_DAYS}d old)"
   BACKUP_ALERT_KEY=db-backup-freshness
 else
   backup_log "NOTE: no restore drill has passed yet; this becomes a failure on $DRILL_REQUIRED_FROM"

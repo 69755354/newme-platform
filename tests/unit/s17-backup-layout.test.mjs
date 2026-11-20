@@ -189,13 +189,14 @@ test("the unit that creates backups also lists the pull directory and the alert 
 });
 
 // ---- freshness: NAS pull -----------------------------------------------------------------------------
-function freshness(extra, { localAgeH = 1, pullAgeH = null, pushAgeH } = {}) {
+function freshness(extra, { localAgeH = 1, pullAgeH = null, pushAgeH, drillAgeD } = {}) {
   const b = box();
   const backups = join(b.dir, "backups"); mkdirSync(backups, { mode: 0o700 });
   const enc = join(backups, "newme-prod-20261117T000000Z.dump.enc");
   writeFileSync(enc, "x"); writeFileSync(`${enc}.sha256`, "x");
   const t = (Date.now() - localAgeH * 3_600_000) / 1000; utimesSync(enc, t, t);
   const state = join(b.dir, "nas-state"); mkdirSync(state);
+  if (drillAgeD !== undefined) { const f = join(backups, ".restore-drill-last-pass"); writeFileSync(f, ""); const d = (Date.now() - drillAgeD * 86_400_000) / 1000; utimesSync(f, d, d); }
   let pushState = null;
   if (pushAgeH !== undefined) {
     pushState = join(b.dir, "nas-push"); mkdirSync(pushState);
@@ -215,9 +216,13 @@ test("freshness: the recovery message waits for every fatal check; a stale drill
   assert.equal(ok.status, 0);
   assert.ok(ok.b.calls().includes("alert db-backup-freshness recovery"), "recovery after all checks passed");
   assert.equal((ok.b.calls().match(/failure/g) ?? []).length, 1, "only the NAS failure message");
-  const stale = freshness({ DRILL_REQUIRED: "1" }, { pullAgeH: null });
-  assert.equal(stale.status, 1, "no drill has passed: the unit fails");
+  const stale = freshness({}, { pullAgeH: null, drillAgeD: 20 });
+  assert.equal(stale.status, 1, "a stale drill fails the unit");
   assert.ok(!stale.b.calls().includes("alert db-backup-freshness recovery"), "no recovery while the unit is failing");
+  const missing = freshness({ DRILL_REQUIRED: "1" }, { pullAgeH: null });
+  assert.equal(missing.status, 0, "a missing drill alerts under its own key only; the unit stays green");
+  assert.match(missing.b.calls(), /alert db-restore-drill-freshness failure .*no restore drill has passed yet/);
+  assert.ok(!missing.b.calls().includes("alert db-restore-drill-freshness recovery"));
 });
 
 test("freshness: NAS pull is not checked until NAS_PULL_REQUIRED=1", () => {

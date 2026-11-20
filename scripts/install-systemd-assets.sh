@@ -1230,8 +1230,8 @@ if ! systemctl reload nginx; then
 fi
 
 # Ops alerting and backup checks (audit 2026-11-20 F1/F3/F6) and the Meta event senders (H1, M6). Every path is in
-# MANAGED above, so a rollback restores the previous copies. Enabling the optional timers happens after the
-# daemon-reload below; nothing here changes whether an already-installed timer is enabled.
+# MANAGED above, so a rollback restores the previous copies. Enabling the optional timers happens at the very
+# end, after every check; nothing here changes whether an already-installed timer is enabled.
 OPS_LIBEXEC=/usr/local/libexec/newme
 install -D -o root -g root -m 0755 "$ROOT/infra/alerts/newme-whatsapp-alert.sh" "$OPS_LIBEXEC/newme-whatsapp-alert.sh"
 install -D -o root -g root -m 0644 "$ROOT/infra/backup/newme-backup-lib.sh" "$OPS_LIBEXEC/newme-backup-lib.sh"
@@ -1249,22 +1249,6 @@ done
 install -D -o root -g root -m 0644 "$ROOT/infra/observability/newme-observability.cron" /etc/cron.d/newme-observability
 
 systemctl daemon-reload
-# Optional timers (after-flag): enabled only once what they need exists, so they never fail every run.
-#  * restore drill: needs the PostgreSQL 17 server programs (docs/runbooks/s17-ops-readiness.md section 4). Until
-#    then the hourly freshness check reports the missing drill from DRILL_REQUIRED_FROM on.
-#  * Meta CRM sender: needs META_PIXEL_ID and META_CAPI_ACCESS_TOKEN in its environment files (names only are
-#    checked here; no value is read into this script or printed).
-if [ -x /usr/lib/postgresql/17/bin/initdb ] && [ -x /usr/lib/postgresql/17/bin/pg_ctl ]; then
-  systemctl enable --now newme-restore-drill.timer || echo "WARNING: newme-restore-drill.timer could not be enabled" >&2
-else
-  echo "notice: newme-restore-drill.timer installed but not enabled: PostgreSQL 17 server programs are missing" >&2
-fi
-if grep -Eqs '^(export )?META_PIXEL_ID=[^[:space:]]' /etc/newme/newme-runtime.env /etc/newme/capi-wa.env &&
-  grep -Eqs '^(export )?META_CAPI_ACCESS_TOKEN=[^[:space:]]' /etc/newme/newme-runtime.env /etc/newme/capi-wa.env; then
-  systemctl enable --now newme-meta-crm-send.timer || echo "WARNING: newme-meta-crm-send.timer could not be enabled" >&2
-else
-  echo "notice: newme-meta-crm-send.timer installed but not enabled: META_PIXEL_ID / META_CAPI_ACCESS_TOKEN not configured" >&2
-fi
 systemd-analyze verify /etc/systemd/system/newme-platform.service
 FRAGMENT="$(systemctl show newme-platform.service -p FragmentPath --value)"
 DROP_INS="$(systemctl show newme-platform.service -p DropInPaths --value)"
@@ -1302,6 +1286,23 @@ fi
 for durable_path in /etc /usr/local /opt /var; do
   sync -f "$durable_path"
 done
+# Optional timers (after-flag), enabled last: only after every check above has passed, so a failing install never
+# leaves a newly enabled timer behind, and only once what they need exists, so they never fail every run.
+#  * restore drill: needs the PostgreSQL 17 server programs (docs/runbooks/s17-ops-readiness.md section 4). Until
+#    then the hourly freshness check reports the missing drill from DRILL_REQUIRED_FROM on.
+#  * Meta CRM sender: needs META_PIXEL_ID and META_CAPI_ACCESS_TOKEN in its environment files (names only are
+#    checked here; no value is read into this script or printed).
+if [ -x /usr/lib/postgresql/17/bin/initdb ] && [ -x /usr/lib/postgresql/17/bin/pg_ctl ]; then
+  systemctl enable --now newme-restore-drill.timer || echo "WARNING: newme-restore-drill.timer could not be enabled" >&2
+else
+  echo "notice: newme-restore-drill.timer installed but not enabled: PostgreSQL 17 server programs are missing" >&2
+fi
+if grep -Eqs '^(export )?META_PIXEL_ID=[^[:space:]]' /etc/newme/newme-runtime.env /etc/newme/capi-wa.env &&
+  grep -Eqs '^(export )?META_CAPI_ACCESS_TOKEN=[^[:space:]]' /etc/newme/newme-runtime.env /etc/newme/capi-wa.env; then
+  systemctl enable --now newme-meta-crm-send.timer || echo "WARNING: newme-meta-crm-send.timer could not be enabled" >&2
+else
+  echo "notice: newme-meta-crm-send.timer installed but not enabled: META_PIXEL_ID / META_CAPI_ACCESS_TOKEN not configured" >&2
+fi
 echo "backup=$BACKUP rollback=sudo bash $ROOT/scripts/rollback-systemd-assets.sh $BACKUP"
 INSTALL_COMMITTED=1
 trap - EXIT HUP INT TERM

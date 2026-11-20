@@ -65,14 +65,18 @@ function queueDb({ row, exhaustedRows = [] }) {
     gte() { return exhaustedQuery; },
     limit() { return Promise.resolve({ data: [row], error: null }); } };
   const exhaustedQuery = { limit() { return Promise.resolve({ data: exhaustedRows, error: null }); } };
+  const parks = [];
   const upd = (patch) => {
     updates.push(patch);
+    const filters = [];
     const u = { eq() { return u; }, select() { return u; },
+      in(col, vals) { filters.push([col, vals]); if (col === "id") parks.push({ patch, ids: vals }); return u; },
+      gte(col, v) { filters.push([col, v]); return u; },
       maybeSingle() { return Promise.resolve({ data: { id: row.id }, error: null }); },
       then(res) { return Promise.resolve({ error: null }).then(res); } };
     return u;
   };
-  return { state: { updates }, from() { return { select: () => queue, update: upd }; } };
+  return { state: { updates, parks }, from() { return { select: () => queue, update: upd }; } };
 }
 
 test("send tool: dry run sends nothing; execute sends once and records delivery", async () => {
@@ -146,7 +150,23 @@ test("send tool: rows that ran out of attempts are counted as exhausted so the r
   assert.equal(none.exhausted, 0);
   const some = await sendMetaCrmEvents(queueDb({ row, exhaustedRows: [{ id: "x1" }, { id: "x2" }] }), { clock: () => 1_800_000_100_000, send: async () => {} });
   assert.equal(some.exhausted, 2);
+  const dry = queueDb({ row, exhaustedRows: [{ id: "x1" }] });
+  await sendMetaCrmEvents(dry, { clock: () => 1_800_000_100_000 });
+  assert.deepEqual(dry.state.parks, [], "a dry run never parks");
+  const exec = queueDb({ row, exhaustedRows: [{ id: "x1" }, { id: "x2" }] });
+  const out = await sendMetaCrmEvents(exec, { execute: true, clock: () => 1_800_000_100_000, send: async () => {} });
+  assert.equal(out.exhausted, 2, "still counted this run, so it exits 1 and alerts once");
+  assert.deepEqual(exec.state.parks, [{ patch: { status: "review_required" }, ids: ["x1", "x2"] }], "parked once so later runs recover");
   const src = readFileSync(new URL("../../scripts/meta-crm-events-send.mjs", import.meta.url), "utf8");
   assert.match(src, /\.in\("status", \["pending", "failed"\]\)\.gte\("attempts", MAX_ATTEMPTS\)/);
   assert.match(src, /summary\.review_required \|\| summary\.exhausted\) process\.exitCode = 1/);
+});
+
+test("send tool: the queue row id travels as event_id so Meta can deduplicate a retry", async () => {
+  const row = { id: "row-42", meta_leadgen_id: "123456789012345", event_name: "Qualified", event_time: 1_800_000_000, status: "pending", attempts: 0 };
+  let seen;
+  await sendMetaCrmEvents(queueDb({ row }), { execute: true, clock: () => 1_800_000_100_000, send: async (p) => { seen = p; } });
+  assert.equal(seen.data[0].event_id, "row-42");
+  assert.equal(buildMetaCrmPayload({ leadgenId: "123456789012345", eventName: "Lead", eventTime: 1 }).data[0].event_id, undefined);
+  assert.match(serializeMetaCrmPayload(seen), /"event_id":"row-42"/);
 });

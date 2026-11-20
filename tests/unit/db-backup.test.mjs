@@ -412,7 +412,7 @@ test("freshness: the weekly drill must have passed within 9 days once it is in u
   assert.equal(before.status, 0, "no stamp, before the grace date: not a failure yet");
   assert.match(before.stderr, /becomes a failure on 2999-01-01/);
   const stamp = join(s.backups, ".restore-drill-last-pass");
-  assert.equal(run(s, { DRILL_REQUIRED: "1" }).status, 1);
+  assert.equal(run(s, { DRILL_REQUIRED: "1" }).status, 0, "missing stamp: alert only, the unit stays green");
   assert.match(s.log(), /alert db-restore-drill-freshness failure .*no restore drill has passed yet/);
   writeFileSync(stamp, ""); utimesSync(stamp, hoursAgo(24 * 10), hoursAgo(24 * 10));
   assert.equal(run(s).status, 1);
@@ -422,14 +422,18 @@ test("freshness: the weekly drill must have passed within 9 days once it is in u
   assert.match(s.log(), /alert db-restore-drill-freshness recovery/);
 });
 
-test("freshness: after the grace date a MISSING drill stamp is a failure, not a skip (audit F3)", () => {
+test("freshness: after the grace date a MISSING drill stamp raises an alert, not a skip (audit F3)", () => {
   const run = (s, extra = {}) => spawnSync("bash", [infra("newme-backup-freshness.sh")], { encoding: "utf8", env: s.env(extra) });
   const s = setupBackup();
   const r = run(s, { DRILL_REQUIRED_FROM: "2020-01-01" });
-  assert.equal(r.status, 1);
+  assert.equal(r.status, 0, "own key only, so OnFailure does not send a second message every hour");
+  assert.match(r.stderr, /ERROR: no restore drill has passed yet/);
   assert.match(s.log(), /alert db-restore-drill-freshness failure .*no restore drill has passed yet \(required since 2020-01-01\)/);
+  assert.ok(!/db-restore-drill-freshness recovery/.test(s.log()));
   const today = new Date().toISOString().slice(0, 10);
-  assert.equal(run(s, { DRILL_REQUIRED_FROM: today }).status, 1, "the grace date itself is already due");
+  const due = setupBackup();
+  run(due, { DRILL_REQUIRED_FROM: today });
+  assert.match(due.log(), /alert db-restore-drill-freshness failure/, "the grace date itself is already due");
   assert.equal(run(s, { DRILL_REQUIRED_FROM: "tomorrow" }).status, 2, "a malformed date is a configuration error");
   const src = readFileSync(infra("newme-backup-freshness.sh"), "utf8");
   assert.match(src, /DRILL_REQUIRED_FROM="\$\{DRILL_REQUIRED_FROM:-2026-12-01\}"/);

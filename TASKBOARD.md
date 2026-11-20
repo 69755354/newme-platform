@@ -1205,3 +1205,51 @@ p75 79 ms / p95 99 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:cca3934869410298d8b6333d3909e9719fc9e517c20d3f6199468f8f42ab1d42 -->
+
+## OS fix Remove committed data export technical acceptance (2026-11-20)
+
+Release `9daa2c9849ddc6a2d3dae38ef3b674f7e82c60be` (Remove committed production data export; ignore export pattern) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T01:45:30Z`, replacing the finalized release `a341f2ae`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 57 ms / p95 71 ms, within policy. The delayed verification passed at `2026-11-20T02:03:08Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:ba4ed7dab4affb8d7153716ffb58abbbf160c1a3475d0654b7623a15a785a4e7 -->
+
+## OS fix S28 OS to Drive and NAS sync technical acceptance (2026-11-20)
+
+Release `7c8c91dec70c0fc751b6ef69a4042cd2328b0bce` (S28 OS to Drive and NAS push, disabled by default) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T06:05:20Z`, replacing the finalized release `9daa2c98`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 71 ms / p95 123 ms, within policy. The delayed verification passed at `2026-11-20T06:22:43Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:c97bca5142f220c0112c5feadf1eec0d6dc74109c4a717c6a0ce83e26497cc84 -->
+
+## OS fix S31 provisioning switch technical acceptance (2026-11-20)
+
+Release `7949950c7590dbb022f6296faa97d479b0bbb86f` (S31 database provisioning switch for dispatch and history corrections) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T06:49:16Z`, replacing the finalized release `7c8c91de`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 93 ms / p95 133 ms, within policy. The delayed verification passed at `2026-11-20T07:06:26Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:65ed3edaf0a7ce3c6d83e389af143a6b797bbb4bbad9d79e95cd81280dc6964a -->
+
+## OS fix S31 dispatch and history corrections technical acceptance (2026-11-20)
+
+Release `9473599f5b44ee5e5e98a0811153c4d08fd50ba0` (S31 corrective migration 20261120100000 applied through s31 provisioning) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T07:35:22Z`, replacing the finalized release `7949950c`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 73 ms / p95 86 ms, within policy. The delayed verification passed at `2026-11-20T07:52:49Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:3d7bf9404d14b2686bbdb170eee0fa5eb201c1fff6647f2eb9ea3fce2c05069d -->

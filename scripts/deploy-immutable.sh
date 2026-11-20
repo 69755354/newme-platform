@@ -52,7 +52,52 @@ CREATED_RELEASE=0
 CANDIDATE_REMOVAL_VERIFIED=1
 CANONICAL_MAIN_VERIFIED_AT=""
 
+# Release lane (gate-lite, 2026-11-20). `legacy` is the full lane: awaiting_uat
+# evidence, then accept/attest/finalize. `lite` is the one-command lane driven by
+# `newme-deploy lite`: the same build, migration-history, pre-switch and
+# post-switch health/smoke/log gates, but host load, the observability composite
+# probe and data-quality regression findings are recorded as warnings, and the
+# evidence is written complete at the end of this script.
+RELEASE_LANE="${NEWME_RELEASE_LANE:-legacy}"
+case "$RELEASE_LANE" in legacy|lite) ;; *) echo "NEWME_RELEASE_LANE must be legacy or lite (got: $RELEASE_LANE)" >&2; exit 64 ;; esac
+LITE_WARNINGS=()
+if [ -n "${NEWME_LITE_PRE_WARNINGS:-}" ]; then
+  while IFS= read -r pre_warning; do
+    [ -n "$pre_warning" ] && LITE_WARNINGS+=("$pre_warning")
+  done <<< "$NEWME_LITE_PRE_WARNINGS"
+fi
+# Post-switch health is probed until it answers, not once: a busy 2-core host
+# (agents running tests) answers /api/health late, and a single 10 s probe turned
+# that into an automatic rollback three times on 2026-11-20. The window is
+# bounded (attempts x interval) so a release that never answers still rolls back.
+HEALTH_PROBE_ATTEMPTS="${NEWME_HEALTH_PROBE_ATTEMPTS:-9}"
+HEALTH_PROBE_INTERVAL_SECONDS="${NEWME_HEALTH_PROBE_INTERVAL_SECONDS:-10}"
+HEALTH_PROBE_TIMEOUT_SECONDS="${NEWME_HEALTH_PROBE_TIMEOUT_SECONDS:-20}"
+[[ "$HEALTH_PROBE_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] && [[ "$HEALTH_PROBE_INTERVAL_SECONDS" =~ ^[1-9][0-9]*$ ]] &&
+  [[ "$HEALTH_PROBE_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] ||
+  { echo "health probe attempts, interval and timeout must be positive integers" >&2; exit 64; }
 fail() { echo "deploy failed: $*" >&2; return 1; }
+# Lite lane: record a non-fatal finding; it lands in the evidence and the alert.
+lite_warn() {
+  LITE_WARNINGS+=("$*")
+  echo "warning (lite lane, release continues): $*" >&2
+}
+# Probe one health URL until it answers 2xx, at most HEALTH_PROBE_ATTEMPTS times
+# HEALTH_PROBE_INTERVAL_SECONDS apart. Prints the attempt that succeeded.
+probe_health_until_ready() {
+  local url="$1" attempt=1 load
+  while :; do
+    load="$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo '?')"
+    if curl -fsS --max-time "$HEALTH_PROBE_TIMEOUT_SECONDS" "$url" >/dev/null 2>&1; then
+      echo "post-switch health OK (attempt $attempt/$HEALTH_PROBE_ATTEMPTS, load=$load)"
+      return 0
+    fi
+    [ "$attempt" -lt "$HEALTH_PROBE_ATTEMPTS" ] || return 1
+    echo "post-switch health not ready (attempt $attempt/$HEALTH_PROBE_ATTEMPTS, load=$load); retrying in ${HEALTH_PROBE_INTERVAL_SECONDS}s" >&2
+    attempt=$((attempt + 1))
+    sleep "$HEALTH_PROBE_INTERVAL_SECONDS"
+  done
+}
 
 canonical_git() {
   env -i \
@@ -629,10 +674,16 @@ HOST_LOAD_NPROC_BIN=/usr/bin/nproc \
 HOST_LOAD_AWK_BIN=/usr/bin/awk \
 HOST_LOAD_SLEEP_BIN=/usr/bin/sleep \
 HOST_LOAD_SETTLE_INTERVAL_SECONDS=10 \
-HOST_LOAD_SETTLE_TIMEOUT_SECONDS=120 \
+HOST_LOAD_SETTLE_TIMEOUT_SECONDS="$([ "$RELEASE_LANE" = lite ] && echo 600 || echo 120)" \
 HOST_LOAD_SETTLE_REQUIRED_SAMPLES=2 \
 HOST_LOAD_SETTLE_THRESHOLD_PCT=90 \
-  bash "$ROOT/scripts/wait-for-host-load.sh"
+  bash "$ROOT/scripts/wait-for-host-load.sh" || {
+    # Full lane: a host that never settles fails the release here, as before.
+    # Lite lane: load only makes the switch slower; the retrying health probe
+    # below is the judge, so the release continues and the fact is recorded.
+    [ "$RELEASE_LANE" = lite ] || { fail "host load did not settle before the release switch"; exit 1; }
+    lite_warn "host load did not settle within 600s before the switch (load=$(cut -d' ' -f1 /proc/loadavg))"
+  }
 
 printf 'protected_release=true\ngit_sha=%s\nbuild_id=%s\ncreated_at_utc=%s\n' \
   "$SHA" "$BUILD" "$(date -u +%Y%m%dT%H%M%SZ)" > "$STAGE/.newme-protect"
@@ -744,7 +795,7 @@ TARGET="$(readlink -f "$CURRENT")"
 [ "$TARGET" = "$RELEASE" ] || { fail "release symlink mismatch"; exit 1; }
 grep -Fqx "{\"git_sha\":\"$SHA\",\"build_id\":\"$BUILD\"}" "$TARGET/manifest.json" || { fail "release manifest mismatch"; exit 1; }
 [ "$(tr -d '\r\n' < "$TARGET/.next/BUILD_ID")" = "$BUILD" ] || { fail "BUILD_ID mismatch"; exit 1; }
-curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || { fail "post-switch health failed"; exit 1; }
+probe_health_until_ready http://127.0.0.1:3001/api/health || { fail "post-switch health failed after $HEALTH_PROBE_ATTEMPTS probes"; exit 1; }
 bash "$TARGET/scripts/check-smoke.sh" http://127.0.0.1:3001
 if [ -f "$TARGET/scripts/whatsapp-privacy-maintenance.mjs" ]; then
   grep -Fqx '*/5 * * * * root /usr/bin/flock -n /run/lock/newme-whatsapp-privacy.lock /usr/bin/node /opt/newme/current/scripts/whatsapp-privacy-maintenance.mjs' /etc/cron.d/newme-observability || { fail "WhatsApp cleanup cron drift"; exit 1; }
@@ -753,7 +804,13 @@ if [ -f "$TARGET/scripts/whatsapp-privacy-maintenance.mjs" ]; then
   /usr/bin/flock -w 180 /run/lock/newme-whatsapp-privacy.lock \
     /usr/bin/node "$TARGET/scripts/whatsapp-privacy-maintenance.mjs" || { fail "WhatsApp initial cleanup failed"; exit 1; }
 fi
-bash /opt/hermes-scripts/observability/l0-composite-probe.sh
+if [ "$RELEASE_LANE" = lite ]; then
+  # The composite probe exercises the alert provider and host metrics as well as
+  # the application; an alert-channel hiccup is not a reason to roll production back.
+  bash /opt/hermes-scripts/observability/l0-composite-probe.sh || lite_warn "observability composite probe failed (rc=$?)"
+else
+  bash /opt/hermes-scripts/observability/l0-composite-probe.sh
+fi
 INVOCATION_ID="$(systemctl show newme-platform.service -p InvocationID --value)"
 [[ "$INVOCATION_ID" =~ ^[0-9a-f]{32}$ ]] || { fail "service invocation id missing"; exit 1; }
 FINAL_NRESTARTS="$(systemctl show newme-platform.service -p NRestarts --value)"
@@ -776,13 +833,28 @@ fi
 EVIDENCE_FILE="$EVIDENCE_DIR/deploy-$ID.json"
 REGRESSION_FILE="$EVIDENCE_DIR/crm-regression-$ID.json"
 CRM_RUNTIME_ENV_FILE="$RUNTIME_ENV" CRM_REGRESSION_RESULT_FILE="$REGRESSION_FILE" \
+CRM_REGRESSION_DATA_QUALITY="$([ "$RELEASE_LANE" = lite ] && echo warn || echo block)" \
   bash "$TARGET/scripts/deploy-verify.sh" --no-git
+if [ "$RELEASE_LANE" = lite ] && [ -f "$REGRESSION_FILE" ]; then
+  while IFS= read -r regression_warning; do
+    [ -n "$regression_warning" ] && LITE_WARNINGS+=("$regression_warning")
+  done < <(python3 -c '
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    report = json.load(handle)
+for warning in report.get("warnings", []):
+    if isinstance(warning, str):
+        print(warning.replace("\n", " "))
+' "$REGRESSION_FILE")
+fi
 
 node "$RELEASE/scripts/check-deploy-ci-binding.mjs" \
   --manifest "$RELEASE/infra/release/required-jobs.json" \
   --audit-record "$CI_GATE_AUDIT_RECORD"
 verify_canonical_main
 SERVICE_RUNTIME_OBSERVED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+NEWME_LITE_WARNINGS_JOINED="$(printf '%s\n' "${LITE_WARNINGS[@]+"${LITE_WARNINGS[@]}"}")"
+NEWME_RELEASE_LANE="$RELEASE_LANE" NEWME_LITE_WARNINGS_JOINED="$NEWME_LITE_WARNINGS_JOINED" \
 python3 - "$EVIDENCE_FILE" "$SHA" "$BUILD" "$PREVIOUS" "$PREVIOUS_BUILD" "$PREVIOUS_ROLLBACK" \
   "$SWITCH_NRESTARTS" "$SWITCH_MAIN_PID" "$SWITCH_INVOCATION_ID" "$SWITCH_STARTED_MONOTONIC" \
   "$SERVICE_RUNTIME_OBSERVED_AT" "$CANONICAL_MAIN_VERIFIED_AT" <<'PY'
@@ -811,11 +883,17 @@ with open(os.environ["CI_GATE_AUDIT_RECORD"], "rb") as handle:
 if hashlib.sha256(ci_gate_audit_bytes).hexdigest() != os.environ["CI_GATE_AUDIT_SHA256"]:
     raise SystemExit(65)
 ci_gate_audit = json.loads(ci_gate_audit_bytes)
+release_lane = os.environ.get("NEWME_RELEASE_LANE", "legacy")
+if release_lane not in ("legacy", "lite"):
+    raise SystemExit(64)
+lite_warnings = [line for line in os.environ.get("NEWME_LITE_WARNINGS_JOINED", "").split("\n") if line]
 evidence = {
     "git_sha": git_sha,
     "build_id": build_id,
     "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "release_status": "awaiting_uat",
+    "release_lane": release_lane,
+    "lite": {"warnings": lite_warnings} if release_lane == "lite" else None,
     "candidate_preexisting": False,
     "build": {"status": "pass"},
     "systemd": {"status": "pass"},
@@ -870,6 +948,11 @@ evidence = {
         },
     },
 }
+if release_lane == "lite":
+    # Full lane: awaiting_uat until accept/attest/finalize. Lite lane: the
+    # post-switch health, smoke, log and regression gates above ARE the acceptance,
+    # so the release is complete here and the next deployment may supersede it.
+    evidence["release_status"] = "complete"
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(evidence, handle, ensure_ascii=False, indent=2)
     handle.write("\n")
@@ -893,4 +976,8 @@ for old in "$RELEASES"/*; do
     { [ -n "$PREVIOUS_ROLLBACK" ] && [ "$old" = "$PREVIOUS_ROLLBACK" ]; } ||
     rm -rf -- "$old" || echo "warning: old release cleanup failed: $old" >&2
 done
-echo "deployed SHA=$SHA BUILD_ID=$BUILD evidence=$EVIDENCE_FILE status=awaiting_uat"
+if [ "$RELEASE_LANE" = lite ]; then
+  echo "deployed SHA=$SHA BUILD_ID=$BUILD evidence=$EVIDENCE_FILE status=complete lane=lite warnings=${#LITE_WARNINGS[@]}"
+else
+  echo "deployed SHA=$SHA BUILD_ID=$BUILD evidence=$EVIDENCE_FILE status=awaiting_uat"
+fi

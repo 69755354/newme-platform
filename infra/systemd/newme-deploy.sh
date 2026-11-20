@@ -1560,7 +1560,7 @@ esac
 verify_live_release_permits_new_release() (
   set -Eeuo pipefail
   local evidence_file=${1:-} live_sha=${2:-} candidate_sha=${3:-}
-  local db_transition_only=${4:-} operation=${5:-} mirror=${6:-}
+  local db_transition_only=${4:-} operation=${5:-} mirror=${6:-} lite_lane=${7:-0}
   local release_status commits changed
 
   release_status="$(python3 - "$evidence_file" "$live_sha" <<'PY'
@@ -1597,7 +1597,19 @@ PY
 
   [ "$release_status" != complete ] || return 0
 
-  if [ "$release_status" != acceptance_verified ]; then
+  if [ "$lite_lane" = 1 ]; then
+    # Lite lane: a release that is live, passed its post-switch gates and is
+    # awaiting (or has passed) the full lane's browser acceptance may be replaced
+    # by a newer release that passes the same gates. Anything else still refuses.
+    case "$release_status" in
+      awaiting_uat|acceptance_verified) ;;
+      *)
+        echo "the live release is $release_status: not a deployed state the lite lane may supersede" >&2
+        echo "recover it with: newme-production-rollback execute <reason>" >&2
+        return 65
+        ;;
+    esac
+  elif [ "$release_status" != acceptance_verified ]; then
     echo "the live release is $release_status: it was never attested, so it cannot be superseded" >&2
     echo "attest and close it, or recover it with: newme-production-rollback execute <reason>" >&2
     return 65
@@ -1613,6 +1625,12 @@ PY
     echo "the candidate is the live release" >&2
     return 65
   }
+  if [ "$lite_lane" = 1 ]; then
+    # No closure record is expected of a lite release, and a full-lane closure
+    # record left behind is only a TASKBOARD note: the newer release wins.
+    echo "superseded_release=$live_sha superseded_status=$release_status lane=lite commits_since=$commits"
+    return 0
+  fi
   changed="$(git --git-dir="$mirror" diff --name-only "$live_sha" "$candidate_sha")" || return 65
   if [ "$commits" -eq 1 ] && [ "$changed" = TASKBOARD.md ]; then
     echo "the live release's closure commit is still reachable; finalize it instead of deploying" >&2
@@ -1623,6 +1641,7 @@ PY
   return 0
 )
 
+LITE_LANE=0
 if [ "${1:-}" = "finalize" ]; then
   [ "$#" -eq 5 ] || {
     echo "usage: newme-deploy finalize <release-sha> <acceptance-sha256> <closure-sha> <successful-final-run-id>" >&2
@@ -1774,7 +1793,22 @@ case "${1:-}" in
     DB_TRANSITION_ONLY=1
     shift
     ;;
+  lite)
+    LITE_LANE=1
+    shift
+    ;;
 esac
+LITE_PRE_WARNINGS=()
+# Gate-lite (2026-11-20). `newme-deploy lite <main-sha> [run-id] [migration-status]`
+# is the one-command release lane for this few-dozen-user internal tool. It keeps
+# every production-safety gate of the full lane (exact canonical-main SHA, green
+# release-candidate CI on that SHA, migration history and posture, config and
+# credential validation, control-plane asset transaction, post-switch health,
+# smoke and log scan with automatic rollback) and drops the ceremony around it:
+# the run id, migration set and rollback SHA are derived instead of typed, the
+# taskboard scope and data-quality findings warn instead of blocking, and the
+# release is complete when this command returns — no accept/attest/closure PR/
+# release-final CI/finalize. The full lane is untouched and still available.
 
 SHA=${1:-}
 RUN_ID=${2:-}
@@ -1816,6 +1850,21 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     s31-db-plan|s31-db-provision) ;;
     *) exit 64 ;;
   esac
+elif [ "$LITE_LANE" -eq 1 ]; then
+  # The migration set is derived from the release manifest once the worktree
+  # exists, and the rollback SHA is the live release; both are measured, not typed.
+  MIGRATION_STATUS=${3:-contract_verified}
+  MIGRATION_IDS=""
+  ROLLBACK_SHA=""
+  if [ "$#" -lt 1 ] || [ "$#" -gt 3 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "usage: newme-deploy lite <main-sha> [successful-run-id] [not_required|applied_verified|reentry_verified|contract_verified]" >&2
+    echo "       run-id defaults to the newest successful release-candidate dispatch of ci.yml for <main-sha>; migration status defaults to contract_verified" >&2
+    exit 64
+  fi
+  case "$MIGRATION_STATUS" in
+    not_required|applied_verified|reentry_verified|contract_verified) ;;
+    *) echo "lite migration status must be not_required, applied_verified, reentry_verified or contract_verified" >&2; exit 64 ;;
+  esac
 else
   MIGRATION_STATUS=${3:-}
   MIGRATION_IDS=${4:-}
@@ -1823,6 +1872,7 @@ else
   if [ "$#" -ne 5 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]]; then
     echo "usage: newme-deploy <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified|contract_verified> <migration-ids> <rollback-sha>" >&2
     echo "   or: newme-deploy bootstrap <main-sha> <successful-run-id> <not_required|applied_verified|reentry_verified|contract_verified> <migration-ids> <rollback-sha>" >&2
+    echo "   or: newme-deploy lite <main-sha> [successful-run-id] [migration-status]" >&2
     exit 64
   fi
   case "$MIGRATION_STATUS" in
@@ -1835,7 +1885,11 @@ if [ "$RUN_ID" = "manual" ]; then
   echo "manual production deployment is disabled; an exact successful GitHub Actions run is required" >&2
   exit 65
 fi
-[[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 64
+if [ "$LITE_LANE" -eq 1 ] && [ -z "$RUN_ID" ]; then
+  : # resolved from the GitHub Actions API below, then verified like a typed one
+else
+  [[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 64
+fi
 
 readonly ORIGIN_HTTPS="https://github.com/69755354/newme-platform.git"
 readonly ORIGIN_SSH="git@github.com:69755354/newme-platform.git"
@@ -1872,7 +1926,7 @@ if [ -e "$CREDENTIAL_ASSET_PENDING" ] || [ -L "$CREDENTIAL_ASSET_PENDING" ] ||
   exit 75
 fi
 require_postdeploy_operations_clear "$LIVE_RELEASE" || exit $?
-if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
+if [ "$DB_TRANSITION_ONLY" -eq 1 ] || [ "$LITE_LANE" -eq 1 ]; then
   case "$LIVE_RELEASE" in /opt/newme/releases/[0-9a-f][0-9a-f]*) ;; *) echo "current immutable production release is invalid" >&2; exit 65 ;; esac
   ROLLBACK_SHA="$(basename "$LIVE_RELEASE")"
   [[ "$ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "current immutable production release SHA is invalid" >&2; exit 65; }
@@ -1894,7 +1948,7 @@ if [ "$ROLLBACK_SHA" != "$LEGACY_EVIDENCELESS_BASELINE" ]; then
   }
   verify_live_release_permits_new_release \
     "${CURRENT_EVIDENCE_FILES[0]}" "$ROLLBACK_SHA" "$SHA" \
-    "$DB_TRANSITION_ONLY" "$DB_TRANSITION_OPERATION" "$MIRROR" || exit $?
+    "$DB_TRANSITION_ONLY" "$DB_TRANSITION_OPERATION" "$MIRROR" "$LITE_LANE" || exit $?
 fi
 
 service_control_source=$(git --git-dir="$MIRROR" show \
@@ -1952,6 +2006,39 @@ trap 'exit 143' TERM
 chmod 0600 "$GITHUB_CURL_CONFIG"
 printf 'header = "Authorization: Bearer %s"\n' "$github_token" > "$GITHUB_CURL_CONFIG"
 unset github_token
+if [ -z "$RUN_ID" ]; then
+  # Lite lane: the newest successful release-candidate dispatch of ci.yml whose
+  # head is exactly this SHA. It is then verified below exactly like a typed run id.
+  RUNS_JSON="$(curl --fail --silent --show-error --max-time 20 \
+    --config "$GITHUB_CURL_CONFIG" \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/69755354/newme-platform/actions/workflows/$CANONICAL_CI_WORKFLOW_ID/runs?head_sha=$SHA&event=workflow_dispatch&status=success&per_page=10")" || {
+      echo "the GitHub Actions run list for $SHA could not be read" >&2
+      exit 65
+    }
+  RUN_ID="$(python3 - "$SHA" "$RUNS_JSON" <<'PY'
+import json, sys
+sha, payload = sys.argv[1:]
+runs = json.loads(payload).get("workflow_runs") or []
+matching = [
+    run for run in runs
+    if run.get("head_sha") == sha and run.get("event") == "workflow_dispatch"
+    and run.get("head_branch") == "main" and run.get("status") == "completed"
+    and run.get("conclusion") == "success" and isinstance(run.get("id"), int)
+]
+if not matching:
+    raise SystemExit(1)
+matching.sort(key=lambda run: (run.get("run_started_at") or "", run["id"]))
+print(matching[-1]["id"])
+PY
+)" || {
+    echo "no successful release-candidate dispatch of ci.yml exists for $SHA; dispatch one (gh workflow run ci.yml --ref main) and retry" >&2
+    exit 65
+  }
+  unset RUNS_JSON
+  echo "lite lane: release-candidate run resolved from GitHub: run=$RUN_ID"
+fi
+[[ "$RUN_ID" =~ ^[0-9]+$ ]] || exit 64
 RUN_JSON="$(curl --fail --silent --show-error --max-time 15 \
   --config "$GITHUB_CURL_CONFIG" \
   -H 'Accept: application/vnd.github+json' \
@@ -2169,12 +2256,21 @@ CI_EVENT=workflow_dispatch
 # The worktree is always a root-owned detached checkout of canonical main at the
 # exact SHA whose successful run was verified above. Keeping these checks in one
 # function prevents the database-only path from becoming a weaker shadow deploy.
+TASKBOARD_GATE=""
 verify_exact_tree_release_gates() {
   require_node || return 65
-  "$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-scope=predeploy_ready || {
+  if "$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-scope=predeploy_ready; then
+    TASKBOARD_GATE=passed
+  elif [ "$LITE_LANE" -eq 1 ]; then
+    # Lite lane: the board is a project-management fact, not a production-safety
+    # one. It is recorded as a warning and the gate record simply does not claim it.
+    TASKBOARD_GATE=warned
+    echo "warning (lite lane, release continues): TASKBOARD.md at canonical main is not predeploy-ready" >&2
+    LITE_PRE_WARNINGS+=("TASKBOARD.md predeploy_ready scope is not satisfied at $SHA")
+  else
     echo "TASKBOARD.md at canonical main is not predeploy-ready; production operation is blocked" >&2
     return 65
-  }
+  fi
   (cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs) || {
     echo "the release manifest does not describe the exact canonical-main tree" >&2
     return 65
@@ -2793,6 +2889,20 @@ verify_exact_tree_release_gates || exit 65
 # supabase/migrations/ first, because a derived set is only as good as the manifest
 # it is derived from — and the operator's list has to equal the required one exactly.
 # What is printed is two id lists and a count; there is no database in this gate.
+if [ "$LITE_LANE" -eq 1 ]; then
+  # Lite lane: the claim is read off this release's own manifest, then held to the
+  # same --verify-claim judgement as a typed one (the two are equal by construction,
+  # so what the gate below adds is the manifest-vs-migrations consistency check).
+  MIGRATION_IDS="$(cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs --phase required_for_app --list \
+    | sed 's/_.*//' | paste -sd, -)" || { echo "the release manifest required_for_app set could not be listed" >&2; exit 65; }
+  if [ -z "$MIGRATION_IDS" ]; then
+    MIGRATION_STATUS=not_required
+  elif [ "$MIGRATION_STATUS" = not_required ]; then
+    echo "lite migration status not_required contradicts the release manifest, which requires migrations before the switch" >&2
+    exit 65
+  fi
+  echo "lite lane: migration claim derived from the release manifest: status=$MIGRATION_STATUS required=$(printf '%s' "$MIGRATION_IDS" | tr ',' '\n' | grep -c .)"
+fi
 RELEASE_CLAIM="$(cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs \
   --verify-claim --status "$MIGRATION_STATUS" --ids "$MIGRATION_IDS")" || {
   printf '%s\n' "$RELEASE_CLAIM"
@@ -2929,11 +3039,13 @@ event=$CI_EVENT
 run=$RUN_ID
 gate=canonical-main-verified
 gate=github-required-jobs-green
-gate=taskboard-predeploy-ready
 gate=release-claim-derived
 gate=remote-migration-history
 gate=release-companions-verified
 EOF
+# The taskboard scope is claimed only when it was measured as satisfied: the full
+# lane cannot reach this line otherwise, the lite lane may (as a recorded warning).
+[ "$TASKBOARD_GATE" != passed ] || printf 'gate=taskboard-predeploy-ready\n' >> "$GATE_RECORD"
 sync -f "$STATE_ROOT"
 
 # The installer is invoked with the record still in place; cleanup() removes it on
@@ -2983,10 +3095,14 @@ require_ci_gate_still_fresh || {
   echo "GitHub Actions evidence expired before postdeploy browser runtime preparation" >&2
   exit 65
 }
-prepare_postdeploy_browser_image || {
-  echo "digest-pinned postdeploy browser image could not be prepared" >&2
-  exit 65
-}
+if [ "$LITE_LANE" -eq 1 ]; then
+  echo "lite lane: browser acceptance is not part of this lane; the pinned browser runtime is not prepared"
+else
+  prepare_postdeploy_browser_image || {
+    echo "digest-pinned postdeploy browser image could not be prepared" >&2
+    exit 65
+  }
+fi
 
 DEPLOY_STATE_RECORD="$(mktemp "$STATE_ROOT/deploy-state.XXXXXX")"
 chmod 0600 "$DEPLOY_STATE_RECORD"
@@ -2999,6 +3115,7 @@ NEWME_ACTOR=${SUDO_USER:-root}
 NEWME_RELEASE_SHA=$SHA
 NEWME_CI_RUN_ID=$RUN_ID
 NEWME_MIGRATION_STATUS=$MIGRATION_STATUS
+NEWME_RELEASE_LANE=$([ "$LITE_LANE" -eq 1 ] && echo lite || echo legacy)
 EOF
 
 CI_RUN_ID="$RUN_ID" \
@@ -3019,6 +3136,43 @@ MIGRATION_IDS="$REQUIRED_IDS" \
 ROLLBACK_GIT_SHA="$ROLLBACK_SHA" \
 NEWME_ASSET_BACKUP="$ASSET_BACKUP" \
 NEWME_DEPLOY_STATE_RECORD="$DEPLOY_STATE_RECORD" \
+NEWME_RELEASE_LANE="$([ "$LITE_LANE" -eq 1 ] && echo lite || echo legacy)" \
+NEWME_LITE_PRE_WARNINGS="$(printf '%s\n' "${LITE_PRE_WARNINGS[@]+"${LITE_PRE_WARNINGS[@]}"}")" \
 bash "$WORKTREE/scripts/deploy-immutable.sh" "$SHA"
 load_deploy_state && [ "$DEPLOY_STATE" = "complete=$SHA" ] || { echo "immutable deploy did not record durable completion" >&2; exit 65; }
 DEPLOY_SUCCEEDED=1
+
+if [ "$LITE_LANE" -eq 1 ]; then
+  # The release is complete. Say so once, durably (journal) and to people (the
+  # WhatsApp operations alert) when the lane recorded warnings; the ops wrapper
+  # reports the ordinary success itself.
+  LITE_EVIDENCE_FILE="$(find "/opt/newme/releases/$SHA/.audit" -maxdepth 1 -type f -name 'deploy-*.json' -print -quit 2>/dev/null || true)"
+  LITE_SUMMARY="$(python3 -c '
+import json, sys
+sha, path = sys.argv[1:]
+warnings = []
+status = "unknown"
+try:
+    with open(path, encoding="utf-8") as handle:
+        evidence = json.load(handle)
+    status = evidence.get("release_status", "unknown")
+    warnings = [w for w in ((evidence.get("lite") or {}).get("warnings") or []) if isinstance(w, str)]
+except Exception:
+    pass
+head = f"NewMe OS release {sha[:8]} ({status}, lite lane): {len(warnings)} warning(s)"
+print(head if not warnings else head + " — " + " | ".join(w[:160] for w in warnings[:4]))
+' "$SHA" "$LITE_EVIDENCE_FILE")"
+  /usr/bin/logger --journald <<EOF
+MESSAGE=$LITE_SUMMARY
+PRIORITY=5
+SYSLOG_IDENTIFIER=newme-deploy
+NEWME_RELEASE_SHA=$SHA
+NEWME_CI_RUN_ID=$RUN_ID
+NEWME_RELEASE_LANE=lite
+EOF
+  echo "$LITE_SUMMARY"
+  if [[ "$LITE_SUMMARY" != *": 0 warning(s)" ]] && [ -x /usr/local/libexec/newme/newme-whatsapp-alert.sh ]; then
+    /usr/local/libexec/newme/newme-whatsapp-alert.sh release-lite info "$LITE_SUMMARY" ||
+      echo "warning: the release warnings could not be delivered to the operations alert channel (release is complete)" >&2
+  fi
+fi

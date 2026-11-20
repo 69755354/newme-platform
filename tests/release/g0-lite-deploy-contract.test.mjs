@@ -46,6 +46,10 @@ test("deploy evidence remains bound to CI, migration, postdeploy acceptance boun
   }
   assert.match(deploy, /finalize-deploy-evidence|status=awaiting_uat/);
   assert.doesNotMatch(deploy, /"release_status":\s*"complete"/);
+  // Gate-lite: the only completion written here is the lite lane's, behind its lane check.
+  const completions = [...deploy.matchAll(/evidence\["release_status"\] = "complete"/g)];
+  assert.equal(completions.length, 1);
+  assert.match(deploy, /if release_lane == "lite":\n(?:\s*#[^\n]*\n)*\s*evidence\["release_status"\] = "complete"/);
   assert.doesNotMatch(deploy, /(?:demo|fake)[_-]?(?:ci|sha|build|migration|uat)/i);
 });
 

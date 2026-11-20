@@ -24,6 +24,39 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Data-quality checks describe the state of the business data, not whether the
+# release is broken. The lite release lane (newme-deploy lite) runs the regression
+# with CRM_REGRESSION_DATA_QUALITY=warn: a failing check in this set is reported
+# as a warning (and forwarded to the WhatsApp alert by the gate) instead of
+# rolling the release back. Connectivity, auth-boundary and schema checks are
+# never in this set: those say the application cannot serve, and still block.
+DATA_QUALITY_CHECKS = frozenset(
+    {
+        "无空名称线索",
+        "通知未超过 5000 条",
+        "至少 3 个用户",
+        "含 admin + sales 角色",
+        "有线索数据",
+        "停用人员的历史负责人身份仍可解析",
+        "转移候选只含启用的 sales/operator/boss",
+        "允许停用人员且启用状态可读取",
+    }
+)
+DATA_QUALITY_MODES = ("block", "warn")
+
+
+def is_data_quality_check(name: str) -> bool:
+    return name in DATA_QUALITY_CHECKS
+
+
+def data_quality_mode_from_env(environ: dict[str, str] | None = None) -> str:
+    value = (environ if environ is not None else os.environ).get("CRM_REGRESSION_DATA_QUALITY", "block")
+    if value not in DATA_QUALITY_MODES:
+        raise RuntimeError(
+            f"CRM_REGRESSION_DATA_QUALITY must be one of {', '.join(DATA_QUALITY_MODES)} (got: {value!r})"
+        )
+    return value
 SALES_CAPABLE_ROLES = {"sales", "operator", "boss"}
 KPI_ASSIGNEE_EMBED = "profiles!kpi_targets_assigned_to_fkey(full_name)"
 KPI_ROUTE_FILES = (
@@ -139,6 +172,33 @@ def run_contract_self_test() -> int:
     else:
         raise AssertionError("release-scoped service key must be rejected")
 
+    # Gate-lite: a data-quality finding warns in warn mode and blocks in block mode;
+    # an application/connectivity finding blocks in both.
+    for mode, expect_failed, expect_warned in (("warn", 0, 1), ("block", 1, 0)):
+        probe = Regression(
+            base_url="http://127.0.0.1:1",
+            supabase_url="https://example.invalid",
+            service_key="unused",
+            publishable_key="unused",
+            result_file=Path(os.devnull),
+            verbose=False,
+            data_quality_mode=mode,
+        )
+        assert is_data_quality_check("无空名称线索")
+        assert not is_data_quality_check("健康检查 API 200")
+        probe.check("无空名称线索", False, "1 条空名称")
+        assert (probe.failed, probe.warned) == (expect_failed, expect_warned), mode
+        probe.check("健康检查 API 200", False, "返回 503")
+        assert probe.failed == expect_failed + 1, mode
+    assert data_quality_mode_from_env({}) == "block"
+    assert data_quality_mode_from_env({"CRM_REGRESSION_DATA_QUALITY": "warn"}) == "warn"
+    try:
+        data_quality_mode_from_env({"CRM_REGRESSION_DATA_QUALITY": "ignore"})
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("an unknown data-quality mode must be rejected")
+
     print("contract self-test passed")
     return 0
 
@@ -194,7 +254,12 @@ class Regression:
         publishable_key: str,
         result_file: Path,
         verbose: bool,
+        data_quality_mode: str = "block",
     ) -> None:
+        if data_quality_mode not in DATA_QUALITY_MODES:
+            raise ValueError(f"unknown data-quality mode {data_quality_mode!r}")
+        self.data_quality_mode = data_quality_mode
+        self.warned = 0
         self.base_url = base_url.rstrip("/")
         self.supabase_url = supabase_url.rstrip("/")
         self.service_key = service_key
@@ -212,6 +277,11 @@ class Regression:
         if condition:
             self.passed += 1
             return True
+        if self.data_quality_mode == "warn" and is_data_quality_check(name):
+            # Lite lane: the release stays up, the finding goes to the alert channel.
+            self.warned += 1
+            self.warnings.append(f"数据质量告警: {name} — {detail}（不阻断发布）")
+            return False
         self.failed += 1
         self.errors.append(f"失败: {name} — {detail}")
         return False
@@ -483,6 +553,8 @@ class Regression:
         result = {
             "pass": self.passed,
             "fail": self.failed,
+            "warned": self.warned,
+            "data_quality_mode": self.data_quality_mode,
             "total": self.passed + self.failed,
             "errors": self.errors,
             "warnings": self.warnings,
@@ -560,6 +632,7 @@ def main() -> int:
         publishable_key=publishable_key,
         result_file=args.result_file,
         verbose=args.verbose,
+        data_quality_mode=data_quality_mode_from_env(),
     )
     return regression.run(mode)
 

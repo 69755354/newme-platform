@@ -64,7 +64,7 @@ export const REQUIRED_GATES = [
   // completeness it cannot have established is the same class of false claim this
   // installer refuses everywhere else, so the gate is named for what is actually
   // measured, and release-final completeness stays with the required CI job.
-  "taskboard-predeploy-ready",
+  // Gate-lite (2026-11-20): the predeploy scope moved to OPTIONAL_GATES below.
   // Round-4 C4-1. The migration set the deploy verifies is derived from that
   // tree's own release manifest, and the operator's list equals it exactly — a
   // proper subset of required_for_app used to pass every gate here with the
@@ -80,6 +80,15 @@ export const REQUIRED_GATES = [
   // has to be taken back out.
   "release-companions-verified",
 ];
+
+/**
+ * Gates a wrapper MAY name without being required to. The TASKBOARD predeploy
+ * scope is a project-management fact, not a production-safety one: the lite
+ * lane (`newme-deploy lite`) records it when it passes and warns when it does
+ * not, while the full lane and every wrapper before the lite lane always wrote
+ * it. Both records must stay installable, so the name is known but optional.
+ */
+export const OPTIONAL_GATES = ["taskboard-predeploy-ready"];
 
 export const DEFAULT_STATE_ROOT = "/var/lib/newme/deploy-state";
 export const DEFAULT_MAX_AGE_SECONDS = 900;
@@ -147,7 +156,7 @@ export function checkGateRecord({
   if (missing.length > 0) {
     problems.push(`the gate record does not account for: ${missing.join(", ")}`);
   }
-  const unknown = gates.filter((gate) => !REQUIRED_GATES.includes(gate));
+  const unknown = gates.filter((gate) => !REQUIRED_GATES.includes(gate) && !OPTIONAL_GATES.includes(gate));
   if (unknown.length > 0) {
     // Not pedantry: a wrapper claiming gates this installer has never heard of is
     // a wrapper from a different release, and it cannot be given the benefit of

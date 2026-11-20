@@ -31,7 +31,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   REQUIRED_GATES,
-  OPTIONAL_GATES,
   DEFAULT_MAX_AGE_SECONDS,
   checkGateRecord,
   checkOwnership,
@@ -454,49 +453,6 @@ test("the f37c203 wrapper running in production sets no gate record and runs non
   assert.ok(call, "the f37c203 installer call could not be located");
   const exported = call[1].match(/[A-Z_]+(?==)/g) ?? [];
   assert.deepEqual(exported, ["NEWME_ASSET_BACKUP_RECORD"]);
-});
-
-// ---------------------------------------------------------------------------
-// Gate-lite (2026-11-20): the taskboard scope is a known but optional gate
-// ---------------------------------------------------------------------------
-
-test("a record that also names the optional taskboard gate (every pre-lite wrapper, and the lite lane when the board is clean) is accepted", () => {
-  assert.deepEqual(OPTIONAL_GATES, ["taskboard-predeploy-ready"]);
-  const judge = (gates) =>
-    checkGateRecord({ text: `${validLines({ gates }).join("\n")}\n`, expectSha: SHA, mtimeMs: NOW_MS, nowMs: NOW_MS });
-  assert.deepEqual(judge([...REQUIRED_GATES, ...OPTIONAL_GATES]), []);
-  if (CAN_PRODUCE_ROOT_OWNED) {
-    const root = stateRoot();
-    const result = runGuard({ record: writeRecord(root, validLines({ gates: [...REQUIRED_GATES, ...OPTIONAL_GATES] })), root });
-    assert.equal(result.code, 0, result.stderr);
-    assert.match(result.stdout, new RegExp(`${REQUIRED_GATES.length} required gate\\(s\\) accounted for`));
-  }
-});
-
-test("a record without the optional taskboard gate (the lite lane with a warned board) is accepted, and an unknown gate still is not", () => {
-  const judge = (gates) =>
-    checkGateRecord({ text: `${validLines({ gates }).join("\n")}\n`, expectSha: SHA, mtimeMs: NOW_MS, nowMs: NOW_MS });
-  assert.deepEqual(judge(REQUIRED_GATES), []);
-  const unknown = judge([...REQUIRED_GATES, "taskboard-complete"]);
-  assert.equal(unknown.length, 1);
-  assert.match(unknown[0], /claims gates this installer does not know: taskboard-complete/);
-  // And the optional gate does not stand in for a required one.
-  const substituted = judge([...REQUIRED_GATES.slice(1), ...OPTIONAL_GATES]);
-  assert.match(substituted.join("\n"), new RegExp(`does not account for: ${REQUIRED_GATES[0]}`));
-});
-
-test("the wrapper appends the taskboard gate only when it measured the board as satisfied", () => {
-  assert.match(
-    wrapperSource,
-    /\[ "\$TASKBOARD_GATE" != passed \] \|\| printf 'gate=taskboard-predeploy-ready\\n' >> "\$GATE_RECORD"/,
-  );
-  assert.match(wrapperSource, /TASKBOARD_GATE=passed/);
-  assert.match(wrapperSource, /TASKBOARD_GATE=warned/);
-  // The optional line is appended after the heredoc and before the record is flushed.
-  const heredocEnd = wrapperSource.indexOf("gate=release-companions-verified\nEOF\n");
-  const append = wrapperSource.indexOf("printf 'gate=taskboard-predeploy-ready\\n' >> \"$GATE_RECORD\"");
-  const flush = wrapperSource.indexOf('sync -f "$STATE_ROOT"', heredocEnd);
-  assert.ok(heredocEnd > 0 && append > heredocEnd && flush > append);
 });
 
 // ---------------------------------------------------------------------------

@@ -36,6 +36,8 @@ Kept from the full lane, unchanged (production-safety gates):
 - a completed, successful `workflow_dispatch` run of `ci.yml` on exactly that
   SHA with every job in `infra/release/required-jobs.json` green (the run id is
   resolved from GitHub when omitted, then verified exactly like a typed one);
+- the TASKBOARD `predeploy_ready` scope (AGENTS.md: an unfinished row aborts the
+  deploy; seconds, never load-sensitive);
 - release manifest ↔ migrations consistency, production migration-history
   reconciliation, database posture and hand-run companion hashes, pre-switch
   revalidation;
@@ -54,7 +56,6 @@ Changed in the lite lane only:
 | Full lane | Lite lane |
 | --- | --- |
 | run id, migration ids, rollback SHA typed by the operator | derived (GitHub API, release manifest, live release) and verified the same way |
-| TASKBOARD `predeploy_ready` scope blocks | warning; the gate record omits the optional `taskboard-predeploy-ready` line |
 | host load must settle within 120 s or the release fails | 600 s, then a warning; the retrying health probe is the judge |
 | `l0-composite-probe.sh` (alert provider + host metrics) failure fails the release | warning |
 | data-quality regression checks (`无空名称线索`, `通知未超过 5000 条`, …) roll back | warnings, forwarded to the WhatsApp alert |
@@ -75,10 +76,9 @@ wrapper wrote. The sequence for the PR that introduces the lite lane is:
 2. Release it once more through the full lane (`tools/release_pr.sh` /
    `release_batch.sh` → `release_chain.sh`). The **old** wrapper runs every old
    gate, writes its six-line gate record (`event=workflow_dispatch` and the six
-   gate names including `taskboard-predeploy-ready`) and calls the **new**
-   tree's `install-systemd-assets.sh`. The new verifier accepts that record:
-   the five required gates are present and the sixth is a known optional gate.
-   The installer then installs the new `/usr/local/sbin/newme-deploy`.
+   gate names) and calls the **new** tree's `install-systemd-assets.sh`, whose
+   verifier requires exactly those six gates (unchanged). The installer then
+   installs the new `/usr/local/sbin/newme-deploy`.
 3. The old wrapper continues with the **new** `deploy-immutable.sh`, which is
    invoked without `NEWME_RELEASE_LANE` and therefore behaves exactly as
    before (`awaiting_uat`, single-lane semantics, same evidence shape).

@@ -1805,9 +1805,9 @@ LITE_PRE_WARNINGS=()
 # release-candidate CI on that SHA, migration history and posture, config and
 # credential validation, control-plane asset transaction, post-switch health,
 # smoke and log scan with automatic rollback) and drops the ceremony around it:
-# the run id, migration set and rollback SHA are derived instead of typed, the
-# taskboard scope and data-quality findings warn instead of blocking, and the
-# release is complete when this command returns — no accept/attest/closure PR/
+# the run id, migration set and rollback SHA are derived instead of typed,
+# data-quality findings warn instead of blocking (the taskboard scope still
+# blocks, in every lane), and the release is complete when this command returns — no accept/attest/closure PR/
 # release-final CI/finalize. The full lane is untouched and still available.
 
 SHA=${1:-}
@@ -2257,21 +2257,14 @@ CI_EVENT=workflow_dispatch
 # The worktree is always a root-owned detached checkout of canonical main at the
 # exact SHA whose successful run was verified above. Keeping these checks in one
 # function prevents the database-only path from becoming a weaker shadow deploy.
-TASKBOARD_GATE=""
 verify_exact_tree_release_gates() {
   require_node || return 65
-  if "$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-scope=predeploy_ready; then
-    TASKBOARD_GATE=passed
-  elif [ "$LITE_LANE" -eq 1 ]; then
-    # Lite lane: the board is a project-management fact, not a production-safety
-    # one. It is recorded as a warning and the gate record simply does not claim it.
-    TASKBOARD_GATE=warned
-    echo "warning (lite lane, release continues): TASKBOARD.md at canonical main is not predeploy-ready" >&2
-    LITE_PRE_WARNINGS+=("TASKBOARD.md predeploy_ready scope is not satisfied at $SHA")
-  else
+  # Fail-closed in every lane, the lite lane included (AGENTS.md: any unfinished
+  # board row aborts the deploy; the check takes seconds and is never load-sensitive).
+  "$NODE_BIN" "$WORKTREE/scripts/check-taskboard.mjs" --require-scope=predeploy_ready || {
     echo "TASKBOARD.md at canonical main is not predeploy-ready; production operation is blocked" >&2
     return 65
-  fi
+  }
   (cd "$WORKTREE" && "$NODE_BIN" scripts/check-release-manifest.mjs) || {
     echo "the release manifest does not describe the exact canonical-main tree" >&2
     return 65
@@ -3061,13 +3054,11 @@ event=$CI_EVENT
 run=$RUN_ID
 gate=canonical-main-verified
 gate=github-required-jobs-green
+gate=taskboard-predeploy-ready
 gate=release-claim-derived
 gate=remote-migration-history
 gate=release-companions-verified
 EOF
-# The taskboard scope is claimed only when it was measured as satisfied: the full
-# lane cannot reach this line otherwise, the lite lane may (as a recorded warning).
-[ "$TASKBOARD_GATE" != passed ] || printf 'gate=taskboard-predeploy-ready\n' >> "$GATE_RECORD"
 sync -f "$STATE_ROOT"
 
 # The installer is invoked with the record still in place; cleanup() removes it on

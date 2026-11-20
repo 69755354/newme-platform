@@ -5,9 +5,9 @@
  * SHA, a green release-candidate run on that SHA, the migration-history and
  * posture gates, the control-plane asset transaction and the post-switch
  * health / smoke / log gates with automatic rollback. What it changes: the run id,
- * migration set and rollback SHA are derived; the taskboard scope, host-load
- * settle, the observability composite probe and data-quality regression findings
- * are warnings; the evidence is complete when the command returns.
+ * migration set and rollback SHA are derived; host-load settle, the observability
+ * composite probe and data-quality regression findings are warnings (the
+ * taskboard scope still blocks); the evidence is complete when the command returns.
  *
  * The health probe is executed, not grepped: a bounded retry that still fails
  * closed is the difference between "load-aware" and "ignores health".
@@ -76,6 +76,11 @@ test("the lite lane is handed to deploy-immutable explicitly and skips only the 
     assert.ok(WRAPPER.includes(gate), `${gate} is missing`);
   }
   assert.doesNotMatch(WRAPPER, /LITE_LANE" -eq 1 \] \|\| "\$NODE_BIN" "\$WORKTREE\/scripts\/verify-remote-migration-history/);
+  // AGENTS.md: an unfinished board aborts the deploy, in the lite lane too. The check stays
+  // unconditional and the gate record always claims it (review of #579).
+  assert.match(WRAPPER, /"\$NODE_BIN" "\$WORKTREE\/scripts\/check-taskboard\.mjs" --require-scope=predeploy_ready \|\| \{\n\s*echo "TASKBOARD\.md at canonical main is not predeploy-ready; production operation is blocked" >&2\n\s*return 65\n\s*\}/);
+  assert.doesNotMatch(WRAPPER, /TASKBOARD_GATE|OPTIONAL_GATES/);
+  assert.match(WRAPPER, /gate=github-required-jobs-green\ngate=taskboard-predeploy-ready\ngate=release-claim-derived/);
 });
 
 test("deploy-immutable: the post-switch health probe retries while the host is busy and still fails closed", () => {

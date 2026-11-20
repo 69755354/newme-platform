@@ -398,3 +398,47 @@ test("sheets client never repeats an append after a network error or 5xx, but do
     assert.equal(appendCalls, expectedCalls, String(first));
   }
 });
+
+test("S30: a retried unmatched click id keeps its first pending time and expires after pendingDays", async () => {
+  const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: salesGrid([]) });
+  await t.run();
+  const first = t.io.readState().pending_ctwa["00000001-0000-0000-0000-000000000000"];
+  assert.ok(first);
+  t.clock.t += 3_600_000; await t.run();
+  assert.equal(t.io.readState().pending_ctwa["00000001-0000-0000-0000-000000000000"], first, "retry does not reset the start time");
+  t.clock.t += DEFAULTS.pendingDays * 86_400_000; await t.run();
+  assert.equal(Object.keys(t.io.readState().pending_ctwa).length, 0, "dropped after the expiry");
+});
+
+test("S30: a failed provenance format write is saved and finished on the next run", async () => {
+  const t = setup([lead(1)], { [META]: metaGrid(), [SALES]: salesGrid([]) });
+  const failing = { ...t.sheets, batchUpdateCells: async (id) => { if (id === META) throw new SyncError("http_500", "boom"); return {}; } };
+  Object.defineProperty(failing, "requestCount", { get: () => 0 });
+  await assert.rejects(() => t.run({ sheets: failing }), (e) => e.code === "http_500");
+  assert.equal(t.sheets.grids[META].length, 2, "the row values landed");
+  const pending = t.io.readState().pending_meta_format;
+  assert.equal(Object.keys(pending).length, 1, "the unfinished blue + note is in the state");
+  const r = await t.run();
+  assert.equal(r.summary.meta_appends + r.summary.meta_updates, 0, "values are already there");
+  assert.equal(t.sheets.fmt[`${META}:2,0`]?.bg?.blue, 1, "the row is blue now");
+  assert.match(t.sheets.fmt[`${META}:2,0`]?.note ?? "", /OS 更新/);
+  assert.deepEqual(t.io.readState().pending_meta_format, {}, "cleared after success");
+});
+
+test("S30: a NAS upload failure counts in worker health and reconcile reports the unconfirmed spool as drift", async () => {
+  const leads = [lead(1)];
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001")]) });
+  t.nas.fail = true;
+  const r = await t.run();
+  assert.equal(r.exitCode, 1);
+  const st = t.io.readState();
+  assert.equal(st.consecutive_failures, 1); assert.equal(st.last_ok_at, null, "last_ok_at not advanced");
+  const rec = await runReconcile({ osReader: reader(leads), sheets: t.sheets, io: t.io, now: () => t.clock.t });
+  assert.equal(rec.exitCode, 1); assert.equal(rec.summary.drift, true);
+  assert.match(readFileSync(rec.summary.report, "utf8"), /nas_unconfirmed_spool_days: 1/);
+  t.nas.fail = false; t.clock.t += 300_000; await t.run();
+  assert.equal(t.io.readState().consecutive_failures, 0); assert.ok(t.io.readState().last_ok_at);
+  const ok = await runReconcile({ osReader: reader(leads), sheets: t.sheets, io: t.io, now: () => t.clock.t });
+  assert.match(readFileSync(ok.summary.report, "utf8"), /nas_unconfirmed_spool_days: 0/);
+  assert.equal(ok.exitCode, 0);
+});

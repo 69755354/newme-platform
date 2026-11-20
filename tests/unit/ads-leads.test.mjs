@@ -4,7 +4,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import {
-  adLabel, attributionGroup, buildAdBreakdown, buildAdNameMap, costPerLead, dubaiWeekStartKey, isAdLead, resolveAdsWindow,
+  adLabel, adNameKey, attributionGroup, buildAdBreakdown, buildAdNameMap, costPerLead, dubaiWeekStartKey, isAdLead, resolveAdsWindow,
   spendFreshness, weeklyLeadCost,
 } from "../../src/lib/ads-leads.mjs";
 import { defaultWindow } from "../../src/lib/meta-ads-insights.mjs";
@@ -196,4 +196,27 @@ test("the ads page clears ROI on a window change and shows an error on a failed 
   assert.match(page, /if \(!res\.ok\) throw new Error/);
   assert.match(page, /catch \(err\) \{[^}]*setRoi\(null\); setRoiError\(true\)/);
   assert.match(page, /\{roiError && /);
+});
+
+test("S30: per-ad spend keys keep Chinese and Arabic letters, so those ads keep their spend", () => {
+  assert.equal(adNameKey("别墅 春季 Villa!"), "别墅-春季-villa");
+  assert.equal(adNameKey("فيلا  دبي"), "فيلا-دبي");
+  assert.notEqual(adNameKey("别墅广告"), adNameKey("厨房广告"), "two Chinese names no longer collapse to one empty key");
+  assert.equal(adNameKey("Villa Spring"), "villa-spring", "Latin names keep their old key");
+  const leads = [
+    { ad_id: "9001", ad_name: "别墅广告", created_at: "2026-11-01T08:00:00Z" },
+    { ad_id: "9002", ad_name: "فيلا دبي", created_at: "2026-11-01T08:00:00Z" },
+  ];
+  const rows = buildAdBreakdown([{ ad_name: "别墅广告", amount: 100 }, { ad_name: "فيلا دبي", amount: 50 }], leads);
+  const by = Object.fromEntries(rows.map((r) => [r.ad_id, r]));
+  assert.equal(by["9001"].spend, 100); assert.equal(by["9001"].cpl, 100); assert.equal(by["9001"].spend_ambiguous, false);
+  assert.equal(by["9002"].spend, 50);
+});
+
+test("S30: with the All filter the ads page labels spend and cost per lead as the last 90 days", () => {
+  const src = read("src/app/(dashboard)/ads/page.tsx");
+  assert.match(src, /days === 0 \? 90 : days/, "All still reads 90 days of spend");
+  assert.equal((src.match(/days === 0 && <p[^>]*>\{t\("ads\.roiPeriod90"\)\}<\/p>/g) ?? []).length, 2, "label on the summary and on the weekly / per-ad tables");
+  const tr = read("src/lib/i18n/translations.ts");
+  assert.equal((tr.match(/roiPeriod90: ".*90.*"/g) ?? []).length, 2, "English and Chinese text");
 });

@@ -201,6 +201,8 @@ export default function AdsPage() {
       {roi && (
         <p className="text-xs text-muted-foreground">{t("ads.dataUpdated")}: {roi.data_last_updated ?? "—"}</p>
       )}
+      {/* "All" reads spend over 90 days (see WINDOW_OPTIONS): say so wherever spend is shown */}
+      {roi && days === 0 && <p className="text-xs text-amber-400" data-testid="roi-period-90">{t("ads.roiPeriod90")}</p>}
 
       {/* Summary: leads, cost per lead - the return stops at leads */}
       <div className={cn("grid grid-cols-2 gap-3", roi?.summary ? "md:grid-cols-5" : "md:grid-cols-2")}>
@@ -241,7 +243,7 @@ export default function AdsPage() {
         </div>
         <div className="flex gap-1 bg-muted p-1 rounded-lg">
           {(Object.entries(viewLabels) as [string, string][]).map(([key, label]) => (
-            <button key={key} onClick={() => setViewMode(key as any)}
+            <button key={key} onClick={() => setViewMode(key as typeof viewMode)}
               className={cn("px-3 py-1.5 text-xs rounded-md font-medium transition-colors",
                 viewMode === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               {label}
@@ -298,6 +300,7 @@ export default function AdsPage() {
       {/* Cost per lead per week and per ad (boss/admin only: spend is not shown to operator) */}
       {roi && (
         <div className="grid gap-4 md:grid-cols-2">
+          {days === 0 && <p className="md:col-span-2 text-xs text-amber-400">{t("ads.roiPeriod90")}</p>}
           <div className="rounded-xl border border-border/50 overflow-hidden">
             <h3 className="px-4 py-2 text-sm font-semibold bg-muted/30">{t("ads.cplByWeek")}</h3>
             <div className="overflow-x-auto">

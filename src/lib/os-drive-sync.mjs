@@ -298,7 +298,7 @@ export function diffReadBack(expected, actual) {
 // ---------- state ----------
 export function emptyState() {
   return { version: 1, leads_cursor: null, events_cursor: null, pending_ctwa: {}, last_ok_at: null, last_run_at: null,
-    consecutive_failures: 0, nas_uploaded: {}, x_written: {}, x_manual_marked: {}, meta_times: {}, meta_header_noted: false };
+    consecutive_failures: 0, nas_uploaded: {}, x_written: {}, x_manual_marked: {}, meta_times: {}, meta_header_noted: false, pending_meta_format: {} };
 }
 export function normalizeState(raw) {
   const base = emptyState();
@@ -307,7 +307,8 @@ export function normalizeState(raw) {
     nas_uploaded: raw.nas_uploaded && typeof raw.nas_uploaded === "object" ? raw.nas_uploaded : {},
     x_written: raw.x_written && typeof raw.x_written === "object" ? raw.x_written : {},
     x_manual_marked: raw.x_manual_marked && typeof raw.x_manual_marked === "object" ? raw.x_manual_marked : {},
-    meta_times: raw.meta_times && typeof raw.meta_times === "object" ? raw.meta_times : {} };
+    meta_times: raw.meta_times && typeof raw.meta_times === "object" ? raw.meta_times : {},
+    pending_meta_format: raw.pending_meta_format && typeof raw.pending_meta_format === "object" ? raw.pending_meta_format : {} };
 }
 /** Query lower bound: cursor minus the overlap, so a late-committing row is never skipped. Null = full read. */
 export function sinceFromCursor(cursor, overlapSeconds = DEFAULTS.overlapSeconds) {

@@ -153,11 +153,15 @@ export function weeklyLeadCost(spendRows, leads) {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-/** Name key used to join ad_spend (which has no ad_id column) to leads. */
+/**
+ * Name key used to join ad_spend (which has no ad_id column) to leads. Unicode-aware: letters, combining marks
+ * and digits of any script are kept (Chinese / Arabic ad names used to collapse to "" and lose their spend);
+ * only punctuation and symbols are dropped.
+ */
 export function adNameKey(name) {
   const n = clean(name);
   if (!n) return "";
-  return n.toLowerCase().replace(/\s+/g, " ").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, "-");
+  return n.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").replace(/[^\p{L}\p{M}\p{N}\s]/gu, "").trim().replace(/\s+/g, "-");
 }
 
 /**

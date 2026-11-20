@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { normalizedPhone } from "./capi-hash.mjs";
 import type { WebsiteLeadInput } from "@/lib/public-lead";
 
 export type MetaCapiLead = {
@@ -26,12 +27,7 @@ export type MetaCapiPayload = {
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 
-export function normalizedPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (/^0\d{9}$/.test(digits)) return `971${digits.slice(1)}`;
-  if (/^\d{9}$/.test(digits)) return `971${digits}`;
-  return digits;
-}
+export { normalizedPhone };
 
 function normalizedName(name: string): string {
   return name.trim().toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");

@@ -2,32 +2,43 @@
 // Prepared operator tool. Default is read-only; no scheduler is installed here.
 import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { attemptCapiDelivery } from "../src/lib/meta-capi-delivery.ts";
+import { attemptCapiDelivery, kindOfOutboxRow, LEAD_DELIVERY, OUTBOX_KINDS, WA_QUOTE_DELIVERY } from "../src/lib/meta-capi-delivery.ts";
+import { sendWhatsAppCapiPayload } from "../src/lib/whatsapp-capi.mjs";
 import { sendMetaCapiPayload } from "../src/lib/meta-capi.ts";
 
 export async function retryCapiDeliveries(db, { execute = false, limit = 20, now = Date.now(),
-  send = sendMetaCapiPayload } = {}) {
+  send = sendMetaCapiPayload, sendWhatsApp = sendWhatsAppCapiPayload } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid retry limit");
-  const result = await db.from("business_events").select("id, event_data")
-    .eq("event_type", "meta_capi_lead_delivery")
-    .in("event_data->>status", ["pending", "failed", "sending"])
-    .in("event_data->>attempts", ["0", "1", "2", "3", "4"])
-    .gte("created_at", new Date(now - 86_400_000).toISOString())
-    .order("created_at", { ascending: true }).limit(limit);
-  if (result.error) throw new Error("CAPI retry queue unavailable");
   const summary = { mode: execute ? "execute" : "dry_run", examined: 0,
     delivered: 0, failed: 0, busy: 0, review_required: 0, errors: 0 };
+  // One outbox type; the kind (website Lead, website quote/purchase, WhatsApp quote) comes from the stored payload.
+  const widest = Math.max(...Object.values(OUTBOX_KINDS).map((k) => k.maxAgeMs));
+  const result = await db.from("business_events").select("id, event_data")
+    .eq("event_type", LEAD_DELIVERY.eventType)
+    .in("event_data->>status", ["pending", "failed", "sending"])
+    .in("event_data->>attempts", ["0", "1", "2", "3", "4"])
+    .gte("created_at", new Date(now - widest).toISOString())
+    // Over-fetch: rows past their own kind's window (e.g. a Lead older than 24h) are skipped below and must not
+    // use up the batch, or they would starve newer rows. At most `limit` rows are examined.
+    .order("created_at", { ascending: true }).limit(Math.min(limit * 10, 1000));
+  if (result.error) throw new Error("CAPI retry queue unavailable");
   for (const row of result.data || []) {
+    if (summary.examined >= limit) break;
+    const kind = kindOfOutboxRow(row);
+    const queuedMs = Date.parse(row.event_data?.queued_at);
+    // Unknown kinds are left alone; rows past their kind's window keep the old behaviour (not retried here).
+    if (!kind || (Number.isFinite(queuedMs) && now - queuedMs >= kind.maxAgeMs)) continue;
     summary.examined++;
     if (!execute) continue;
     try {
-      const outcome = await attemptCapiDelivery(db, row, send, Date.now());
+      const sender = kind === WA_QUOTE_DELIVERY ? sendWhatsApp : send;
+      const outcome = await attemptCapiDelivery(db, row, sender, Date.now(), kind);
       if (outcome === "review_required") {
         // Persist terminal validation failures so subsequent batches advance.
         // Compare the observed state; never replace a concurrent sender's receipt.
         let mark = db.from("business_events").update({ event_data: {
           ...row.event_data, status: "review_required", review_required_at: new Date().toISOString(),
-        } }).eq("id", row.id).eq("event_type", "meta_capi_lead_delivery")
+        } }).eq("id", row.id).eq("event_type", kind.eventType)
           .eq("event_data->>status", row.event_data.status)
           .eq("event_data->>attempts", String(row.event_data.attempts));
         if (row.event_data.lease_id) mark = mark.eq("event_data->>lease_id", row.event_data.lease_id);

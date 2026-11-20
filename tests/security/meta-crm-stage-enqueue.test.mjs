@@ -42,6 +42,12 @@ const waStub = {
   enqueueWhatsAppCapiForProgress: async (_db, leadId, key) => { waCalls.push(["progress", leadId, key]); return "queued"; },
   enqueueWhatsAppPurchaseForLead: async (_db, leadId) => { waCalls.push(["purchase", leadId]); return "queued"; },
 };
+// The routes reach the WhatsApp progress queue and the website quote/purchase queues through this module.
+const valuedStub = {
+  enqueueWhatsAppProgressWithDelivery: waStub.enqueueWhatsAppCapiForProgress,
+  enqueueWebsiteQuoteForProgress: async () => "skipped",
+  enqueueWebsitePurchaseForLead: async () => "skipped",
+};
 
 function loadStageRoute({ rpcResult, enqueued }) {
   const chain = (result) => {
@@ -68,6 +74,7 @@ function loadStageRoute({ rpcResult, enqueued }) {
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "contacted" }, { key: "requirement_confirmed" }] },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async (_db, lead, stage) => { enqueued.push([lead.id, stage]); return "queued"; } },
     "@/lib/whatsapp-capi.mjs": waStub,
+    "@/lib/website-capi-valued": valuedStub,
     "@/lib/supabase-admin": { supabaseAdmin: admin },
     "next/server": nextServer,
   });
@@ -143,6 +150,7 @@ function loadMilestoneRoute({ queued, insertError = null, existing = [] }) {
     "@/lib/milestone-stage-advance.mjs": milestoneStageAdvance,
     "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async (db, leadId, key) => { queued.push([db.tag, leadId, key]); return "queued"; } },
     "@/lib/whatsapp-capi.mjs": waStub,
+    "@/lib/website-capi-valued": valuedStub,
     "next/server": nextServer,
   });
 }

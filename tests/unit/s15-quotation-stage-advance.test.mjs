@@ -119,6 +119,8 @@ const firstContactGate = await import("../../src/lib/first-contact-gate.mjs");
 
 async function generate(lead) {
   const world = makeWorld(lead);
+  const metaFeedback = [];
+  const record = (path) => async (_db, leadId, key) => { metaFeedback.push(`${path}:${key}`); return "skipped"; };
   const route = loadModule("src/app/api/quotations/generate/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => ({ body, status: init?.status ?? 200 }) } },
     "next/cache": { revalidatePath() {} },
@@ -139,6 +141,8 @@ async function generate(lead) {
     "@/lib/quotation-labour-basis.mjs": { formatInstallLabourNote: () => "" },
     "@/lib/milestone-stage-advance.mjs": stageAdvance,
     "@/lib/first-contact-gate.mjs": firstContactGate,
+    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: record("form") },
+    "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: record("whatsapp"), enqueueWebsiteQuoteForProgress: record("website") },
   });
   const testEnv = {
     NEXT_PUBLIC_SUPABASE_URL: "https://example.invalid",
@@ -148,7 +152,7 @@ async function generate(lead) {
   Object.assign(process.env, testEnv);
   try {
     const response = await route.POST({ json: async () => ({ lead_id: LEAD_ID, devices: { "device-1": 1 } }) });
-    return { response, state: world.state, logs: world.state.logs };
+    return { response, state: world.state, logs: world.state.logs, metaFeedback };
   } finally {
     for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[name];
@@ -166,7 +170,7 @@ const READY = {
 };
 
 test("a new lead that meets the gates is advanced one audited step at a time, never by a direct stage write", async () => {
-  const { response, state, logs } = await generate({ stage: "new", ...READY });
+  const { response, state, logs, metaFeedback } = await generate({ stage: "new", ...READY });
   assert.equal(response.status, 200);
   assert.equal(response.body.quote_no, "NM-2026-0042");
   assert.deepEqual(state.adminStageWrites, [], "no service-role stage write");
@@ -177,23 +181,26 @@ test("a new lead that meets the gates is advanced one audited step at a time, ne
   assert.equal(response.body.stage_advanced, true);
   assert.equal(response.body.lead_stage, "quotation_submitted");
   assert.deepEqual(noErrors(logs), []);
+  assert.deepEqual(metaFeedback, ["form:quotation_submitted", "whatsapp:quotation_submitted", "website:quotation_submitted"]);
 });
 
 test("a lead the first-contact gate holds back still gets its quotation, stays put, and nothing is logged as an error", async () => {
-  const { response, state, logs } = await generate({ stage: "new", quality: null, contacts: [] });
+  const { response, state, logs, metaFeedback } = await generate({ stage: "new", quality: null, contacts: [] });
   assert.equal(response.status, 200);
   assert.equal(response.body.quote_id, QUOTE_ID);
   assert.deepEqual(state.adminStageWrites, []);
   assert.equal(state.stage, "new");
   assert.equal(response.body.stage_advanced, false);
   assert.equal(response.body.stage_advance_reason, "first_contact_gate");
+  assert.deepEqual(metaFeedback, [], "no Meta quote feedback while the lead has not reached quotation_submitted");
   assert.deepEqual(noErrors(logs), []);
   assert.ok(logs.some(([level]) => level === "info"), "recorded at info level");
 });
 
 test("a lead already past quotation_submitted (or finished) is left alone without a backwards write or an error", async () => {
   for (const [stage, final_status] of [["quotation_submitted", null], ["negotiation", null], ["pending_decision", null], ["won", "won"], ["lost", "lost"]]) {
-    const { response, state, logs } = await generate({ stage, final_status, ...READY });
+    const { response, state, logs, metaFeedback } = await generate({ stage, final_status, ...READY });
+    assert.deepEqual(metaFeedback, [], stage);
     assert.equal(response.status, 200, stage);
     assert.deepEqual(state.adminStageWrites, [], stage);
     assert.deepEqual(state.rpcCalls, [], stage);

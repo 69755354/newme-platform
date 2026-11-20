@@ -15,12 +15,42 @@ export type CapiDelivery = {
   };
 };
 
+export type CapiDeliveryKind = {
+  eventType: string; eventName: string; actionSource: string; maxAgeMs: number; requireSiteUrl: boolean;
+};
+export const LEAD_DELIVERY: CapiDeliveryKind = {
+  eventType: "meta_capi_lead_delivery", eventName: "Lead", actionSource: "website", maxAgeMs: 86_400_000, requireSiteUrl: true,
+};
+// Valued follow-up events (quote sent, deal signed) are queued days after the visit; Meta rejects events older than
+// 7 days, so retry for up to 6 days and never change event_id/event_time.
+export const QUOTE_DELIVERY: CapiDeliveryKind = {
+  eventType: "meta_capi_lead_delivery", eventName: "InitiateCheckout", actionSource: "system_generated",
+  maxAgeMs: 6 * 86_400_000, requireSiteUrl: false,
+};
+export const PURCHASE_DELIVERY: CapiDeliveryKind = {
+  eventType: "meta_capi_lead_delivery", eventName: "Purchase", actionSource: "system_generated",
+  maxAgeMs: 6 * 86_400_000, requireSiteUrl: false,
+};
+// Click-to-WhatsApp quote: business-messaging payload, sent to the WhatsApp dataset by the caller's sender.
+export const WA_QUOTE_DELIVERY: CapiDeliveryKind = {
+  eventType: "meta_capi_lead_delivery", eventName: "InitiateCheckout", actionSource: "business_messaging",
+  maxAgeMs: 6 * 86_400_000, requireSiteUrl: false,
+};
+export const OUTBOX_KINDS = { LEAD_DELIVERY, QUOTE_DELIVERY, PURCHASE_DELIVERY, WA_QUOTE_DELIVERY } as const;
+
+/** Which delivery kind an outbox row is, from its stored payload; null when unknown. */
+export function kindOfOutboxRow(row: { event_data?: { payload?: { data?: Array<{ event_name?: string; action_source?: string }> } } }): CapiDeliveryKind | null {
+  const e = row?.event_data?.payload?.data?.[0];
+  return Object.values(OUTBOX_KINDS).find((k) => k.eventName === e?.event_name && k.actionSource === e?.action_source) ?? null;
+}
+
 /** A database compare-and-set coordinates independent requests/processes. */
 export async function attemptCapiDelivery(
   db: SupabaseClient,
   delivery: CapiDelivery,
   send: (payload: MetaCapiPayload) => Promise<void>,
   now = Date.now(),
+  kind: CapiDeliveryKind = LEAD_DELIVERY,
 ): Promise<"delivered" | "busy" | "failed" | "review_required"> {
   const prior = delivery.event_data;
   if (!prior || typeof prior !== "object" || Array.isArray(prior)) return "review_required";
@@ -28,16 +58,16 @@ export async function attemptCapiDelivery(
   const queuedAt = Date.parse(prior.queued_at);
   const event = prior.payload?.data?.[0];
   const eventTime = Number.isInteger(event?.event_time) ? event.event_time * 1000 : NaN;
-  // Bound ambiguous retries to 24h, inside Meta's deduplication window. Never
+  // Bound ambiguous retries (Lead 24h; Purchase 6 days, see PURCHASE_DELIVERY). Never
   // change event_id/event_time on a retry, or blindly resend an old conversion.
-  if (!Number.isFinite(queuedAt) || queuedAt > now || now - queuedAt >= 86_400_000
+  if (!Number.isFinite(queuedAt) || queuedAt > now || now - queuedAt >= kind.maxAgeMs
     || !Number.isInteger(prior.attempts) || prior.attempts < 0 || prior.attempts >= 5
     || prior.payload?.data?.length !== 1 || event?.event_id !== prior.event_id
-    || event.event_name !== "Lead" || event.action_source !== "website"
-    || !Number.isFinite(eventTime) || eventTime > now || now - eventTime >= 86_400_000) {
+    || event.event_name !== kind.eventName || event.action_source !== kind.actionSource
+    || !Number.isFinite(eventTime) || eventTime > now || now - eventTime >= kind.maxAgeMs) {
     return "review_required";
   }
-  try {
+  if (kind.requireSiteUrl) try {
     if (!["https://newme.ae", "https://www.newme.ae"].includes(new URL(event.event_source_url).origin)) {
       return "review_required";
     }
@@ -51,7 +81,7 @@ export async function attemptCapiDelivery(
   const claimed = { ...prior, status: "sending", attempts: prior.attempts + 1,
     lease_id: leaseId, lease_until: new Date(now + 60_000).toISOString() };
   let claim = db.from("business_events").update({ event_data: claimed })
-    .eq("id", delivery.id).eq("event_type", "meta_capi_lead_delivery")
+    .eq("id", delivery.id).eq("event_type", kind.eventType)
     .eq("event_data->>status", prior.status).eq("event_data->>attempts", String(prior.attempts));
   if (prior.status === "sending") claim = claim.eq("event_data->>lease_id", prior.lease_id!);
   const acquired = await claim.select("id").maybeSingle();

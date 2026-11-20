@@ -1301,3 +1301,15 @@ p75 131 ms / p95 142 ms, within policy. The delayed verification passed at `2026
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:61f00dd4b8c6deb674969ed18e372e5fe867769e6d37aef1a63261fbf95349b1 -->
+
+## OS fix Alert provider IPv4 connect technical acceptance (2026-11-20)
+
+Release `fab205f2f61592a27a058bd7bdc2ee0e646bb10d` (Alert provider: no IPv6 happy-eyeballs fallback, retry connection errors, log refusals) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T15:53:09Z`, replacing the finalized release `fad337ed`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 186 ms / p95 554 ms, within policy. The delayed verification passed at `2026-11-20T16:10:15Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:7c3fb1dd9d597472ba7e97be33d62380a62f53ed58c295749eb398f1922ef9bb -->

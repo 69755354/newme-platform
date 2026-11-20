@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { hashedContactKeys } from "./capi-hash.mjs";
+export { hashedContactKeys };
 
 /**
  * Meta Conversion Leads (CRM) events for native Instant Form leads.
@@ -47,16 +49,22 @@ export type MetaCrmPayload = {
     /** Queue row id: lets Meta deduplicate a retry of the same stage event. */
     event_id?: string;
     action_source: "system_generated";
-    user_data: { lead_id: string };
-    custom_data: { lead_event_source: "crm"; event_source: "crm" };
+    user_data: { lead_id: string; ph?: string[]; em?: string[] };
+    custom_data: { lead_event_source: "crm"; event_source: "crm"; value?: number; currency?: string };
   }>;
 };
 
 export function buildMetaCrmPayload(input: {
   leadgenId: string; eventName: string; eventTime: number; eventId?: string;
+  /** Quoted (the quote amount) and Won (the contract amount) only. */
+  value?: number | null; currency?: string | null;
+  /** Optional extra matching keys, already hashed (see hashedContactKeys). */
+  match?: { ph?: string[]; em?: string[] };
 }): MetaCrmPayload {
   const leadId = normalizeLeadgenId(input.leadgenId);
   if (!leadId) throw new Error("Invalid Meta leadgen id");
+  const hasValue = typeof input.value === "number" && Number.isFinite(input.value) && input.value > 0
+    && typeof input.currency === "string" && /^[A-Z]{3}$/.test(input.currency);
   return {
     data: [{
       event_name: input.eventName,
@@ -64,8 +72,9 @@ export function buildMetaCrmPayload(input: {
       ...(input.eventId ? { event_id: String(input.eventId) } : {}),
       action_source: "system_generated",
       // Retain exact digits until the numeric JSON wire serializer.
-      user_data: { lead_id: leadId },
-      custom_data: { lead_event_source: "crm", event_source: "crm" },
+      user_data: { lead_id: leadId, ...(input.match?.ph ? { ph: input.match.ph } : {}), ...(input.match?.em ? { em: input.match.em } : {}) },
+      custom_data: { lead_event_source: "crm", event_source: "crm",
+        ...((input.eventName === "Won" || input.eventName === "Quoted") && hasValue ? { value: input.value as number, currency: input.currency as string } : {}) },
     }],
   };
 }

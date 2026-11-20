@@ -6,13 +6,14 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { hashedContactKeys } from "../src/lib/meta-crm-events.ts";
 import { buildWhatsAppCapiPayload, sendWhatsAppCapiPayload, WA_CAPI_EVENT_MAX_AGE_SECONDS } from "../src/lib/whatsapp-capi.mjs";
 
 const MAX_ATTEMPTS = 5;
 const COLUMNS = "id, lead_id, waba_id, ctwa_clid, event_name, event_time, value, currency, status, attempts, lease_id, lease_until";
 
 export async function sendWhatsAppCapiEvents(db, { execute = false, limit = 50, clock = () => Date.now(),
-  send = sendWhatsAppCapiPayload } = {}) {
+  send = sendWhatsAppCapiPayload, env = process.env } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid send limit");
   const queue = await db.from("whatsapp_capi_events").select(COLUMNS)
     .in("status", ["pending", "failed", "sending"]).lt("attempts", MAX_ATTEMPTS)
@@ -40,7 +41,15 @@ export async function sendWhatsAppCapiEvents(db, { execute = false, limit = 50, 
       let payload;
       try {
         if (ageSeconds > WA_CAPI_EVENT_MAX_AGE_SECONDS) throw new Error("age");
-        payload = buildWhatsAppCapiPayload({ eventId: row.id, wabaId: row.waba_id, ctwaClid: row.ctwa_clid,
+        // Opt-in (WA_CAPI_SEND_HASHED_PHONE=true): Meta documents hashed ph next to ctwa_clid only loosely; verify with a test event first.
+        let hashedPhone = null;
+        if (env.WA_CAPI_SEND_HASHED_PHONE === "true") {
+          try {
+            const { data } = await db.from("leads").select("phone").eq("id", row.lead_id).maybeSingle();
+            hashedPhone = data ? hashedContactKeys({ phone: data.phone }).ph ?? null : null;
+          } catch { /* send without it */ }
+        }
+        payload = buildWhatsAppCapiPayload({ hashedPhone, eventId: row.id, wabaId: row.waba_id, ctwaClid: row.ctwa_clid,
           eventName: row.event_name, eventTime: row.event_time, value: row.value === null ? null : Number(row.value), currency: row.currency });
       } catch {
         await db.from("whatsapp_capi_events").update({ status: "review_required" })

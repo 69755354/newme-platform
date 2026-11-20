@@ -141,6 +141,9 @@ test("quotation generate executes the insert once and propagates the database qu
     "@/lib/quotation-labour-basis.mjs": { formatInstallLabourNote: () => "" },
     "@/lib/milestone-stage-advance.mjs": stageAdvance,
     "@/lib/first-contact-gate.mjs": firstContactGate,
+    // Meta feedback for the quotation step is covered by tests/unit/purchase-capi.test.mjs; inert here.
+    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async () => "skipped" },
+    "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped" },
   });
 
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

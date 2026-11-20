@@ -1313,3 +1313,27 @@ p75 186 ms / p95 554 ms, within policy. The delayed verification passed at `2026
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:7c3fb1dd9d597472ba7e97be33d62380a62f53ed58c295749eb398f1922ef9bb -->
+
+## OS fix Batch 11-20 evening technical acceptance (2026-11-20)
+
+Release `25c152674c926f3130ad93181ca954fe66f9f0e2` (Release closure tolerance, restorable backups (S32), quote signal to Meta, new leads into the sales register (switch off) (PRs 575 577)) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T16:57:48Z`, replacing the finalized release `fab205f2`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 127 ms / p95 248 ms, within policy. The delayed verification passed at `2026-11-20T17:14:59Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:fc824b34fe8b53605ea42b76a2a5ebb8d32e25d48ef45f318d028a94a50d1baf -->
+
+## OS fix Batch 11-20 night technical acceptance (2026-11-20)
+
+Release `099370dc1721ece7ce524cfeb10a9ad1ee936a00` (Release gate lite lane and S32 provisioning switch with restorable backup scripts (PRs 576)) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T17:55:26Z`, replacing the finalized release `25c15267`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 57 ms / p95 88 ms, within policy. The delayed verification passed at `2026-11-20T18:12:33Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:5c24a495b65ce3ebb551c7ff2ca872b0c053120ff9a07bed428315ad42c7864b -->

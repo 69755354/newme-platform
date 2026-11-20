@@ -44,7 +44,9 @@ test("the wrapper routes `lite` as a coordinator mode next to bootstrap and db-t
   assert.ok(WRAPPER.indexOf("\nLITE_LANE=0\n") > 0 && WRAPPER.indexOf("\nLITE_LANE=0\n") < WRAPPER.indexOf("BOOTSTRAP_ONLY=0\n"));
   assert.equal((WRAPPER.match(/^LITE_LANE=1$/gm) ?? []).length, 0);
   assert.equal((WRAPPER.match(/^\s*LITE_LANE=1$/gm) ?? []).length, 1);
-  assert.match(WRAPPER, /usage: newme-deploy lite <main-sha> \[successful-run-id\] \[not_required\|applied_verified\|reentry_verified\|contract_verified\]/);
+  assert.match(WRAPPER, /usage: newme-deploy lite <main-sha> \[successful-run-id\] \[not_required\|contract_verified\]/);
+  // Review of #579: a compat claim cannot be completed, so the lite lane refuses it up front...
+  assert.match(WRAPPER, /applied_verified\|reentry_verified\)\n\s*echo "lite migration status \$MIGRATION_STATUS leaves the database in compat; completion requires strict[^\n]*" >&2\n\s*exit 64/);
 });
 
 test("the lite lane derives what the full lane makes the operator type, and verifies it the same way", () => {
@@ -151,6 +153,15 @@ test("deploy-immutable: the lane is validated, and only the lite lane downgrades
   // Smoke, journald scan and the service-identity check are lane-independent.
   assert.match(IMMUTABLE, /^bash "\$TARGET\/scripts\/check-smoke\.sh" http:\/\/127\.0\.0\.1:3001$/m);
   assert.match(IMMUTABLE, /^NEWME_INVOCATION_ID="\$INVOCATION_ID" bash "\$TARGET\/scripts\/check-logs\.sh" "2 minutes ago"$/m);
+});
+
+test("deploy-immutable: the lite lane runs the completion-phase gate finalize used to run, and requires strict", () => {
+  // ...and the strict gate still runs against production before the evidence says complete.
+  const gate = IMMUTABLE.indexOf('node "$TARGET/scripts/check-release-phase.mjs" --for-completion');
+  const evidence = IMMUTABLE.indexOf('"release_status": "awaiting_uat",');
+  assert.ok(gate > 0 && evidence > gate, "the completion-phase gate must precede the evidence write");
+  assert.match(IMMUTABLE, /\[ "\$LITE_COMPLETION_PHASE" = "NEWME_DB_PHASE=strict" \] \|\| \{ fail "lite completion requires database phase strict[^\n]*; exit 1; \}/);
+  assert.match(IMMUTABLE.slice(gate - 400, gate), /if \[ "\$RELEASE_LANE" = lite \]; then/);
 });
 
 test("deploy-immutable: lite evidence is complete with its warnings; legacy evidence is unchanged", () => {

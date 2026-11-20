@@ -854,6 +854,18 @@ node "$RELEASE/scripts/check-deploy-ci-binding.mjs" \
   --manifest "$RELEASE/infra/release/required-jobs.json" \
   --audit-record "$CI_GATE_AUDIT_RECORD"
 verify_canonical_main
+if [ "$RELEASE_LANE" = lite ]; then
+  # The completion-phase gate `newme-deploy finalize` used to run: a lite release
+  # is written complete below, so the database must already be strict here. compat
+  # leaves the direct money-write path open and must never be called complete.
+  LITE_COMPLETION_PHASE="$(node "$TARGET/scripts/check-release-phase.mjs" --for-completion \
+    --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$TARGET/node_modules")" || {
+    fail "the database phase does not allow this release to be completed (lite lane requires strict)"
+    exit 1
+  }
+  [ "$LITE_COMPLETION_PHASE" = "NEWME_DB_PHASE=strict" ] || { fail "lite completion requires database phase strict (got: $LITE_COMPLETION_PHASE)"; exit 1; }
+  echo "database phase before completion: strict"
+fi
 SERVICE_RUNTIME_OBSERVED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 NEWME_LITE_WARNINGS_JOINED="$(printf '%s\n' "${LITE_WARNINGS[@]+"${LITE_WARNINGS[@]}"}")"
 NEWME_RELEASE_LANE="$RELEASE_LANE" NEWME_LITE_WARNINGS_JOINED="$NEWME_LITE_WARNINGS_JOINED" \

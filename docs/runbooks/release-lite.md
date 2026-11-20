@@ -27,7 +27,13 @@ Happy path ≈ 15 min after the last merge; ≤ 30–40 min including the PRs'
 own checks. There is no accept / attest / closure PR / release-final CI /
 finalize step: the release is complete when step 4 returns.
 
-## What `newme-deploy lite <main-sha> [run-id] [migration-status]` does
+## What `newme-deploy lite <main-sha> [run-id] [not_required|contract_verified]` does
+
+A compat rollout (`applied_verified` / `reentry_verified`) is refused by the lite
+lane: it writes the release complete, and completion requires the database to be
+strict (the gate `finalize` used to run, `check-release-phase.mjs
+--for-completion`, now runs inside the lite deploy before the evidence is written
+and fails the release — with rollback — if the phase is not strict).
 
 Kept from the full lane, unchanged (production-safety gates):
 

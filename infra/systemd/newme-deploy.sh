@@ -1858,13 +1858,20 @@ elif [ "$LITE_LANE" -eq 1 ]; then
   MIGRATION_IDS=""
   ROLLBACK_SHA=""
   if [ "$#" -lt 1 ] || [ "$#" -gt 3 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "usage: newme-deploy lite <main-sha> [successful-run-id] [not_required|applied_verified|reentry_verified|contract_verified]" >&2
+    echo "usage: newme-deploy lite <main-sha> [successful-run-id] [not_required|contract_verified]" >&2
     echo "       run-id defaults to the newest successful release-candidate dispatch of ci.yml for <main-sha>; migration status defaults to contract_verified" >&2
     exit 64
   fi
+  # Only claims whose live posture is already strict: the lite lane writes the
+  # release complete without a later finalize, and completion requires strict.
+  # A compat rollout (applied_verified / reentry_verified) uses the full lane.
   case "$MIGRATION_STATUS" in
-    not_required|applied_verified|reentry_verified|contract_verified) ;;
-    *) echo "lite migration status must be not_required, applied_verified, reentry_verified or contract_verified" >&2; exit 64 ;;
+    not_required|contract_verified) ;;
+    applied_verified|reentry_verified)
+      echo "lite migration status $MIGRATION_STATUS leaves the database in compat; completion requires strict, so this release must use the full lane" >&2
+      exit 64
+      ;;
+    *) echo "lite migration status must be not_required or contract_verified" >&2; exit 64 ;;
   esac
 else
   MIGRATION_STATUS=${3:-}

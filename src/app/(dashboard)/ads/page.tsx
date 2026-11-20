@@ -111,7 +111,10 @@ export default function AdsPage() {
         const json = await res.json();
         if (active) { setRoi(json as RoiData); setRoiLoading(false); }
       } catch (err) {
-        if (active) { console.error("Failed to fetch ads ROI:", err); setRoi(null); setRoiError(true); setRoiLoading(false); }
+        onFetchFailure(err, () => {
+          console.error("Failed to fetch ads ROI:", err);
+          setRoi(null); setRoiError(true); setRoiLoading(false);
+        }, { isActive: () => active });
       }
     })();
     return () => { active = false; };

@@ -23,9 +23,12 @@ do $$
 declare
   v_def text;
 begin
+  if to_regclass('public.tasks') is null then
+    return;  -- table absent (migration replay floor): nothing to do
+  end if;
   select pg_get_constraintdef(c.oid) into v_def
   from pg_constraint c
-  where c.conrelid = 'public.tasks'::regclass and c.conname = 'tasks_future_only' and c.contype = 'c' and c.convalidated;
+  where c.conrelid = to_regclass('public.tasks') and c.conname = 'tasks_future_only' and c.contype = 'c' and c.convalidated;
   if v_def is null then
     return;  -- already NOT VALID (or absent): nothing to do
   end if;

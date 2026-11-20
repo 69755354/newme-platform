@@ -43,7 +43,7 @@ function fromGit(spec){
 test('the S32 provisioning gate pins exactly one reviewed migration and its posture predicate',()=>{
   assert.deepEqual(S32_EVENTS.map(x=>x.version),['20261120200000']);
   assert.deepEqual(S32_EVENTS.map(x=>x.file),['20261120200000_tasks_future_only_not_valid.sql']);
-  assert.equal(S32_EVENTS[0].sha256,'6dad7971700c4c195e3d3bbbe6ca811328fbefca351ea84e03f573d39b9987d9');
+  assert.equal(S32_EVENTS[0].sha256,'a7598950b422dbb8c18e4e19e3b5e9247e5d1f0cfddafb5888a486c892ae6a91');
   assert.deepEqual(S32_PREDICATE_NAMES,['s32-tasks-future-only-not-valid']);
   // the posture pins the exact production expression and the NOT VALID state; the prior pins the validated one
   assert.match(S32_POSTURE[0],/tasks_future_only/);

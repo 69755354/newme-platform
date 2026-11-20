@@ -468,7 +468,7 @@ test("a record that also names the optional taskboard gate (every pre-lite wrapp
   if (CAN_PRODUCE_ROOT_OWNED) {
     const root = stateRoot();
     const result = runGuard({ record: writeRecord(root, validLines({ gates: [...REQUIRED_GATES, ...OPTIONAL_GATES] })), root });
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, new RegExp(`${REQUIRED_GATES.length} required gate\\(s\\) accounted for`));
   }
 });

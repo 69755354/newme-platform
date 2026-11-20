@@ -18,6 +18,10 @@ import { DEFAULT_MAX_CHANGES_PER_CALL, DEFAULT_MAX_WRITES_PER_RUN, maskId, planB
 
 const EXIT = { ok: 0, anomaly: 2, cap: 3, usage: 64 };
 const DROP_ALERT_RATIO = 0.5; // a tab that lost more than half of its rows since the last run is an anomaly
+// The ingest route allows 30 calls a minute (sliding window). One call every 2.2 s stays under it (about 27 a minute).
+export const MIN_CALL_INTERVAL_MS = 2200;
+const MAX_429_RETRIES = 3;
+const MAX_RETRY_AFTER_S = 120;
 
 export function parseArgs(argv, env = process.env) {
   const a = { runNow: false, mode: env.DRIVE_SYNC_MODE === "apply" ? "apply" : "dry-run", offline: false, snapshot: null, maxWrites: Number(env.DRIVE_SYNC_MAX_WRITES) || DEFAULT_MAX_WRITES_PER_RUN, dataDir: env.DRIVE_SYNC_DATA_DIR || null, endpoint: env.DRIVE_SYNC_ENDPOINT || "http://127.0.0.1:3001/api/sync/drive-ingest", only: null, batch: DEFAULT_MAX_CHANGES_PER_CALL };
@@ -45,13 +49,29 @@ function pickDataDir(want) {
   throw new Error("no writable data directory (set DRIVE_SYNC_DATA_DIR)");
 }
 
-async function callEndpoint(deps, args, token, body) {
-  const r = await deps.fetch(args.endpoint, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
-  let json = null; try { json = await r.json(); } catch { /* not json */ }
-  return { status: r.status, json };
+/** Endpoint caller paced under the route limit; a 429 waits for Retry-After (bounded) and retries. */
+function makeCaller(deps, args, token) {
+  const sleep = deps.sleep ?? ((ms) => new Promise((res) => setTimeout(res, ms)));
+  const clock = deps.clock ?? (() => Date.now());
+  const interval = deps.minIntervalMs ?? MIN_CALL_INTERVAL_MS;
+  let last = null;
+  return async function call(body) {
+    for (let attempt = 0; ; attempt += 1) {
+      if (last != null) { const wait = last + interval - clock(); if (wait > 0) await sleep(wait); }
+      last = clock();
+      const r = await deps.fetch(args.endpoint, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+      if (r.status === 429 && attempt < MAX_429_RETRIES) {
+        const ra = Number(r.headers?.get?.("retry-after"));
+        await sleep(Math.min(Number.isFinite(ra) && ra > 0 ? ra : 60, MAX_RETRY_AFTER_S) * 1000);
+        continue;
+      }
+      let json = null; try { json = await r.json(); } catch { /* not json */ }
+      return { status: r.status, json };
+    }
+  };
 }
 
-/** The whole run. deps = { reader:{getValues,getModifiedTime}, fetch, now } so tests inject fake sheets and a fake endpoint. */
+/** The whole run. deps = { reader:{getValues,getModifiedTime}, fetch, now, sleep?, clock?, minIntervalMs? } so tests inject fake sheets and a fake endpoint. */
 export async function runSync({ argv = [], env = process.env, deps = {} } = {}) {
   const args = parseArgs(argv, env);
   const out = []; const say = (s) => out.push(s);
@@ -90,6 +110,7 @@ export async function runSync({ argv = [], env = process.env, deps = {} } = {}) 
     // 2) plan: against the OS (endpoint) or a local snapshot / nothing (offline)
     const token = env.DRIVE_SYNC_INGEST_TOKEN;
     let decisions = null; let counts = null; let osState = "offline";
+    const call = makeCaller({ ...deps, fetch: doFetch }, args, token);
     if (args.snapshot) {
       const plan = planBatch(changes, JSON.parse(readFileSync(args.snapshot, "utf8")), resolveConfig({ ...env, DRIVE_SYNC_ENABLED: "true" }));
       decisions = plan.decisions.map(({ change, d }) => ({ key: maskId(change.key), sheet: change.sheet, row: change.row, action: d.action, reason: d.reason ?? null, fields: d.fields ?? [], conflicts: d.conflicts ?? [] }));
@@ -98,10 +119,11 @@ export async function runSync({ argv = [], env = process.env, deps = {} } = {}) 
       if (!token) { anomalies.push("DRIVE_SYNC_INGEST_TOKEN not set: cannot ask the OS for a plan"); }
       else {
         const all = []; let cnt = { read: 0, matched: 0, inserted: 0, would_insert: 0, updated: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0 };
-        let failed = false;
+        let failed = false; let claims = {}; // claimed leads / reserved new people carried from batch to batch
         for (let i = 0; i < changes.length; i += args.batch) {
-          const { status, json } = await callEndpoint({ fetch: doFetch }, args, token, { run_id: runId, dry_run: true, changes: changes.slice(i, i + args.batch) });
+          const { status, json } = await call({ run_id: runId, dry_run: true, changes: changes.slice(i, i + args.batch), claims });
           if (status !== 200 || !json?.ok) { failed = true; anomalies.push(`endpoint plan call failed (status ${status}${json?.error ? `: ${json.error}` : ""})`); break; }
+          claims = json.claims ?? claims;
           all.push(...json.decisions); for (const k of Object.keys(cnt)) cnt[k] += json.counts[k] ?? 0;
         }
         if (!failed) { decisions = all; counts = cnt; osState = "endpoint"; }
@@ -115,10 +137,11 @@ export async function runSync({ argv = [], env = process.env, deps = {} } = {}) 
       if (osState !== "endpoint") anomalies.push("apply requested but no OS plan available: nothing written");
       else if (counts.writes > args.maxWrites) { say(`write cap: plan needs ${counts.writes} writes, cap is ${args.maxWrites}; nothing written`); return finish(EXIT.cap); }
       else {
-        applied = { inserted: 0, updated: 0, notes: 0, failed: 0 };
+        applied = { inserted: 0, updated: 0, notes: 0, failed: 0 }; let claims = {};
         for (let i = 0; i < changes.length; i += args.batch) {
-          const { status, json } = await callEndpoint({ fetch: doFetch }, args, token, { run_id: runId, dry_run: false, changes: changes.slice(i, i + args.batch) });
+          const { status, json } = await call({ run_id: runId, dry_run: false, changes: changes.slice(i, i + args.batch), claims });
           if (!json || (status !== 200 && status !== 207)) { anomalies.push(`endpoint apply call failed (status ${status})`); break; }
+          claims = json.claims ?? claims;
           for (const k of Object.keys(applied)) applied[k] += json.applied?.[k] ?? 0;
           if (json.side_effects?.changed?.length) anomalies.push(`side-effect tables changed: ${json.side_effects.changed.join(",")}`);
         }

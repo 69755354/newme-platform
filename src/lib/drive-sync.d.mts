@@ -21,4 +21,7 @@ export function buildIndexes(leads: DriveSyncRecord[]): DriveSyncRecord;
 export function matchLead(change: DriveSyncRecord, idx: DriveSyncRecord): DriveSyncRecord;
 export function decideChange(change: DriveSyncRecord, idx: DriveSyncRecord, cfg: DriveSyncConfig, claimed?: Map<string, string>): DriveSyncRecord;
 export function writeCost(d: DriveSyncRecord): number;
-export function planBatch(changes: DriveSyncRecord[], leads: DriveSyncRecord[], cfg: DriveSyncConfig): { decisions: { change: DriveSyncRecord; d: DriveSyncRecord }[]; counts: Record<string, number> };
+export function mergeDriveSync(prev: unknown, patch: DriveSyncRecord | null | undefined): DriveSyncRecord;
+export function claimTag(key: string): string;
+export function validateClaims(c: unknown): string | null;
+export function planBatch(changes: DriveSyncRecord[], leads: DriveSyncRecord[], cfg: DriveSyncConfig, claims?: Record<string, string> | null): { decisions: { change: DriveSyncRecord; d: DriveSyncRecord }[]; counts: Record<string, number>; claims: Record<string, string> };

@@ -1193,3 +1193,15 @@ p75 65 ms / p95 86 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:d2d01ec8f1351caa7697a03a01876401f71aae904e48d23cfcda8d2fe539bc8a -->
+
+## OS fix S29 Drive to OS sync technical acceptance (2026-11-20)
+
+Release `a341f2ae21377d0e9ea7cca80f45fecc91470a7c` (S29 read-only Drive to OS sync, ingest route off by default) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T01:00:17Z`, replacing the finalized release `a40dae37`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 79 ms / p95 99 ms, within policy. The delayed verification passed at `2026-11-20T01:17:29Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:cca3934869410298d8b6333d3909e9719fc9e517c20d3f6199468f8f42ab1d42 -->

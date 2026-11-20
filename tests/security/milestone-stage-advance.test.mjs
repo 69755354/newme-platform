@@ -95,6 +95,7 @@ function route(w, role = "sales") {
       enqueueMetaCrmEventForLead: async (_db, _id, key) => { w.state.meta.push(key); },
     },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppCapiForProgress: async () => "skipped" },
+    "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped", enqueueWebsitePurchaseForLead: async () => "skipped" },
     "@/lib/request-auth-context": {
       applyRequestAuthCookies: (_c, r) => r,
       getRequestAuthContext: async () => ({ supabase: w.supabase, user: { id: SALES }, role }),

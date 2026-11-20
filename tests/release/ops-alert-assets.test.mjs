@@ -18,6 +18,7 @@ const ASSETS = {
   "/usr/local/libexec/newme/newme-backup-onfailure.sh": "infra/backup/newme-backup-onfailure.sh",
   "/usr/local/libexec/newme/newme-backup-freshness.sh": "infra/backup/newme-backup-freshness.sh",
   "/usr/local/libexec/newme/newme-restore-drill.sh": "infra/backup/newme-restore-drill.sh",
+  "/usr/local/libexec/newme/newme-db-backup.sh": "infra/backup/newme-db-backup.sh",
   "/etc/systemd/system/newme-restore-drill.service": "infra/backup/newme-restore-drill.service",
   "/etc/systemd/system/newme-restore-drill.timer": "infra/backup/newme-restore-drill.timer",
   "/etc/systemd/system/newme-wa-capi-send.service": "infra/systemd/newme-wa-capi-send.service",

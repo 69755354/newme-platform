@@ -1349,3 +1349,15 @@ p75 53 ms / p95 62 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:fca24f1f6b251e9cf3b806a8c59abfa55b5746ed5df1ce14fefc22659352d1cc -->
+
+## OS fix Gate lite technical acceptance (2026-11-20)
+
+Release `ed2327c290ee6f06b4ec3b6d60483c2f492c1f16` (Release gate lite lane (last release through the full lane) (PRs 579)) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T22:04:21Z`, replacing the finalized release `b83ef84c`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 50 ms / p95 63 ms, within policy. The delayed verification passed at `2026-11-20T22:21:24Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:f7820e39f26ffb8411828cfc18fbd7611adf78aa8b9dbc4f001a9f84ba5823f9 -->

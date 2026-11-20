@@ -65,3 +65,7 @@ scripts/.ed25519.key.bootstrap
 # Regression suite local state (sessions, run output)
 e2e/regression/.auth-cache/
 e2e/regression/.runs/
+
+# Production data exports must never be committed (public repository)
+deploy-backup-*.json
+*-export-*.json

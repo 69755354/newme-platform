@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -70,6 +70,7 @@ const providerFixture = [
   "fi",
   'case "${HERMES_FIXTURE_PROVIDER_BEHAVIOR:-success}" in',
   "  fail) exit 1 ;;",
+  "  refuse) echo 'newme alert provider: refused code=provider_request_failed bot123456789:AAHfakeTokenValue_abcdefghijklmnopqrstuv' >&2; exit 1 ;;",
   "  noop) exit 0 ;;",
   "  invalid) printf 'not-a-provider-ack\\n'; exit 0 ;;",
   "  success) ;;",
@@ -383,6 +384,7 @@ test("provider failure, no output, and a bad ACK leave an ordinary probe transit
     const eventsFile = join(root, "events.log");
     const provider = await makeNotifier(root, providerFixture, "provider.sh");
     const adapterCopy = await makeAdapterWithProvider(root, provider);
+    const { binDir } = await fakeLogger(root);
     await runAlert({
       stateDir,
       notifier: adapterCopy,
@@ -391,7 +393,7 @@ test("provider failure, no output, and a bad ACK leave an ordinary probe transit
       summary: `${behavior} provider`,
       threshold: 1,
       expectCode: 1,
-      extraEnv: { HERMES_ALERT_EVENTS: eventsFile, HERMES_FIXTURE_PROVIDER_BEHAVIOR: behavior },
+      extraEnv: { HERMES_ALERT_EVENTS: eventsFile, HERMES_FIXTURE_PROVIDER_BEHAVIOR: behavior, PATH: `${binDir}:${process.env.PATH}` },
     });
     assert.equal(await readFile(join(stateDir, "login-probe.state"), "utf8"), "status=pending_failure\nfailure_count=1\n");
   }
@@ -448,4 +450,58 @@ test("L0 probes alert on the first failed check", async () => {
   });
   assert.match(output, /transition=alert/);
   assert.equal((await events(eventsFile)).match(/^alert /gm)?.length, 1);
+});
+
+async function fakeLogger(root) {
+  const binDir = join(root, "bin");
+  const loggerLog = join(root, "logger.log");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(join(binDir, "logger"), `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> ${JSON.stringify(bashPath(loggerLog))}\n`, { mode: 0o755 });
+  return { binDir, loggerLog };
+}
+
+async function runAdapterDirect(adapter, args, env) {
+  return new Promise((resolve) => {
+    const child = spawn("bash", [bashPath(adapter), ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (code) => resolve({ code, stderr }));
+  });
+}
+
+test("adapter writes the provider refusal to the journal tag with tokens redacted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hermes-alert-provider-log-"));
+  const eventsFile = join(root, "events.log");
+  const { binDir, loggerLog } = await fakeLogger(root);
+  const provider = await makeNotifier(root, providerFixture, "provider.sh");
+  const adapterCopy = await makeAdapterWithProvider(root, provider);
+  const baseEnv = {
+    ...process.env,
+    PATH: `${bashPath(binDir)}:${process.env.PATH}`,
+    HERMES_ALERT_EVENTS: bashPath(eventsFile),
+  };
+
+  const refused = await runAdapterDirect(adapterCopy, ["alert", "login-probe", "probe down"], {
+    ...baseEnv,
+    HERMES_FIXTURE_PROVIDER_BEHAVIOR: "refuse",
+  });
+  assert.equal(refused.code, 1);
+  const logged = await readFile(loggerLog, "utf8");
+  assert.match(logged, /^-t newme-alert-provider -- newme alert provider: refused code=provider_request_failed /m);
+  assert.doesNotMatch(logged, /AAHfakeTokenValue/);
+  assert.match(logged, /bot<redacted>/);
+
+  const silent = await runAdapterDirect(adapterCopy, ["alert", "login-probe", "probe down"], {
+    ...baseEnv,
+    HERMES_FIXTURE_PROVIDER_BEHAVIOR: "fail",
+  });
+  assert.equal(silent.code, 1);
+  assert.match(await readFile(loggerLog, "utf8"), /provider failed without output/);
+
+  const ok = await runAdapterDirect(adapterCopy, ["alert", "login-probe", "probe down"], {
+    ...baseEnv,
+    HERMES_FIXTURE_PROVIDER_BEHAVIOR: "success",
+  });
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.equal((await readFile(loggerLog, "utf8")).trim().split("\n").length, 2);
 });

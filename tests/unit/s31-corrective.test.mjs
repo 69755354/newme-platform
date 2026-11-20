@@ -33,7 +33,7 @@ test("the migration is additive: only CREATE OR REPLACE of routines, grants and 
   for (const sig of ["evaluate_lead_dispatch(uuid, uuid)", "dispatch_reevaluate_dependents(uuid, uuid)", "dispatch_decide(uuid, uuid, text, text)",
     "sweep_lead_dispatch(timestamptz, integer)", "record_whatsapp_ad_event(jsonb, boolean)"]) {
     assert.ok(sql.includes(`grant execute on function public.${sig} to service_role;`), `${sig} granted to the service role`);
-    assert.match(sql, new RegExp(`revoke all on function public\\.${sig.replace(/[()]/g, "\\$&")} from public, anon, authenticated`));
+    assert.match(sql, new RegExp(`revoke all on function public\\.${sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} from public, anon, authenticated`));
   }
 });
 

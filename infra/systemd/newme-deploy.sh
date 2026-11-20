@@ -3161,8 +3161,10 @@ except Exception:
     pass
 head = f"NewMe OS release {sha[:8]} ({status}, lite lane): {len(warnings)} warning(s)"
 print(head if not warnings else head + " — " + " | ".join(w[:160] for w in warnings[:4]))
-' "$SHA" "$LITE_EVIDENCE_FILE")"
-  /usr/bin/logger --journald <<EOF
+' "$SHA" "$LITE_EVIDENCE_FILE")" || LITE_SUMMARY="NewMe OS release ${SHA:0:8} (complete, lite lane): warnings unreadable"
+  # The release is already durably complete: nothing below may turn it into a
+  # non-zero exit (the caller would report a failed release that is in fact live).
+  /usr/bin/logger --journald <<EOF || true
 MESSAGE=$LITE_SUMMARY
 PRIORITY=5
 SYSLOG_IDENTIFIER=newme-deploy

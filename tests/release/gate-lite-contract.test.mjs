@@ -120,6 +120,13 @@ test("deploy-immutable: the post-switch health probe retries while the host is b
   // And the deploy path uses it where the single probe used to be, on the failure path that rolls back.
   assert.match(IMMUTABLE, /probe_health_until_ready http:\/\/127\.0\.0\.1:3001\/api\/health \|\| \{ fail "post-switch health failed after \$HEALTH_PROBE_ATTEMPTS probes"; exit 1; \}/);
   assert.doesNotMatch(IMMUTABLE, /curl -fsS --max-time 10 http:\/\/127\.0\.0\.1:3001\/api\/health >\/dev\/null \|\| \{ fail "post-switch health failed"; exit 1; \}/);
+  // The rollback paths verify the restored release with the same bounded retry, so a
+  // busy host cannot strand a completed rollback as app_rollback_pending.
+  for (const name of ["rollback_release", "rollback_assets"]) {
+    const body = extractFunction(IMMUTABLE, name);
+    assert.match(body, /probe_health_until_ready http:\/\/127\.0\.0\.1:3001\/api\/health \|\| return 1/, name);
+    assert.doesNotMatch(body, /curl -fsS --max-time 10/, name);
+  }
 });
 
 test("deploy-immutable: the lane is validated, and only the lite lane downgrades load, the composite probe and data quality to warnings", () => {

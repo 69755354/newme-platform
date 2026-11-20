@@ -444,7 +444,9 @@ rollback_release() {
   restore_rollback_link || return 1
   "$CONTROL" reset-failed "deploy:$ID:reset-before-rollback" || return 1
   "$CONTROL" restart "deploy:$ID:rollback" || return 1
-  curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || return 1
+  # The same bounded retry as the switch: a busy host answering late must not turn
+  # a completed rollback into an unverified app_rollback_pending state.
+  probe_health_until_ready http://127.0.0.1:3001/api/health || return 1
   SWITCHED=0
   write_deploy_state app_rolled_back || return 1
 }
@@ -464,7 +466,7 @@ rollback_assets() {
   if [ "$APP_WAS_SWITCHED" -eq 1 ]; then
     "$CONTROL" reset-failed "deploy:$ID:asset-rollback-reset" || true
     "$CONTROL" restart "deploy:$ID:asset-rollback" || return 1
-    curl -fsS --max-time 10 http://127.0.0.1:3001/api/health >/dev/null || return 1
+    probe_health_until_ready http://127.0.0.1:3001/api/health || return 1
   fi
   write_deploy_state assets_rolled_back || return 1
   rm -f -- "$PENDING_ASSET_RECORD" || return 1

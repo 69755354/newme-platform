@@ -257,6 +257,7 @@ test("real lead stage handler rejects an inactive old session before business ac
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "new" }] },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "skipped" },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppCapiForProgress: async () => "skipped", enqueueWhatsAppPurchaseForLead: async () => "skipped" },
+    "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped", enqueueWebsitePurchaseForLead: async () => "skipped" },
     "@/lib/supabase-admin": { get supabaseAdmin() { throw new Error("not reached before authorization"); } },
     "next/server": nextServer,
   });

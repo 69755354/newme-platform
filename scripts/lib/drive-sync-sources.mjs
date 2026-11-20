@@ -36,9 +36,9 @@ export function toTab(src, values) {
   return { key: src.key, headers, rows, missing };
 }
 
-const MASTER = /^(META|WA|LEGACY|ASSEM-XLS)-(.+)$/;
+const MASTER = /^(META|WA|OS|LEGACY|ASSEM-XLS)-(.+)$/; // OS = row appended by OS itself (website / other intake), see src/lib/os-register-append.mjs
 const LEADGEN = /^[1-9]\d{7,31}$/;
-const PREFIX_CHANNEL = { META: "meta_lead_form", WA: "whatsapp", LEGACY: "legacy_sheet", "ASSEM-XLS": "legacy_sheet" };
+const PREFIX_CHANNEL = { META: "meta_lead_form", WA: "whatsapp", OS: "os_register", LEGACY: "legacy_sheet", "ASSEM-XLS": "legacy_sheet" };
 const strip = (raw, pfx) => { const s = norm(raw); return s.startsWith(pfx) ? s.slice(pfx.length) : (s || null); };
 const lc = (v) => norm(v).toLowerCase();
 const dubaiDate = (iso) => (iso ? new Date(Date.parse(iso) + 4 * 3_600_000).toISOString().slice(0, 10) : null);
@@ -86,6 +86,9 @@ export function buildLeadChanges(tabs, modified) {
       identity: { fingerprint: fingerprintOf(key), leadgen: leadgenCand, phone_digits: phoneN?.digits ?? phoneDigits(phoneRaw), email },
       owned, followup_text: fb.text || undefined, contact_days_filled: fb.days, first_contact_at: first.iso ?? undefined,
       contact_rule: norm(s?.["Contact rule"]) || undefined,
+      // Optional columns (not in `required`): the register's sales-reported stage and quote amount (AED).
+      opp_stage: norm(r?.["Opportunity stage"]) || undefined,
+      quote_value: norm(r?.["Quote value AED"]) || norm(s?.["Quote value AED"]) || norm(s?.["Quote amount AED"]) || undefined,
       insertable,
       insert_fields: { customer_name: norm(r?.Client) || norm(s?.Client) || undefined, phone: phoneN?.e164 || phoneRaw || undefined, email: email || undefined, source: OS_SOURCES.has(channel) ? channel : "unknown", source_channel: master ? PREFIX_CHANNEL[master[1]] : "legacy_sheet", meta_leadgen_id: leadgenCand || undefined, campaign_id: strip(r?.["Campaign ID"], "c:") || undefined, adset_id: strip(r?.["Adset ID"], "as:") || undefined, ad_id: strip(r?.["Ad ID"], "ag:") || undefined, campaign_name: norm(r?.Campaign) || undefined, ad_name: norm(r?.Ad) || undefined, location: norm(r?.Location) || norm(s?.Area) || undefined, notes: pick("Requirement / Context") || undefined, created_at: received.iso || undefined },
       owner_alias: lc(r?.["Assigned to"]) || undefined,

@@ -15,13 +15,17 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logger } from "@/lib/logger";
 import { clientIdentifier, consumeRateLimit } from "@/lib/rate-limit";
 import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
+import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 import { SYNC_SOURCE, bearerToken, claimTag, maskId, mergeDriveSync, planBatch, resolveConfig, tokenMatches, validateChange, validateClaims, writeCost } from "@/lib/drive-sync.mjs";
 
 export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 2_000_000;
 const CALLS_PER_MINUTE = 30;
-const LEAD_COLUMNS = "id, import_fingerprint, meta_leadgen_id, phone, email, archived, stage, final_status, quality, next_action, next_followup_date, poor_reason, updated_at, drive_sync:raw_import_data->drive_sync";
+const LEAD_COLUMNS = "id, import_fingerprint, meta_leadgen_id, phone, email, archived, stage, final_status, quality, quotation_value, next_action, next_followup_date, poor_reason, updated_at, drive_sync:raw_import_data->drive_sync";
 const SIDE_EFFECT_TABLES = ["notifications", "tasks", "meta_crm_stage_events", "whatsapp_capi_events"] as const;
+// A fresh sheet quote is the one allowed side effect: at most one form-lead event and two WhatsApp queue rows per quote.
+const QUOTE_EVENT_ROWS: Record<string, number> = { meta_crm_stage_events: 1, whatsapp_capi_events: 2 };
 const INSERT_COLUMNS = ["customer_name", "phone", "email", "source", "source_channel", "source_platform", "meta_leadgen_id", "campaign_id", "adset_id", "ad_id", "campaign_name", "ad_name", "location", "notes", "created_at"];
 
 type Json = Record<string, unknown>;
@@ -96,6 +100,7 @@ export async function POST(request: NextRequest) {
 
     const before = await sideEffectCounts();
     const applied = { inserted: 0, updated: 0, notes: 0, failed: 0 };
+    let quotesFired = 0;
     for (const { change, d } of plan.decisions) {
       const k = maskId(change.key);
       try {
@@ -128,6 +133,14 @@ export async function POST(request: NextRequest) {
           const changed = [...(d.fields ?? [])].join(", ") || "sync state";
           const conflictText = d.conflicts?.length ? ` (conflicts: ${d.conflicts.map((c: Json) => `${c.field}->${c.winner}`).join(", ")})` : "";
           if (!(await insertNote(d.lead_id, { import_key: `${change.key}/drive-sync/${String(d.row_hash).slice(0, 16)}`, type: "note", content: `Drive sync: ${changed}${conflictText}` }, runId, { fields: d.fields, conflicts: d.conflicts }))) throw new Error("sync_note_failed");
+          // Fresh quote in the sheet: send the same Meta feedback as a quotation made in OS (all helpers are idempotent per lead).
+          if (d.quote) {
+            await enqueueMetaCrmEventForLead(supabaseAdmin, d.lead_id, "quotation_submitted");
+            await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, d.lead_id, "quotation_submitted");
+            await enqueueWebsiteQuoteForProgress(supabaseAdmin, d.lead_id, "quotation_submitted");
+            quotesFired += 1;
+            log({ event: "quote_feedback", key: k, lead_id: d.lead_id, stage_pending: d.quote.stage_pending === true });
+          }
           // Last step: commit the row hash. Anything above that failed leaves the old hash, so the row is retried.
           const { data: cur, error: curErr } = await supabaseAdmin.from("leads").select("raw_import_data").eq("id", d.lead_id).single();
           if (curErr) throw new Error("read_failed");
@@ -146,7 +159,7 @@ export async function POST(request: NextRequest) {
       }
     }
     const after = await sideEffectCounts();
-    const sideEffectsChanged = SIDE_EFFECT_TABLES.filter((t) => before[t] !== after[t]);
+    const sideEffectsChanged = SIDE_EFFECT_TABLES.filter((t) => { const grown = after[t] - before[t]; return grown < 0 || grown > (QUOTE_EVENT_ROWS[t] ?? 0) * quotesFired; });
     log({ event: "batch_end", applied, side_effects_changed: sideEffectsChanged });
     return reply({ ok: applied.failed === 0 && sideEffectsChanged.length === 0, dry_run: false, counts: plan.counts, applied, side_effects: { before, after, changed: sideEffectsChanged }, decisions: summary, claims: plan.claims }, applied.failed ? 207 : 200);
   } catch (err) {

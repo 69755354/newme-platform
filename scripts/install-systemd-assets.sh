@@ -973,6 +973,7 @@ MANAGED=(
   /usr/local/libexec/newme/newme-backup-onfailure.sh
   /usr/local/libexec/newme/newme-backup-freshness.sh
   /usr/local/libexec/newme/newme-restore-drill.sh
+  /usr/local/libexec/newme/newme-db-backup.sh
   /etc/systemd/system/newme-restore-drill.service
   /etc/systemd/system/newme-restore-drill.timer
   /etc/systemd/system/newme-wa-capi-send.service
@@ -1235,7 +1236,7 @@ fi
 OPS_LIBEXEC=/usr/local/libexec/newme
 install -D -o root -g root -m 0755 "$ROOT/infra/alerts/newme-whatsapp-alert.sh" "$OPS_LIBEXEC/newme-whatsapp-alert.sh"
 install -D -o root -g root -m 0644 "$ROOT/infra/backup/newme-backup-lib.sh" "$OPS_LIBEXEC/newme-backup-lib.sh"
-for ops_script in newme-backup-onfailure.sh newme-backup-freshness.sh newme-restore-drill.sh; do
+for ops_script in newme-backup-onfailure.sh newme-backup-freshness.sh newme-restore-drill.sh newme-db-backup.sh; do
   install -D -o root -g root -m 0755 "$ROOT/infra/backup/$ops_script" "$OPS_LIBEXEC/$ops_script"
 done
 for ops_unit in infra/backup/newme-restore-drill.service infra/backup/newme-restore-drill.timer \

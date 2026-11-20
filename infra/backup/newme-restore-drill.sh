@@ -91,13 +91,15 @@ KEY_FILE="${BACKUP_KEY_FILE:-/etc/newme/backup-encryption.key}"
 # replaced by "X"). The pass criterion is the per-table row count, not this list.
 ALLOWED_ERRORS="${DRILL_ALLOWED_ERRORS:-schema \"X\" already exists}"
 # Bootstrap that a plain PostgreSQL lacks: the Supabase roles referenced by the
-# dump's policies, the extensions schema and the two extensions.
+# dump's policies, our own policy role (created by a migration, so it is a cluster
+# role and not part of the dump), the extensions schema and the two extensions.
 BOOTSTRAP_SQL='
 do $b$ begin
   if not exists (select 1 from pg_roles where rolname = '"'"'anon'"'"') then create role anon nologin; end if;
   if not exists (select 1 from pg_roles where rolname = '"'"'authenticated'"'"') then create role authenticated nologin; end if;
   if not exists (select 1 from pg_roles where rolname = '"'"'service_role'"'"') then create role service_role nologin; end if;
   if not exists (select 1 from pg_roles where rolname = '"'"'supabase_auth_admin'"'"') then create role supabase_auth_admin nologin; end if;
+  if not exists (select 1 from pg_roles where rolname = '"'"'newme_whatsapp_maintenance'"'"') then create role newme_whatsapp_maintenance nologin; end if;
 end $b$;
 create schema if not exists extensions;
 create extension if not exists "uuid-ossp" with schema extensions;
@@ -157,9 +159,13 @@ RESTORE_LOG="$WORK/restore.log"
 pg_restore -h "$SOCK" -p "$PG_PORT" -U postgres -d "$DB" --no-owner --no-privileges "$WORK/restore.dump" >"$RESTORE_LOG" 2>&1 || true
 ERRORS="$(grep -c '^pg_restore: error' "$RESTORE_LOG" || true)"
 # Error categories with quoted names replaced, counted and logged; unknown ones are reported.
+# The error line itself is also logged as pg_restore wrote it: it names only the table, constraint,
+# schema or role (never row data; that is on the DETAIL line, which is not logged), and without the
+# names a failure cannot be diagnosed from the journal (2026-11-20: "check constraint X" hid tasks_future_only).
 UNEXPECTED=0
 if [ "$ERRORS" -gt 0 ]; then
   grep '^pg_restore: error' "$RESTORE_LOG" | sed -E 's/^.*ERROR: +//; s/"[^"]*"/"X"/g' | sort | uniq -c | while read -r n cat; do backup_log "restore error category (${n}x): $cat"; done
+  grep '^pg_restore: error' "$RESTORE_LOG" | sed -E 's/^pg_restore: error: //' | sort -u | sed -n '1,20p' | while IFS= read -r line; do backup_log "restore error: $line"; done
   while IFS= read -r category; do
     case "$ALLOWED_ERRORS" in *"$category"*) ;; *) UNEXPECTED=$((UNEXPECTED + 1)) ;; esac
   done < <(grep '^pg_restore: error' "$RESTORE_LOG" | sed -E 's/^.*ERROR: +//; s/"[^"]*"/"X"/g' | sort -u)

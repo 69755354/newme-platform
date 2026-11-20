@@ -1301,3 +1301,27 @@ p75 131 ms / p95 142 ms, within policy. The delayed verification passed at `2026
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:61f00dd4b8c6deb674969ed18e372e5fe867769e6d37aef1a63261fbf95349b1 -->
+
+## OS fix Alert provider IPv4 connect technical acceptance (2026-11-20)
+
+Release `fab205f2f61592a27a058bd7bdc2ee0e646bb10d` (Alert provider: no IPv6 happy-eyeballs fallback, retry connection errors, log refusals) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T15:53:09Z`, replacing the finalized release `fad337ed`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 186 ms / p95 554 ms, within policy. The delayed verification passed at `2026-11-20T16:10:15Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:7c3fb1dd9d597472ba7e97be33d62380a62f53ed58c295749eb398f1922ef9bb -->
+
+## OS fix Batch 11-20 evening technical acceptance (2026-11-20)
+
+Release `25c152674c926f3130ad93181ca954fe66f9f0e2` (Release closure tolerance, restorable backups (S32), quote signal to Meta, new leads into the sales register (switch off) (PRs 575 577)) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T16:57:48Z`, replacing the finalized release `fab205f2`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 127 ms / p95 248 ms, within policy. The delayed verification passed at `2026-11-20T17:14:59Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:fc824b34fe8b53605ea42b76a2a5ebb8d32e25d48ef45f318d028a94a50d1baf -->

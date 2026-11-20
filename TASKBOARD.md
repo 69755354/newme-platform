@@ -1229,3 +1229,15 @@ p75 71 ms / p95 123 ms, within policy. The delayed verification passed at `2026-
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:c97bca5142f220c0112c5feadf1eec0d6dc74109c4a717c6a0ce83e26497cc84 -->
+
+## OS fix S31 provisioning switch technical acceptance (2026-11-20)
+
+Release `7949950c7590dbb022f6296faa97d479b0bbb86f` (S31 database provisioning switch for dispatch and history corrections) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T06:49:16Z`, replacing the finalized release `7c8c91de`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 93 ms / p95 133 ms, within policy. The delayed verification passed at `2026-11-20T07:06:26Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:65ed3edaf0a7ce3c6d83e389af143a6b797bbb4bbad9d79e95cd81280dc6964a -->

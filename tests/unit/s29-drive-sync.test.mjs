@@ -8,7 +8,7 @@ import path from "node:path";
 import { runSync } from "../../scripts/drive-to-os-sync.mjs";
 import { createSheetsReader } from "../../scripts/lib/drive-sheets-readonly.mjs";
 import { SOURCES, assertAllowedTab, rangeOf } from "../../scripts/lib/drive-sync-sources.mjs";
-import { rowHashOf, decideChange, buildIndexes, fingerprintOf, maskId, normalizePhone, phoneDigits, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
+import { rowHashOf, decideChange, buildIndexes, fingerprintOf, maskId, mergeDriveSync, normalizePhone, phoneDigits, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
 
 const TOKEN = "t".repeat(40);
 const SALES_HEAD = ["Client", "Phone / WhatsApp", "Day 1 feedback", "Day 2 feedback", "Day 3 feedback", "Day 4 feedback", "Day 5 feedback", "Later follow-ups / previous records", "Next action", "Next follow-up date", "Lead quality", "Quality reason", "Assigned date", "Intake channel", "Segment", "Area", "Contact rule", "Rule starts", "Resume date", "Rule reason / evidence", "Lead key", "Email", "Requirement / Context", "Quality assessed at", "First contact at", "Sync status", "Sales Lead ID", "Previous qualification", "Source references", "Contact person"];
@@ -39,18 +39,18 @@ function fakeOs(leads, cfgEnv = {}) {
     const auth = init.headers.authorization;
     if (auth !== `Bearer ${TOKEN}`) return { status: 401, json: async () => ({ error: "Unauthorized" }) };
     const body = JSON.parse(init.body); calls.push({ dry: body.dry_run, n: body.changes.length });
-    const plan = planBatch(body.changes, leads, cfg);
+    const plan = planBatch(body.changes, leads, cfg, body.claims);
     const decisions = plan.decisions.map(({ change, d }) => ({ key: maskId(change.key), sheet: change.sheet, row: change.row, action: d.action, reason: d.reason ?? null, fields: d.fields ?? [], conflicts: d.conflicts ?? [] }));
-    if (body.dry_run) return { status: 200, json: async () => ({ ok: true, dry_run: true, counts: plan.counts, decisions }) };
+    if (body.dry_run) return { status: 200, json: async () => ({ ok: true, dry_run: true, counts: plan.counts, decisions, claims: plan.claims }) };
     const applied = { inserted: 0, updated: 0, notes: 0, failed: 0 };
     for (const { change, d } of plan.decisions) {
       if (d.action === "update") {
         const lead = leads.find((l) => l.id === d.lead_id);
-        Object.assign(lead, d.set); lead.drive_sync = { ...d.raw_patch.drive_sync, synced_at: new Date().toISOString() }; lead.updated_at = new Date().toISOString();
+        Object.assign(lead, d.set); lead.drive_sync = { ...mergeDriveSync(lead.drive_sync, d.raw_patch.drive_sync), synced_at: new Date().toISOString() }; lead.updated_at = new Date().toISOString();
         for (const n of d.notes) activities.push(n); applied.updated += 1;
-      } else if (d.action === "insert") { leads.push({ id: `new-${leads.length}`, import_fingerprint: change.identity.fingerprint, phone: change.insert_fields.phone, stage: "new", quality: change.owned.quality ?? "pending", drive_sync: { row_hash: d.row_hash, synced_at: new Date().toISOString() } }); applied.inserted += 1; }
+      } else if (d.action === "insert") { leads.push({ id: `new-${leads.length}`, import_fingerprint: change.identity.fingerprint, phone: change.insert_fields.phone, stage: "new", quality: change.owned.quality ?? "pending", drive_sync: { row_hash: d.row_hash, synced_at: new Date().toISOString() } }); plan.claims[leads.at(-1).id] = d.claim_tag; applied.inserted += 1; }
     }
-    return { status: 200, json: async () => ({ ok: true, dry_run: false, counts: plan.counts, applied, side_effects: { changed: [] }, decisions }) };
+    return { status: 200, json: async () => ({ ok: true, dry_run: false, counts: plan.counts, applied, side_effects: { changed: [] }, decisions, claims: plan.claims }) };
   };
   return { fetchImpl, calls, activities, leads };
 }
@@ -58,7 +58,7 @@ function fakeOs(leads, cfgEnv = {}) {
 const dataDir = () => mkdtempSync(path.join(tmpdir(), "drive-sync-"));
 const baseEnv = { DRIVE_SYNC_INGEST_TOKEN: TOKEN };
 const lead = (o) => ({ id: "L1", import_fingerprint: null, meta_leadgen_id: null, phone: "+971501234567", email: null, archived: false, stage: "contacted", final_status: null, quality: "normal", next_action: "old action", poor_reason: null, updated_at: "2026-11-01T00:00:00.000Z", drive_sync: null, ...o });
-const run = (w, os, argv = [], env = {}, dir = dataDir()) => runSync({ argv: ["--run-now", "--data-dir", dir, "--endpoint", "http://fake/api", ...argv], env: { ...baseEnv, ...env }, deps: { reader: w.reader, fetch: os.fetchImpl } });
+const run = (w, os, argv = [], env = {}, dir = dataDir()) => runSync({ argv: ["--run-now", "--data-dir", dir, "--endpoint", "http://fake/api", ...argv], env: { ...baseEnv, ...env }, deps: { reader: w.reader, fetch: os.fetchImpl, sleep: async () => {} } });
 const S1 = { Client: "Test Client", "Phone / WhatsApp": "050 123 4567", "Lead key": "WA-aaa111", "Lead quality": "Good", "Next action": "Send quote", "Next follow-up date": "2026-11-25", "Day 1 feedback": "called, interested", "Quality reason": "budget confirmed" };
 
 test("phone shapes of the market sheet normalize like the backfill", () => {
@@ -124,7 +124,7 @@ test("phone dedup: formats match, two leads on one phone are held as ambiguous",
   const claimed = new Map();
   decideChange({ key: "k1", sheet: "s", row: 1, identity: { phone_digits: "971501234567" }, owned: { next_action: "x" } }, idx2, resolveConfig({}), claimed);
   const d2 = decideChange({ key: "k2", sheet: "s", row: 2, identity: { phone_digits: "971501234567" }, owned: { next_action: "y" } }, idx2, resolveConfig({}), claimed);
-  assert.equal(d2.reason, "two_rows_same_lead");
+  assert.equal(d2.reason, "ambiguous_two_rows_same_lead");
 });
 
 test("conflict: later modified wins and the loser is recorded", () => {
@@ -267,4 +267,94 @@ test("review fix 6: first contact time and contact rule are part of the row hash
   const h = rowHashOf(base);
   assert.notEqual(rowHashOf({ ...base, first_contact_at: "2026-11-20T08:00:00.000Z" }), h);
   assert.notEqual(rowHashOf({ ...base, contact_rule: "pause" }), h);
+});
+
+// ---- S29 follow-ups ----
+const ph = (n) => `97150000${String(n).padStart(4, "0")}`;
+const chg = (o) => ({ sheet: "s", row: 1, identity: { phone_digits: "971501234567" }, ...o });
+
+test("follow-up 1: writeCost counts the field/unarchive update (update + feedback + audit note + hash = 4)", () => {
+  const idx = buildIndexes([lead({})]); const cfg = resolveConfig({});
+  const d = decideChange(chg({ key: "k", owned: { next_action: "new" }, followup_text: "called", source_modified_at: "2026-11-18T00:00:00.000Z" }), idx, cfg);
+  assert.equal(d.action, "update"); assert.equal(d.notes.length, 1); assert.ok(Object.keys(d.set).length);
+  assert.equal(writeCost(d), 4);
+  assert.equal(writeCost({ action: "update", set: {}, notes: [1] }), 3); // no field update: notes + audit + hash
+  assert.equal(writeCost({ action: "update", set: {}, notes: [], unarchive: true }), 3); // unarchive is a field update
+  const plan = planBatch([chg({ key: "k", owned: { next_action: "new" }, followup_text: "called", source_modified_at: "2026-11-18T00:00:00.000Z" })], [lead({})], cfg);
+  assert.equal(plan.counts.writes, 4);
+});
+
+test("follow-up 2: two rows of the same new person in one batch insert once (phone or e-mail)", () => {
+  const cfg = resolveConfig({ DRIVE_SYNC_ALLOW_INSERT: "true" });
+  const a = { key: "WA-n1", sheet: "s", row: 2, insertable: true, identity: { fingerprint: fingerprintOf("WA-n1"), phone_digits: ph(1) }, owned: {} };
+  const b = { ...a, key: "MKT-n1", row: 3, identity: { phone_digits: ph(1) } };
+  const p = planBatch([a, b], [], cfg);
+  assert.deepEqual(p.decisions.map(({ d }) => d.action), ["insert", "hold"]);
+  assert.equal(p.decisions[1].d.reason, "ambiguous_new_person_already_planned"); assert.equal(p.counts.inserted, 1);
+  const e1 = { ...a, identity: { email: "New@Example.com" } }; const e2 = { ...a, key: "WA-n2", identity: { email: "new@example.com " } };
+  assert.deepEqual(planBatch([e1, e2], [], cfg).decisions.map(({ d }) => d.action), ["insert", "hold"]);
+  const other = { ...a, key: "WA-n3", identity: { phone_digits: ph(2) } };
+  assert.deepEqual(planBatch([a, other], [], cfg).decisions.map(({ d }) => d.action), ["insert", "insert"]);
+  assert.ok(!JSON.stringify(p.claims).includes(ph(1)), "claims hold no raw phone");
+});
+
+test("follow-up 3: calls are paced under 30/min and a 429 waits for Retry-After", async () => {
+  const sales = Array.from({ length: 5 }, (_, i) => ({ ...S1, "Lead key": `WA-p${i}`, "Phone / WhatsApp": `05000000${10 + i}` }));
+  const os = fakeOs(sales.map((s, i) => lead({ id: `P${i}`, phone: normalizePhone(s["Phone / WhatsApp"]).e164 })));
+  let t = 0; const sleeps = []; const at = []; let refused = false;
+  const fetchImpl = async (u, init) => {
+    at.push(t);
+    if (!refused && at.length === 3) { refused = true; return { status: 429, headers: { get: (h) => (h.toLowerCase() === "retry-after" ? "7" : null) }, json: async () => ({ error: "Too many requests" }) }; }
+    return os.fetchImpl(u, init);
+  };
+  const deps = { reader: world({ sales }).reader, fetch: fetchImpl, clock: () => t, sleep: async (ms) => { sleeps.push(ms); t += ms; } };
+  const r = await runSync({ argv: ["--run-now", "--data-dir", dataDir(), "--endpoint", "http://fake", "--batch", "1", "--apply"], env: baseEnv, deps });
+  assert.equal(r.code, 0); assert.equal(r.applied.updated, 5);
+  assert.ok(sleeps.includes(7000), "Retry-After honoured");
+  for (let i = 1; i < at.length; i += 1) assert.ok(at[i] - at[i - 1] >= 2200, `gap ${i}`);
+  for (const s of at) assert.ok(at.filter((x) => x >= s && x < s + 60_000).length <= 30);
+});
+
+test("follow-up 4: an OS-won conflict without Drive modification time survives the next sync", () => {
+  const cfg = resolveConfig({});
+  const l = lead({ drive_sync: { row_hash: "old", synced_at: "2026-11-10T00:00:00.000Z" }, updated_at: "2026-11-15T00:00:00.000Z", next_action: "OS typed" });
+  const c1 = chg({ key: "k", owned: { next_action: "Drive typed" } }); // no source_modified_at
+  const d1 = decideChange(c1, buildIndexes([l]), cfg);
+  assert.deepEqual(d1.conflicts, [{ field: "next_action", winner: "os" }]); assert.equal(d1.set.next_action, undefined);
+  assert.ok(d1.raw_patch.drive_sync.os_won.next_action);
+  // our write: fresh synced_at, updated_at bumped by the same write
+  const at = "2026-11-16T00:00:00.000Z";
+  Object.assign(l, { drive_sync: { ...mergeDriveSync(l.drive_sync, d1.raw_patch.drive_sync), synced_at: at }, updated_at: at });
+  const d2 = decideChange(chg({ key: "k", owned: { next_action: "Drive typed", quality: "good" } }), buildIndexes([l]), cfg);
+  assert.equal(d2.action, "update"); assert.equal(d2.set.next_action, undefined, "OS value kept"); assert.equal(d2.set.quality, "good");
+  assert.ok(d2.raw_patch.drive_sync.os_won.next_action, "protection carried forward");
+  const d3 = decideChange(chg({ key: "k", owned: { next_action: "Drive edited again" } }), buildIndexes([l]), cfg);
+  assert.equal(d3.set.next_action, "Drive edited again"); assert.equal(d3.raw_patch.drive_sync.os_won.next_action, undefined);
+});
+
+test("follow-up 5: a lead matched by two sheet keys in different request batches is updated once", async () => {
+  const os = fakeOs([lead({})]); const w = world({ sales: [S1, { ...S1, "Lead key": "WA-bbb222", "Next action": "Other action" }] });
+  const dry = await run(w, os, ["--batch", "1"]);
+  assert.equal(dry.counts.updated, 1); assert.equal(dry.counts.held, 1); assert.match(dry.report, /hold ambiguous_two_rows_same_lead/);
+  const a = await run(w, os, ["--batch", "1", "--apply"]);
+  assert.equal(a.applied.updated, 1); assert.equal(os.leads[0].next_action, "Send quote");
+  const os2 = fakeOs([], { DRIVE_SYNC_ALLOW_INSERT: "true" }); // new person: inserted in batch 1, held in batch 2
+  const ins = [{ key: "WA-q1", sheet: "s", row: 2, insertable: true, identity: { phone_digits: ph(3) }, owned: {}, insert_fields: { phone: `+${ph(3)}` } }, { key: "WA-q2", sheet: "s", row: 3, insertable: true, identity: { phone_digits: ph(3) }, owned: {}, insert_fields: { phone: `+${ph(3)}` } }];
+  const p1 = planBatch([ins[0]], [], resolveConfig({ DRIVE_SYNC_ALLOW_INSERT: "true" }));
+  const p2 = planBatch([ins[1]], [], resolveConfig({ DRIVE_SYNC_ALLOW_INSERT: "true" }), p1.claims);
+  assert.equal(p2.decisions[0].d.action, "hold"); assert.ok(os2);
+  const src = readFileSync(path.resolve(import.meta.dirname, "../../src/app/api/sync/drive-ingest/route.ts"), "utf8");
+  assert.match(src, /validateClaims\(body\.claims\)/); assert.match(src, /plan\.claims\[String\(data\.id\)\]/);
+});
+
+test("follow-up 6: blank sheet cells keep the stored drive_sync metadata", () => {
+  const prev = { row_hash: "old", synced_at: "2026-11-10T00:00:00.000Z", next_followup_date: "2026-11-25", first_contact_at: "2026-11-20T08:00:00.000Z", contact_rule: "pause", contact_days_filled: 2, quality_reason: "budget" };
+  const l = lead({ drive_sync: prev });
+  const d = decideChange(chg({ key: "k", owned: { next_followup_date: "", quality_reason: "  " }, first_contact_at: null, contact_rule: "", followup_text: "new note" }), buildIndexes([l]), resolveConfig({}));
+  const ds = d.raw_patch.drive_sync;
+  assert.equal(ds.next_followup_date, "2026-11-25"); assert.equal(ds.first_contact_at, prev.first_contact_at); assert.equal(ds.contact_rule, "pause");
+  assert.equal(ds.contact_days_filled, 2); assert.equal(ds.quality_reason, "budget"); assert.notEqual(ds.row_hash, "old");
+  assert.equal(mergeDriveSync(prev, { contact_rule: "call", contact_days_filled: 0 }).contact_rule, "call");
+  assert.equal(mergeDriveSync(prev, { contact_days_filled: 0 }).contact_days_filled, 0);
+  assert.match(readFileSync(path.resolve(import.meta.dirname, "../../src/app/api/sync/drive-ingest/route.ts"), "utf8"), /mergeDriveSync\(curRaw\.drive_sync, d\.raw_patch\.drive_sync\)/);
 });

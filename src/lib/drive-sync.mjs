@@ -135,7 +135,8 @@ export function matchLead(change, idx) {
 }
 
 /**
- * Decide what to do with one change. Pure. `claimed` (Map leadId -> key) stops two sheet rows from writing the same lead.
+ * Decide what to do with one change. Pure. `claimed` (Map leadId / identity tag -> claimTag(key)) stops two sheet rows from
+ * writing the same lead, and two rows of the same new person from both being inserted.
  * Returns { action: insert|update|noop|skip|hold, reason?, set?, raw_patch?, notes?, conflicts?, fields?, lead_id?, unarchive? }.
  */
 export function decideChange(change, idx, cfg, claimed = new Map()) {
@@ -145,19 +146,24 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   if (m.ambiguous) return { action: "hold", reason: `ambiguous_match_${m.ambiguous}` };
   const hash = rowHashOf(change);
   const owned = change.owned ?? {};
+  const tag = claimTag(change.key);
   if (!m.lead) {
     if (!change.insertable) return { action: "hold", reason: "not_in_os_match_only" };
     if (!cfg.allowInsert) return { action: "hold", reason: "insert_disabled", would: "insert" };
     if (!change.identity?.phone_digits && !change.identity?.email) return { action: "hold", reason: "no_identity" };
+    // The same new person on two rows (same phone / e-mail / key) is inserted once; the other row is held.
+    const ids = identityClaimsOf(change);
+    if (ids.some((k) => claimed.has(k))) return { action: "hold", reason: "ambiguous_new_person_already_planned" };
+    for (const k of ids) claimed.set(k, tag);
     const set = {};
     if (nonEmpty(owned.next_action)) set.next_action = norm(owned.next_action);
     if (owned.quality === "poor" && nonEmpty(owned.quality_reason)) set.poor_reason = norm(owned.quality_reason);
     if (cfg.writeNextDate && nonEmpty(owned.next_followup_date)) set.next_followup_date = norm(owned.next_followup_date);
-    return { action: "insert", row_hash: hash, set, notes: notesOf(change), raw_patch: rawPatchOf(change, hash) };
+    return { action: "insert", row_hash: hash, set, notes: notesOf(change), raw_patch: rawPatchOf(change, hash, null, {}), claim_tag: tag };
   }
   const lead = m.lead;
-  if (claimed.has(lead.id) && claimed.get(lead.id) !== change.key) return { action: "hold", reason: "two_rows_same_lead", lead_id: lead.id };
-  claimed.set(lead.id, change.key);
+  if (claimed.has(lead.id) && claimed.get(lead.id) !== tag) return { action: "hold", reason: "ambiguous_two_rows_same_lead", lead_id: lead.id };
+  claimed.set(lead.id, tag);
   if (lead.archived && !cfg.allowUnarchive) return { action: "hold", reason: "archived_frozen", lead_id: lead.id };
   const prev = lead.drive_sync ?? null;
   if (prev?.row_hash === hash && !(lead.archived && cfg.allowUnarchive)) return { action: "noop", reason: "unchanged_since_last_sync", lead_id: lead.id, matched_by: m.by };
@@ -167,6 +173,9 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   const syncedAt = prev?.synced_at ? Date.parse(prev.synced_at) : null;
   const osChangedSince = osAt != null && (syncedAt == null || osAt - syncedAt > TOLERANCE_MS);
   const set = {}; const conflicts = []; const fields = [];
+  // OS-won fields stay OS-won while the Drive value is the one that lost (our own write refreshes synced_at/updated_at,
+  // so without this record the next unrelated Drive edit would overwrite them).
+  const prevOsWon = prev?.os_won ?? {}; const osWon = {};
   const current = { quality: lead.quality, next_action: lead.next_action, quality_reason: lead.poor_reason, next_followup_date: cfg.writeNextDate ? lead.next_followup_date : prev?.next_followup_date };
   for (const f of OWNED_FIELDS) {
     const v = norm(owned[f]);
@@ -175,8 +184,9 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
     if (f === "quality" && lead.quality && lead.quality !== "pending" && isFrozenFinal(lead)) continue;
     const cur = current[f];
     if (norm(cur) === v) continue;
+    if (nonEmpty(cur) && prevOsWon[f] === valueTag(v)) { osWon[f] = prevOsWon[f]; continue; }
     // Conflict: OS holds a different non-empty value that changed after the last sync. Later modified wins.
-    if (nonEmpty(cur) && osChangedSince && !(sheetAt != null && osAt != null && sheetAt > osAt)) { conflicts.push({ field: f, winner: "os" }); continue; }
+    if (nonEmpty(cur) && osChangedSince && !(sheetAt != null && osAt != null && sheetAt > osAt)) { conflicts.push({ field: f, winner: "os" }); osWon[f] = valueTag(v); continue; }
     if (nonEmpty(cur) && osChangedSince) conflicts.push({ field: f, winner: "drive" });
     fields.push(f);
     if (f === "quality") set.quality = v;
@@ -185,7 +195,9 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
     else if (f === "next_followup_date" && cfg.writeNextDate) set.next_followup_date = v;
   }
   const notes = notesOf(change);
-  const raw_patch = rawPatchOf(change, hash);
+  // A blank Drive cell keeps an earlier OS-won record (the empty value never overwrote anything).
+  for (const f of OWNED_FIELDS) if (!nonEmpty(owned[f]) && prevOsWon[f]) osWon[f] = prevOsWon[f];
+  const raw_patch = rawPatchOf(change, hash, prev, osWon);
   const unarchive = !!(lead.archived && cfg.allowUnarchive);
   // A write happens whenever the row changed since the last sync: at least the sync state and the note go in.
   return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash };
@@ -194,20 +206,52 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
 function notesOf(change) {
   return nonEmpty(change.followup_text) ? [{ import_key: `${change.key}/daily-feedback`, type: "note", content: `[Sheet sales feedback] ${norm(change.followup_text)}`.slice(0, 4000) }] : [];
 }
-function rawPatchOf(change, hash) {
+function rawPatchOf(change, hash, prev, osWon) {
   const owned = change.owned ?? {};
-  return { drive_sync: { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason ?? undefined, next_followup_date: owned.next_followup_date ?? undefined, contact_days_filled: change.contact_days_filled ?? undefined, first_contact_at: change.first_contact_at ?? undefined, contact_rule: change.contact_rule ?? undefined, source_modified_at: change.source_modified_at ?? undefined } };
+  return { drive_sync: mergeDriveSync(prev, { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason, next_followup_date: owned.next_followup_date, contact_days_filled: change.contact_days_filled, first_contact_at: change.first_contact_at, contact_rule: change.contact_rule, source_modified_at: change.source_modified_at, os_won: osWon }) };
 }
-/** Number of database writes one decision costs (lead update + activities), for the per-run cap. */
+/** Merge new drive_sync metadata over the stored one: a blank sheet cell keeps the stored value instead of erasing it. */
+export function mergeDriveSync(prev, patch) {
+  const out = { ...(prev && typeof prev === "object" ? prev : {}) };
+  for (const [k, v] of Object.entries(patch ?? {})) {
+    if (k === "row_hash" || k === "synced_at" || k === "os_won") { if (v !== undefined) out[k] = v; continue; }
+    if (v === undefined || v === null || (typeof v === "string" && norm(v) === "")) continue;
+    out[k] = v;
+  }
+  return out;
+}
+const valueTag = (v) => sha(`os_won/${norm(v)}`).slice(0, 16); // no sheet text stored, only a tag of it
+export const claimTag = (k) => sha(`claim/${k}`).slice(0, 24);
+function identityClaimsOf(change) {
+  const id = change.identity ?? {};
+  const pk = id.phone_digits || phoneDigits(id.phone); const ek = emailKey(id.email);
+  return [`key:${claimTag(change.key)}`, ...(id.fingerprint ? [`fp:${id.fingerprint}`] : []), ...(pk ? [`phone:${sha(pk).slice(0, 24)}`] : []), ...(ek ? [`email:${sha(ek).slice(0, 24)}`] : [])];
+}
+/** Validate the claims a caller carries over from earlier batches of the same run ({ lead id or identity tag: claim tag }). */
+export function validateClaims(c) {
+  if (c == null) return null;
+  if (typeof c !== "object" || Array.isArray(c)) return "bad_claims";
+  const e = Object.entries(c);
+  if (e.length > 50000) return "too_many_claims";
+  for (const [k, v] of e) if (k.length > 200 || typeof v !== "string" || v.length > 64) return "bad_claims";
+  return null;
+}
+/** Number of database writes one decision costs, for the per-run cap. */
 export function writeCost(d) {
-  if (d.action === "insert") return 3 + (d.notes?.length ?? 0);
-  if (d.action === "update") return 1 + (d.notes?.length ?? 0) + 1;
+  if (d.action === "insert") return 3 + (d.notes?.length ?? 0); // lead insert + notes + sync note + hash commit
+  if (d.action === "update") { // field/unarchive update (only when there is one) + notes + sync note + hash commit
+    const fieldUpdate = Object.keys(d.set ?? {}).length > 0 || d.unarchive ? 1 : 0;
+    return fieldUpdate + (d.notes?.length ?? 0) + 2;
+  }
   return 0;
 }
 
-/** Plan a whole batch: decisions + counts. Also used by the route for dry runs. */
-export function planBatch(changes, leads, cfg) {
-  const idx = buildIndexes(leads); const claimed = new Map();
+/**
+ * Plan a whole batch: decisions + counts. Also used by the route for dry runs. `claims` carries the claimed leads and the
+ * reserved new identities of earlier batches of the same run, so a lead matched from two batches is written once.
+ */
+export function planBatch(changes, leads, cfg, claims = null) {
+  const idx = buildIndexes(leads); const claimed = new Map(Object.entries(claims ?? {}));
   const decisions = changes.map((c) => ({ change: c, d: decideChange(c, idx, cfg, claimed) }));
   const counts = { read: changes.length, matched: 0, inserted: 0, would_insert: 0, updated: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0 };
   for (const { d } of decisions) {
@@ -215,5 +259,5 @@ export function planBatch(changes, leads, cfg) {
     if (d.action === "insert") counts.inserted += 1; else if (d.action === "update") counts.updated += 1; else if (d.action === "noop") counts.noop += 1; else if (d.action === "skip") counts.skipped += 1; else if (d.action === "hold") { counts.held += 1; if (d.would === "insert") counts.would_insert += 1; }
     counts.conflicts += d.conflicts?.length ?? 0; counts.writes += writeCost(d);
   }
-  return { decisions, counts };
+  return { decisions, counts, claims: Object.fromEntries(claimed) };
 }

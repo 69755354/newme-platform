@@ -15,7 +15,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logger } from "@/lib/logger";
 import { clientIdentifier, consumeRateLimit } from "@/lib/rate-limit";
 import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
-import { SYNC_SOURCE, bearerToken, maskId, planBatch, resolveConfig, tokenMatches, validateChange, writeCost } from "@/lib/drive-sync.mjs";
+import { SYNC_SOURCE, bearerToken, claimTag, maskId, mergeDriveSync, planBatch, resolveConfig, tokenMatches, validateChange, validateClaims, writeCost } from "@/lib/drive-sync.mjs";
 
 export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 2_000_000;
@@ -74,6 +74,8 @@ export async function POST(request: NextRequest) {
   if (!Array.isArray(changes)) return reply({ error: "changes must be an array" }, 400);
   if (changes.length > cfg.maxChangesPerCall) return reply({ error: `Too many changes in one call (max ${cfg.maxChangesPerCall})`, max: cfg.maxChangesPerCall }, 413);
   for (const c of changes) { const bad = validateChange(c); if (bad) return reply({ error: `Invalid change: ${bad}` }, 400); }
+  const badClaims = validateClaims(body.claims);
+  if (badClaims) return reply({ error: `Invalid claims: ${badClaims}` }, 400);
   const dryRun = body.dry_run !== false; // anything but an explicit false is a dry run
   const runId = typeof body.run_id === "string" ? body.run_id.slice(0, 64) : "unknown";
 
@@ -81,9 +83,10 @@ export async function POST(request: NextRequest) {
     const { data: leadRows, error: leadErr, truncated } = await fetchAllRows((from: number, to: number, withCount: boolean) =>
       supabaseAdmin.from("leads").select(LEAD_COLUMNS, withCount ? { count: "exact" } : undefined).order("id").range(from, to));
     if (leadErr || truncated) throw new Error("lead_query_failed");
-    const plan = planBatch(changes as Json[], (leadRows ?? []) as Json[], cfg);
+    // claims: leads claimed / new people reserved by earlier batches of this run (returned below, sent back by the reader).
+    const plan = planBatch(changes as Json[], (leadRows ?? []) as Json[], cfg, (body.claims ?? null) as Record<string, string> | null);
     const summary = plan.decisions.map(({ change, d }) => ({ key: maskId(change.key), sheet: change.sheet, row: change.row, action: d.action, reason: d.reason ?? null, fields: d.fields ?? [], conflicts: d.conflicts ?? [] }));
-    if (dryRun) return reply({ ok: true, dry_run: true, counts: plan.counts, decisions: summary });
+    if (dryRun) return reply({ ok: true, dry_run: true, counts: plan.counts, decisions: summary, claims: plan.claims });
 
     // Fail closed: if the sync log cannot be written nothing is applied.
     const file = logFile();
@@ -93,7 +96,6 @@ export async function POST(request: NextRequest) {
 
     const before = await sideEffectCounts();
     const applied = { inserted: 0, updated: 0, notes: 0, failed: 0 };
-    const nowIso = new Date().toISOString();
     for (const { change, d } of plan.decisions) {
       const k = maskId(change.key);
       try {
@@ -109,8 +111,10 @@ export async function POST(request: NextRequest) {
           if (error || !data) throw new Error("insert_failed");
           for (const n of d.notes ?? []) { if (await upsertNote(data.id, n, runId)) applied.notes += 1; else throw new Error("note_failed"); }
           if (!(await insertNote(data.id, { import_key: `${change.key}/drive-sync/${String(d.row_hash).slice(0, 16)}`, type: "note", content: "Drive sync: lead created from sheet row" }, runId))) throw new Error("sync_note_failed");
-          const { error: hashErr } = await supabaseAdmin.from("leads").update({ raw_import_data: { drive_sync: { ...d.raw_patch.drive_sync, synced_at: nowIso, inserted_by: SYNC_SOURCE } } }).eq("id", data.id);
+          // synced_at is stamped at the commit itself, so the updated_at bump of this write stays inside the tolerance.
+          const { error: hashErr } = await supabaseAdmin.from("leads").update({ raw_import_data: { drive_sync: { ...d.raw_patch.drive_sync, synced_at: new Date().toISOString(), inserted_by: SYNC_SOURCE } } }).eq("id", data.id);
           if (hashErr) throw new Error("hash_commit_failed");
+          plan.claims[String(data.id)] = String(d.claim_tag ?? claimTag(change.key)); // a later batch matching this new lead is held
           applied.inserted += 1;
           log({ event: "insert", key: k, sheet: change.sheet, row: change.row, lead_id: data.id });
         } else if (d.action === "update") {
@@ -127,7 +131,9 @@ export async function POST(request: NextRequest) {
           // Last step: commit the row hash. Anything above that failed leaves the old hash, so the row is retried.
           const { data: cur, error: curErr } = await supabaseAdmin.from("leads").select("raw_import_data").eq("id", d.lead_id).single();
           if (curErr) throw new Error("read_failed");
-          const { error: hashErr } = await supabaseAdmin.from("leads").update({ raw_import_data: { ...((cur?.raw_import_data as Json | null) ?? {}), drive_sync: { ...d.raw_patch.drive_sync, synced_at: nowIso } } }).eq("id", d.lead_id);
+          // Merge, not replace: a blank sheet cell keeps the stored next date / first contact / contact rule.
+          const curRaw = ((cur?.raw_import_data as Json | null) ?? {});
+          const { error: hashErr } = await supabaseAdmin.from("leads").update({ raw_import_data: { ...curRaw, drive_sync: { ...mergeDriveSync(curRaw.drive_sync, d.raw_patch.drive_sync), synced_at: new Date().toISOString() } } }).eq("id", d.lead_id);
           if (hashErr) throw new Error("hash_commit_failed");
           applied.updated += 1;
           log({ event: "update", key: k, sheet: change.sheet, row: change.row, lead_id: d.lead_id, fields: d.fields, conflicts: d.conflicts, row_hash: d.row_hash, cost: writeCost(d) });
@@ -142,7 +148,7 @@ export async function POST(request: NextRequest) {
     const after = await sideEffectCounts();
     const sideEffectsChanged = SIDE_EFFECT_TABLES.filter((t) => before[t] !== after[t]);
     log({ event: "batch_end", applied, side_effects_changed: sideEffectsChanged });
-    return reply({ ok: applied.failed === 0 && sideEffectsChanged.length === 0, dry_run: false, counts: plan.counts, applied, side_effects: { before, after, changed: sideEffectsChanged }, decisions: summary }, applied.failed ? 207 : 200);
+    return reply({ ok: applied.failed === 0 && sideEffectsChanged.length === 0, dry_run: false, counts: plan.counts, applied, side_effects: { before, after, changed: sideEffectsChanged }, decisions: summary, claims: plan.claims }, applied.failed ? 207 : 200);
   } catch (err) {
     logger.error({ error: err instanceof Error ? err.message : "unknown" }, "drive-sync ingest failed");
     return reply({ error: "Ingest failed" }, 500);

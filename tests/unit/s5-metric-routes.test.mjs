@@ -493,7 +493,8 @@ test("'won orders' wording: the count beside a signing amount is this month's wo
 });
 
 test("the Ads ROI panel reads every lead, 'normal' has its own column, one definition of won and quality", async () => {
-  const roi = await run(routes.adsRoi);
+  // 120 days back from NOW (3 Nov) covers every lead of the data set (earliest 1 Aug)
+  const roi = await run(routes.adsRoi, "https://app.newme.ae/api/dashboard/ads-roi?days=120");
   const analytics = await run(routes.analytics);
   const ads = await run(routes.ads);
   const rows = counted(db);
@@ -512,12 +513,14 @@ test("the Ads ROI panel reads every lead, 'normal' has its own column, one defin
   const { aggregateAttribution, totalAttribution } = await import("../../src/lib/lead-metrics.mjs");
   const totals = totalAttribution(aggregateAttribution(ads.leads));
   assert.equal(totals.valid, dist.good + dist.normal);
-  // won amount: the meta leads' won quotation value, one definition
+  // S27: the ad return stops at leads - no won count, no amount, no ROAS anywhere in the panel
   const isMeta = (l) => l.source === "fb" || l.source === "ins" || l.source_platform === "meta";
-  const metaWon = rows.filter((l) => isMeta(l) && l.final_status === "won");
-  assert.equal(roi.summary.conversions, metaWon.length);
-  assert.equal(roi.summary.signed_amount, sumValue(metaWon));
   assert.equal(roi.summary.total_leads, rows.filter(isMeta).length);
+  assert.deepEqual(Object.keys(roi.summary).sort(), ["cpl", "total_leads", "total_spend"]);
+  assert.doesNotMatch(JSON.stringify(roi), /roas|signed_amount|conversions/);
+  assert.doesNotMatch(JSON.stringify(analytics.adsRoi), /roas|signed_amount|conversions/);
+  assert.equal(roi.period.end_date, "2026-11-03");
+  assert.equal(roi.spend_stale, true, "no spend rows at all counts as stale");
 });
 
 test("'won amount' is one number across the sales load, team performance and lead sources pages", async () => {

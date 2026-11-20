@@ -3,8 +3,12 @@
 // idempotent enqueue that never throws into a salesperson's action, and a sender that
 // reads the server-side token from the environment only.
 import { normalizeCtwaClid } from "./whatsapp-ctwa.mjs";
+import { latestQuotationAmount } from "./quote-amount.mjs";
 
-export const WA_CAPI_EVENTS = Object.freeze(["LeadSubmitted", "QualifiedLead", "Purchase"]);
+export const WA_CAPI_EVENTS = Object.freeze(["LeadSubmitted", "QualifiedLead", "InitiateCheckout", "Purchase"]);
+// Events that carry the deal amount. InitiateCheckout is the valued "quotation with an amount sent" signal: Meta's
+// business-messaging list has no dedicated quote event, and Purchase must stay for the signed deal.
+export const WA_VALUED_EVENTS = Object.freeze(["InitiateCheckout", "Purchase"]);
 
 // Progress key (pipeline stage or lead-detail milestone) -> Meta event. This follows the form
 // funnel in meta-crm-events.ts, where "Qualified" is the optimisation target and is reached at
@@ -22,7 +26,7 @@ export const WA_STAGE_EVENTS = Object.freeze({
 export const WA_CAPI_EVENT_MAX_AGE_SECONDS = 7 * 86_400;
 const WABA_ID = /^[0-9]{5,32}$/;
 
-export function buildWhatsAppCapiPayload({ eventId, wabaId, ctwaClid, eventName, eventTime, value = null, currency = null }) {
+export function buildWhatsAppCapiPayload({ eventId, wabaId, ctwaClid, eventName, eventTime, value = null, currency = null, hashedPhone = null }) {
   if (!WA_CAPI_EVENTS.includes(eventName)) throw new Error("Invalid WhatsApp event name");
   if (typeof wabaId !== "string" || !WABA_ID.test(wabaId)) throw new Error("Invalid WhatsApp business account id");
   const clid = normalizeCtwaClid(ctwaClid);
@@ -36,10 +40,12 @@ export function buildWhatsAppCapiPayload({ eventId, wabaId, ctwaClid, eventName,
     user_data: { whatsapp_business_account_id: wabaId, ctwa_clid: clid },
   };
   if (typeof eventId === "string" && eventId) event.event_id = eventId;
-  if (eventName === "Purchase") {
+  // Optional SHA-256 phone hash (see hashedContactKeys); anything else is ignored, never sent in clear.
+  if (Array.isArray(hashedPhone) && hashedPhone.length && hashedPhone.every((h) => /^[0-9a-f]{64}$/.test(h))) event.user_data.ph = hashedPhone;
+  if (WA_VALUED_EVENTS.includes(eventName)) {
     const amount = Number(value);
     if (!Number.isFinite(amount) || amount < 0 || typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) {
-      throw new Error("Purchase needs a value and a currency");
+      throw new Error("A valued event needs a value and a currency");
     }
     event.custom_data = { currency, value: amount };
   }
@@ -91,7 +97,7 @@ export async function enqueueWhatsAppCapiEvent(db, leadId, eventName, { value = 
     const waba = conversation?.data?.waba_id;
     if (conversation?.error || typeof waba !== "string" || !WABA_ID.test(waba)) return "skipped";
     const row = { lead_id: leadId, waba_id: waba, ctwa_clid: clid, event_name: eventName, event_time: nowSeconds };
-    if (eventName === "Purchase") {
+    if (WA_VALUED_EVENTS.includes(eventName)) {
       const amount = Number(value);
       if (!Number.isFinite(amount) || amount <= 0 || typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) return "skipped";
       row.value = amount;
@@ -108,7 +114,20 @@ export async function enqueueWhatsAppCapiEvent(db, leadId, eventName, { value = 
 /** Stage or milestone key -> event (QualifiedLead from requirement_confirmed on). */
 export async function enqueueWhatsAppCapiForProgress(db, leadId, progressKey) {
   const eventName = WA_STAGE_EVENTS[progressKey];
-  return eventName ? enqueueWhatsAppCapiEvent(db, leadId, eventName) : "skipped";
+  const result = eventName ? await enqueueWhatsAppCapiEvent(db, leadId, eventName) : "skipped";
+  // The quotation step also reports the quoted amount (main signal); skipped while there is no amount yet.
+  if (progressKey === "quotation_submitted" || progressKey === "quotation") await enqueueWhatsAppQuoteForLead(db, leadId);
+  return result;
+}
+
+/** Quotation with an amount sent: InitiateCheckout with the newest live quotation's total. Idempotent per lead. */
+export async function enqueueWhatsAppQuoteForLead(db, leadId) {
+  try {
+    const amount = await latestQuotationAmount(db, leadId);
+    return amount ? await enqueueWhatsAppCapiEvent(db, leadId, "InitiateCheckout", amount) : "skipped";
+  } catch {
+    return "skipped";
+  }
 }
 
 /** A lead whose quality is rated good or normal is a qualified lead. */
@@ -116,7 +135,7 @@ export async function enqueueWhatsAppCapiForQuality(db, leadId, quality) {
   return quality === "good" || quality === "normal" ? enqueueWhatsAppCapiEvent(db, leadId, "QualifiedLead") : "skipped";
 }
 
-async function activeContractAmount(db, leadId) {
+export async function activeContractAmount(db, leadId) {
   const { data, error } = await db.from("contracts").select("contract_amount, currency")
     .eq("lead_id", leadId).eq("status", "active").order("created_at", { ascending: false }).limit(1);
   const row = Array.isArray(data) ? data[0] : null;

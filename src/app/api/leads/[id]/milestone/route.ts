@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
 import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
 import { enqueueWhatsAppCapiForProgress } from "@/lib/whatsapp-capi.mjs";
+import { enqueueWebsiteQuoteForProgress } from "@/lib/website-capi-valued";
 import {
   applyRequestAuthCookies,
   getRequestAuthContext,
@@ -207,6 +208,7 @@ export async function POST(
     // Best-effort Meta CRM feedback for the committed milestone; never fails the request.
     await enqueueMetaCrmEventForLead(supabaseAdmin, leadId, milestoneKey);
     await enqueueWhatsAppCapiForProgress(supabaseAdmin, leadId, milestoneKey);
+    await enqueueWebsiteQuoteForProgress(supabaseAdmin, leadId, milestoneKey);
     return respond({
       success: true,
       result: recompleted,
@@ -264,6 +266,7 @@ export async function POST(
   // Best-effort Meta CRM feedback for the committed milestone; never fails the request.
   await enqueueMetaCrmEventForLead(supabaseAdmin, leadId, milestoneKey);
   await enqueueWhatsAppCapiForProgress(supabaseAdmin, leadId, milestoneKey);
+  await enqueueWebsiteQuoteForProgress(supabaseAdmin, leadId, milestoneKey);
   return respond({ success: true, milestone: inserted, stageAdvance: await advanceStage() });
 }
 

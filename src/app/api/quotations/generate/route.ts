@@ -16,6 +16,9 @@ import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
 import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 import { advanceStageForMilestone } from "@/lib/milestone-stage-advance.mjs";
 import { isCompleteContact } from "@/lib/first-contact-gate.mjs";
+import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueWhatsAppCapiForProgress } from "@/lib/whatsapp-capi.mjs";
+import { enqueueWebsiteQuoteForProgress } from "@/lib/website-capi-valued";
 
 const VALID_DEVICE_IDS = new Set<string>(
   DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
@@ -286,6 +289,16 @@ export async function POST(request: NextRequest) {
     } catch {
       stageAdvance = { advanced: false, stage: null, reason: "stage_update_failed" };
     }
+    // Quotation with an amount is the main signal back to Meta (value = the quoted total). Best effort,
+    // only once the lead has really moved to quotation_submitted; each path dedupes per lead.
+    if (stageAdvance.advanced && stageAdvance.stage === "quotation_submitted") {
+      try {
+        await enqueueMetaCrmEventForLead(supabaseAdmin, lead_id, "quotation_submitted");
+        await enqueueWhatsAppCapiForProgress(supabaseAdmin, lead_id, "quotation_submitted");
+        await enqueueWebsiteQuoteForProgress(supabaseAdmin, lead_id, "quotation_submitted");
+      } catch { /* tracking must never fail a quotation */ }
+    }
+
     if (!stageAdvance.advanced && stageAdvance.reason) {
       const log = stageAdvance.reason === "stage_update_failed" || stageAdvance.reason === "stage_read_failed" ? logger.warn : logger.info;
       log.call(

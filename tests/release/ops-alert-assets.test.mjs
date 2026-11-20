@@ -65,7 +65,7 @@ test("both Meta senders run every 10 minutes the same way, alert on failure and 
     assert.match(service, /^Type=oneshot$/m, name);
     assert.match(service, /^OnFailure=newme-unit-alert@%n\.service$/m, name);
     assert.match(service, /^WorkingDirectory=\/opt\/newme\/current$/m, name);
-    assert.match(service, new RegExp(`^ExecStart=/usr/bin/node ${script.replace(/[.]/g, "\\.")} --execute$`, "m"), name);
+    assert.match(service, new RegExp(`^ExecStart=/usr/bin/node ${script.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} --execute$`, "m"), name);
     assert.match(service, /^EnvironmentFile=\/etc\/newme\/newme-runtime\.env$/m, name);
     assert.match(service, /^EnvironmentFile=\/etc\/newme\/capi-wa\.env$/m, name);
     assert.match(service, /^ProtectSystem=strict$/m, name);

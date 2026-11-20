@@ -264,6 +264,12 @@
       "version": "20261119400000",
       "file": "20261119400000_whatsapp_history_backfill.sql",
       "sha256": "e94c432f3169a61114421287f8aedb873777ec26dda82bbd32e11660d798f7f5"
+    },
+    {
+      "$comment": "S31 corrections (OS fix S31): evaluate_lead_dispatch, dispatch_decide, sweep_lead_dispatch and record_whatsapp_ad_event replaced in place with the same signatures (null-safe phone confirmation, canonical phone matching, newer twins re-evaluated when an older candidate changes, a live WhatsApp delivery promotes a backfilled history row) plus one service-role helper. No table, column, policy or client grant changes.",
+      "version": "20261120100000",
+      "file": "20261120100000_dispatch_and_history_corrections.sql",
+      "sha256": "7d9c25112239e36eedce2a5c9620d1645031e7897920431963bf884867aa21dd"
     }
   ],
   "companions": [
@@ -624,6 +630,11 @@
           "name": "s25-whatsapp-history-backfill-present",
           "expect": true,
           "sql": "SELECT (SELECT count(*)=1 FROM information_schema.columns WHERE table_schema='public' AND table_name='whatsapp_message_events' AND column_name='backfilled' AND is_nullable='NO') AND (SELECT c.relrowsecurity AND NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('service_role',c.oid,'SELECT') FROM pg_class c WHERE c.oid=to_regclass('public.whatsapp_synced_contacts')) AND (SELECT count(*)=2 FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.record_whatsapp_history_messages(jsonb)'),to_regprocedure('public.record_whatsapp_synced_contacts(jsonb)')) AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE'))"
+        },
+        {
+          "name": "s31-dispatch-and-history-corrections-present",
+          "expect": true,
+          "sql": "SELECT (SELECT count(*)=5 FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.evaluate_lead_dispatch(uuid,uuid)'),to_regprocedure('public.dispatch_decide(uuid,uuid,text,text)'),to_regprocedure('public.sweep_lead_dispatch(timestamptz,integer)'),to_regprocedure('public.dispatch_reevaluate_dependents(uuid,uuid)'),to_regprocedure('public.record_whatsapp_ad_event(jsonb,boolean)')) AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND p.prosrc LIKE '%S31 corrective v1%' AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE'))"
         }
       ]
     }

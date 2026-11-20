@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   META_CRM_STAGE_EVENTS, buildMetaCrmPayload, enqueueMetaCrmStageEvent, normalizeLeadgenId, serializeMetaCrmPayload,
 } from "../../src/lib/meta-crm-events.ts";
@@ -58,10 +59,12 @@ test("enqueue skips leads without a Meta id or unknown stages and never throws",
   assert.equal(await enqueueMetaCrmStageEvent({ from() { throw new Error("boom"); } }, { id: "a", meta_leadgen_id: "123456789012345" }, "won"), "skipped");
 });
 
-function queueDb({ row }) {
+function queueDb({ row, exhaustedRows = [] }) {
   const updates = [];
   const queue = { select() { return queue; }, in() { return queue; }, lt() { return queue; }, order() { return queue; },
+    gte() { return exhaustedQuery; },
     limit() { return Promise.resolve({ data: [row], error: null }); } };
+  const exhaustedQuery = { limit() { return Promise.resolve({ data: exhaustedRows, error: null }); } };
   const upd = (patch) => {
     updates.push(patch);
     const u = { eq() { return u; }, select() { return u; },
@@ -134,4 +137,16 @@ test("numeric JSON preserves all 17 digits and rejects rounded numeric inputs", 
   assert.equal(normalizeLeadgenId(Number(leadgenId)),null);
   assert.equal(normalizeLeadgenId("000123456789012345"),null);
   assert.throws(()=>serializeMetaCrmPayload({data:[{...payload.data[0],user_data:{lead_id:'12345678901234567, "injected":true'}}]}));
+});
+
+test("send tool: rows that ran out of attempts are counted as exhausted so the run fails visibly", async () => {
+  const row = { id: "r9", meta_leadgen_id: "123456789012345", event_name: "Qualified",
+    event_time: 1_800_000_000, status: "pending", attempts: 0 };
+  const none = await sendMetaCrmEvents(queueDb({ row }), { clock: () => 1_800_000_100_000, send: async () => {} });
+  assert.equal(none.exhausted, 0);
+  const some = await sendMetaCrmEvents(queueDb({ row, exhaustedRows: [{ id: "x1" }, { id: "x2" }] }), { clock: () => 1_800_000_100_000, send: async () => {} });
+  assert.equal(some.exhausted, 2);
+  const src = readFileSync(new URL("../../scripts/meta-crm-events-send.mjs", import.meta.url), "utf8");
+  assert.match(src, /\.in\("status", \["pending", "failed"\]\)\.gte\("attempts", MAX_ATTEMPTS\)/);
+  assert.match(src, /summary\.review_required \|\| summary\.exhausted\) process\.exitCode = 1/);
 });

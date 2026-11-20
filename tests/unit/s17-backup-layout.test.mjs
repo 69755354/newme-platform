@@ -189,17 +189,23 @@ test("the unit that creates backups also lists the pull directory and the alert 
 });
 
 // ---- freshness: NAS pull -----------------------------------------------------------------------------
-function freshness(extra, { localAgeH = 1, pullAgeH = null } = {}) {
+function freshness(extra, { localAgeH = 1, pullAgeH = null, pushAgeH } = {}) {
   const b = box();
   const backups = join(b.dir, "backups"); mkdirSync(backups, { mode: 0o700 });
   const enc = join(backups, "newme-prod-20261117T000000Z.dump.enc");
   writeFileSync(enc, "x"); writeFileSync(`${enc}.sha256`, "x");
   const t = (Date.now() - localAgeH * 3_600_000) / 1000; utimesSync(enc, t, t);
   const state = join(b.dir, "nas-state"); mkdirSync(state);
+  let pushState = null;
+  if (pushAgeH !== undefined) {
+    pushState = join(b.dir, "nas-push"); mkdirSync(pushState);
+    if (pushAgeH !== null) { const f = join(pushState, "last-ok"); writeFileSync(f, "2026-11-19T22:03:16Z\n"); const p = (Date.now() - pushAgeH * 3_600_000) / 1000; utimesSync(f, p, p); }
+  }
   if (pullAgeH !== null) { const f = join(state, "last-pull-ok"); writeFileSync(f, "1"); const p = (Date.now() - pullAgeH * 3_600_000) / 1000; utimesSync(f, p, p); }
   const r = spawnSync("bash", [join(root, "infra/backup/newme-backup-freshness.sh")], {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, BACKUP_ENV_FILE: join(b.dir, "none.env"), BACKUP_DIR: backups, BACKUP_ALERT_SCRIPT: join(b.bin, "alert.sh"), NAS_PULL_STATE_DIR: state, ...extra },
+    env: { PATH: process.env.PATH, BACKUP_ENV_FILE: join(b.dir, "none.env"), BACKUP_DIR: backups, BACKUP_ALERT_SCRIPT: join(b.bin, "alert.sh"), NAS_PULL_STATE_DIR: state,
+      DRILL_REQUIRED_FROM: "2999-01-01", NAS_PUSH_STATE_DIR: pushState ?? join(b.dir, "no-nas-push"), ...extra },
   });
   return { ...r, b };
 }
@@ -291,4 +297,27 @@ test("without a pull directory the backup behaves as before", () => {
   });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!existsSync(join(b.dir, "absent")));
+});
+
+// ---- freshness: NAS push (audit 2026-11-20 F6) --------------------------------------------------------
+test("freshness: a NAS push older than 26 hours, or one that never succeeded, raises its own alert", () => {
+  const stale = freshness({}, { pushAgeH: 27 });
+  assert.equal(stale.status, 0, "own key, the unit itself stays green (no second OnFailure message)");
+  assert.match(stale.b.calls(), /alert nas-push-freshness failure .*27 hours old \(limit 26\)/);
+  const never = freshness({}, { pushAgeH: null });
+  assert.match(never.b.calls(), /alert nas-push-freshness failure .*never been pushed/);
+  const ok = freshness({}, { pushAgeH: 3 });
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.match(ok.b.calls(), /alert nas-push-freshness recovery/);
+  assert.ok(!/nas-push-freshness failure/.test(ok.b.calls()));
+  const custom = freshness({ NAS_PUSH_MAX_AGE_HOURS: "30" }, { pushAgeH: 27 });
+  assert.ok(!/nas-push-freshness failure/.test(custom.b.calls()));
+});
+
+test("freshness: no NAS push installed (no state directory) means no push check unless NAS_PUSH_REQUIRED=1", () => {
+  const none = freshness({});
+  assert.ok(!/nas-push/.test(none.b.calls()));
+  const required = freshness({ NAS_PUSH_REQUIRED: "1" });
+  assert.match(required.b.calls(), /alert nas-push-freshness failure .*never been pushed/);
+  assert.match(read("infra/backup/newme-backup-freshness.sh"), /NAS_PUSH_DIR="\$\{NAS_PUSH_STATE_DIR:-\/var\/lib\/newme-nas-push\}"/);
 });

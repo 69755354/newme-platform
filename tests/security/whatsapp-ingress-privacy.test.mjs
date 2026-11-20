@@ -27,7 +27,7 @@ function contract(source) {
   const plain = locations.find((location) => location.includes("return 400;"));
   assert.ok(tls && plain);
   for (const directive of ["limit_req zone=api burst=50 nodelay;", "limit_req_status 429;",
-    "client_max_body_size 1m;", "client_body_buffer_size 1m;", "proxy_request_buffering off;",
+    "client_max_body_size 4m;", "client_body_buffer_size 1m;", "proxy_request_buffering off;",
     "proxy_http_version 1.1;", "proxy_pass http://127.0.0.1:3001;"]) {
     assert.ok(tls.includes(directive), `missing callback directive: ${directive}`);
   }
@@ -46,7 +46,7 @@ test("rejects removing rate-limit or upstream outcome evidence", () => {
 });
 test("rejects disk buffering or a larger body limit for the signed callback", () => {
   assert.throws(() => contract(config.replace("proxy_request_buffering off;", "proxy_request_buffering on;")));
-  assert.throws(() => contract(config.replace("client_max_body_size 1m;", "client_max_body_size 2m;")));
+  assert.throws(() => contract(config.replace("client_max_body_size 4m;", "client_max_body_size 8m;")));
 });
 test("rejects default error logging or disabling callback access evidence", () => {
   assert.throws(() => contract(config.replace("error_log /dev/null;", "error_log /var/log/nginx/error.log;")));

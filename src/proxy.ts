@@ -21,6 +21,8 @@ const PROTECTED_ROUTES: Record<string, string[]> = {
   // S23: the pages and the APIs behind them serve exactly these roles (sales see their own leads).
   "/opportunities": ["admin", "boss", "operator", "sales"],
   "/visits": ["admin", "boss", "operator", "sales"],
+  // S24: the dispatch workbench and its APIs serve exactly the staff roles.
+  "/dispatch": ["admin", "boss", "operator"],
 };
 
 const PUBLIC_API_PATHS = new Set([
@@ -412,6 +414,7 @@ export const config = {
     "/projects/:path*",
     "/opportunities/:path*",
     "/visits/:path*",
+    "/dispatch/:path*",
     "/products/:path*",
     // /cable-costing is an authenticated employee tool under src/app/(dashboard);
     // listing it keeps the edge checks (is_active revocation, forced-password-change

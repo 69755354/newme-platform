@@ -1265,3 +1265,15 @@ p75 79 ms / p95 123 ms, within policy. The delayed verification passed at `2026-
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:b7e0e1b5cbb0ae38d49c8d656448fada1b67ee1c4e07a5ff68f6f696f8f343c1 -->
+
+## OS fix Ads page fixes technical acceptance (2026-11-20)
+
+Release `e501168ebb5906a09b49c4e99306b1ad8dfc0c4c` (Ads page fixes, ad spend sync stays off) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T11:29:58Z`, replacing the finalized release `40d19fd6`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 74 ms / p95 99 ms, within policy. The delayed verification passed at `2026-11-20T11:47:19Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:fcdc537fb960d81580e9bf06c61cde2f607be925a3f31a4151f27badadf3e8d0 -->

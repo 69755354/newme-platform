@@ -16,6 +16,11 @@ export const DEFAULTS = Object.freeze({
   phoneHeader: "phone",
   clidColumn: "X",
   clidHeader: "meta_wa_ctwa_clid",
+  registerAppend: false,
+  registerSheetId: "1t8ZbfF8hmv51KcNfWuwLPPII1IGMc6AWJgfxlCAew7w", // sales allocation file (S29 SOURCES.lead_register)
+  registerTab: "Lead Register",
+  registerHeaderRow: 5,
+  registerMaxAppend: 30,
   maxWrites: 200,
   maxRequests: 40,
   overlapSeconds: 120,
@@ -108,7 +113,9 @@ export function guardSheets(sheets, policy) {
     getValues: (...a) => sheets.getValues(...a),
     batchGetValues: (...a) => sheets.batchGetValues(...a),
     getFirstSheetTitle: (...a) => sheets.getFirstSheetTitle(...a),
-    batchUpdateValues(id, data) { for (const d of data) check(id, d.range, "update"); return sheets.batchUpdateValues(id, data); },
+    batchUpdateValues(id, data) {
+      if (policy[id]?.appendOnly) throw new SyncError("write_blocked", "this spreadsheet is append-only: existing cells cannot be edited");
+      for (const d of data) check(id, d.range, "update"); return sheets.batchUpdateValues(id, data); },
     appendValues(id, range, values) { check(id, range, "append"); return sheets.appendValues(id, range, values); },
     getSheetId: (...a) => sheets.getSheetId(...a),
     getCells: (...a) => sheets.getCells(...a),
@@ -121,6 +128,11 @@ export function guardSheets(sheets, policy) {
       if (!rule || !rule.formatCells) throw new SyncError("write_blocked", "format requests are not allowed on this spreadsheet");
       if (rule.tab && tab !== rule.tab) throw new SyncError("write_blocked", `format outside tab ${rule.tab}`);
       for (const op of ops) {
+        // append-only sheet: colour + note on rows this run appended, never a value and never a whole-row format
+        if (rule.appendOnly) {
+          if (op.kind !== "cell" || op.value !== undefined) throw new SyncError("write_blocked", "append-only sheet: only colour and note on cells are allowed");
+          if (!rule.formatRows || !rule.formatRows.has(op.row)) throw new SyncError("write_blocked", `format on row ${op.row} is not a row appended by this program`);
+        }
         const kinds = { cell: ["row", "col", "value", "bg", "note"], rowbg: ["row", "c1", "c2", "bg"], headernote: ["row", "col", "note"] };
         if (!kinds[op.kind]) throw new SyncError("write_blocked", "unknown format request");
         if (Object.keys(op).some((k) => k !== "kind" && !kinds[op.kind].includes(k))) throw new SyncError("write_blocked", "unexpected field in format request");
@@ -138,9 +150,18 @@ export function guardSheets(sheets, policy) {
   };
 }
 
-export function buildWritePolicy({ metaSheetId, metaTab, salesSheetId, salesTab, clidColumn }) {
+/**
+ * Lead Register: append on the header-anchored cell of that one tab only; formatting only on rows listed in formatRows
+ * (a Set the worker fills with the rows it appended); no value edits, no deletes. minRow keeps the header and the banner out.
+ */
+export function buildRegisterPolicy({ registerSheetId, registerTab, registerHeaderRow }) {
+  return { [registerSheetId]: { tab: registerTab, cells: new RegExp(`^A${registerHeaderRow}$`), formatCells: /^[A-Z]{1,2}\d+$/, minRow: registerHeaderRow + 1, append: true, appendOnly: true, formatRows: new Set() } };
+}
+
+export function buildWritePolicy({ metaSheetId, metaTab, salesSheetId, salesTab, clidColumn, registerSheetId = null, registerTab = null, registerHeaderRow = 5 }) {
   const width = columnLetter(META_IDS_HEADER.length - 1);
   return {
+    ...(registerSheetId && ![metaSheetId, salesSheetId].includes(registerSheetId) ? buildRegisterPolicy({ registerSheetId, registerTab, registerHeaderRow }) : {}),
     [metaSheetId]: { tab: metaTab, cells: new RegExp(`^A\\d+(:${width}\\d+)?$|^A(:${width})?$`), formatCells: new RegExp(`^[A-${width}]\\d+$`), headerNote: true, minRow: 2, append: true },
     // Sales sheet: exactly one cell of exactly one column, no appends, no header row.
     [salesSheetId]: { tab: salesTab, cells: new RegExp(`^${clidColumn}\\d+$`), formatCells: new RegExp(`^${clidColumn}\\d+$`), minRow: 2, append: false },
@@ -298,7 +319,7 @@ export function diffReadBack(expected, actual) {
 // ---------- state ----------
 export function emptyState() {
   return { version: 1, leads_cursor: null, events_cursor: null, pending_ctwa: {}, last_ok_at: null, last_run_at: null,
-    consecutive_failures: 0, nas_uploaded: {}, x_written: {}, x_manual_marked: {}, meta_times: {}, meta_header_noted: false, pending_meta_format: {} };
+    consecutive_failures: 0, nas_uploaded: {}, x_written: {}, x_manual_marked: {}, meta_times: {}, meta_header_noted: false, pending_meta_format: {}, register_watermark: null, register_pending: {}, register_appended_total: 0 };
 }
 export function normalizeState(raw) {
   const base = emptyState();
@@ -308,7 +329,8 @@ export function normalizeState(raw) {
     x_written: raw.x_written && typeof raw.x_written === "object" ? raw.x_written : {},
     x_manual_marked: raw.x_manual_marked && typeof raw.x_manual_marked === "object" ? raw.x_manual_marked : {},
     meta_times: raw.meta_times && typeof raw.meta_times === "object" ? raw.meta_times : {},
-    pending_meta_format: raw.pending_meta_format && typeof raw.pending_meta_format === "object" ? raw.pending_meta_format : {} };
+    pending_meta_format: raw.pending_meta_format && typeof raw.pending_meta_format === "object" ? raw.pending_meta_format : {},
+    register_pending: raw.register_pending && typeof raw.register_pending === "object" ? raw.register_pending : {} };
 }
 /** Query lower bound: cursor minus the overlap, so a late-committing row is never skipped. Null = full read. */
 export function sinceFromCursor(cursor, overlapSeconds = DEFAULTS.overlapSeconds) {

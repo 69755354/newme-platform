@@ -36,9 +36,9 @@ export function toTab(src, values) {
   return { key: src.key, headers, rows, missing };
 }
 
-const MASTER = /^(META|WA|LEGACY|ASSEM-XLS)-(.+)$/;
+const MASTER = /^(META|WA|OS|LEGACY|ASSEM-XLS)-(.+)$/; // OS = row appended by OS itself (website / other intake), see src/lib/os-register-append.mjs
 const LEADGEN = /^[1-9]\d{7,31}$/;
-const PREFIX_CHANNEL = { META: "meta_lead_form", WA: "whatsapp", LEGACY: "legacy_sheet", "ASSEM-XLS": "legacy_sheet" };
+const PREFIX_CHANNEL = { META: "meta_lead_form", WA: "whatsapp", OS: "os_register", LEGACY: "legacy_sheet", "ASSEM-XLS": "legacy_sheet" };
 const strip = (raw, pfx) => { const s = norm(raw); return s.startsWith(pfx) ? s.slice(pfx.length) : (s || null); };
 const lc = (v) => norm(v).toLowerCase();
 const dubaiDate = (iso) => (iso ? new Date(Date.parse(iso) + 4 * 3_600_000).toISOString().slice(0, 10) : null);

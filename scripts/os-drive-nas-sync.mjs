@@ -16,10 +16,14 @@ import {
   dubaiStamp, noteUpdated, noteWritten, dubaiDay, formatReport, guardSheets,
   maxIso, normalizeState, parseCsv, planCtwaColumnX, planMetaIdsUpsert, reconcileMetaIds, shouldAlert, sinceFromCursor,
 } from "../src/lib/os-drive-sync.mjs";
+import {
+  REGISTER, checkRegisterHeader, expectedCells, fingerprintForMaster, formatOpsFor, indexRegister, planRegisterAppend, selectRegisterCandidates, buildRegisterRow,
+} from "../src/lib/os-register-append.mjs";
 
 const LEAD_COLUMNS = "id, meta_leadgen_id, ctwa_clid, campaign_id, campaign_name, adset_id, ad_id, ad_name, created_at, stage, final_status, archived, updated_at, phone";
 const PAGE = 1000;
 const WIDTH = columnLetter(15 - 1);
+const REGISTER_LEAD_COLUMNS = "id, customer_name, phone, email, source, meta_leadgen_id, ctwa_clid, campaign_name, ad_name, created_at, archived, import_fingerprint, drive_sync:raw_import_data->drive_sync, register_append:raw_import_data->register_append";
 
 // ---------- OS reader (Supabase, service role, read-only) ----------
 export function createOsReader(db) {
@@ -40,6 +44,21 @@ export function createOsReader(db) {
         if (since) q = q.gt("updated_at", since);
         return q.order("updated_at", { ascending: true }).order("id", { ascending: true });
       }, "lead_query_failed");
+    },
+    /** Leads created after the watermark (archived ones included: the planner skips them, but a half-finished append is still adopted). */
+    async leadsForRegister(since) {
+      return readAll(() => db.from("leads").select(REGISTER_LEAD_COLUMNS).gt("created_at", since).order("created_at", { ascending: true }).order("id", { ascending: true }), "lead_query_failed");
+    },
+    /** The only OS write of this program: remember which lead is on the register (raw_import_data.register_append; no migration). */
+    async markRegisterAppended(id, info, fingerprint) {
+      const cur = must(await db.from("leads").select("raw_import_data, import_fingerprint").eq("id", id).limit(1), "lead_query_failed")[0];
+      if (!cur) throw new SyncError("lead_mark_failed", "lead_mark_failed");
+      const raw = cur.raw_import_data && typeof cur.raw_import_data === "object" ? cur.raw_import_data : {};
+      const patch = { raw_import_data: { ...raw, register_append: info } };
+      if (!cur.import_fingerprint && fingerprint) patch.import_fingerprint = fingerprint; // lets the Drive -> OS sync match the row by fingerprint, not only by phone
+      let r = await db.from("leads").update(patch).eq("id", id);
+      if (r.error && patch.import_fingerprint) { delete patch.import_fingerprint; r = await db.from("leads").update(patch).eq("id", id); }
+      if (r.error) throw new SyncError("lead_mark_failed", "lead_mark_failed");
     },
     async leadIdsWithEventsSince(since) {
       const ids = new Set();
@@ -166,6 +185,91 @@ async function applyOps(guarded, id, tab, ops, onWritten = () => {}) {
 }
 const hashText = (t) => createHash("sha256").update(String(t)).digest("hex").slice(0, 16);
 
+// ---------- Lead Register append (switch OS_DRIVE_REGISTER_APPEND_ENABLED) ----------
+/** Read-only: header check, candidates, plan. Never throws for register problems: they are returned as {error} so the rest of the sync still runs. */
+export async function planRegister({ osReader, sheets, state, args, startedAt, leadsOverride, cfg }) {
+  const reg = cfg.registerSheetId; const a1 = `${a1Tab(cfg.registerTab)}!A${cfg.registerHeaderRow}:${REGISTER.lastColumn}`;
+  try {
+    const grid = await sheets.getValues(reg, a1);
+    const head = checkRegisterHeader(grid);
+    let watermark = state.register_watermark ?? null;
+    let watermarkNew = false;
+    if (!watermark) { if (args.dryRun) watermark = args.registerSince === "now" ? startedAt : (args.registerSince ?? null); else { watermark = startedAt; watermarkNew = true; } }
+    const all = !watermark ? [] : (leadsOverride ?? await osReader.leadsForRegister(watermark));
+    const sel = selectRegisterCandidates(all, watermark);
+    const plan = planRegisterAppend(sel.candidates, grid, head, { maxRows: cfg.registerMaxAppend, pending: state.register_pending, allLeads: all });
+    const skipped = { ...sel.skipped }; for (const [k, v] of Object.entries(plan.skipped)) skipped[k] = (skipped[k] ?? 0) + v;
+    return { head, grid, plan, watermark, watermarkNew, all, skipped, over: plan.appends.length > cfg.registerMaxAppend };
+  } catch (e) {
+    return { error: e instanceof SyncError ? e.code : "register_read_failed" }; // never leaks sheet text
+  }
+}
+/** Counts only: no names, phones, e-mails or sheet text. */
+export function registerSummary(r, cfg) {
+  if (!r) return null;
+  if (r.error) return { error: r.error };
+  return { watermark: r.watermark ?? "not_set_yet", candidates_new: r.plan.appends.length + r.plan.present.length, would_append: r.plan.appends.length, already_present_adopt: r.plan.present.length,
+    skipped: r.skipped, dropped_pending: r.plan.droppedPending.length, over_limit: r.over ? r.plan.appends.length - cfg.registerMaxAppend : 0 };
+}
+
+async function executeRegister({ reg, guarded, policy, osReader, io, state, cfg, now, flush, changes, ts }) {
+  const { head, plan } = reg; const id = cfg.registerSheetId; const tab = cfg.registerTab; const a1 = `${a1Tab(tab)}!A${cfg.registerHeaderRow}:${REGISTER.lastColumn}`;
+  const out = { appended: 0, adopted: 0, marked: 0 };
+  for (const m of plan.droppedPending) delete state.register_pending[m];
+  if (plan.appends.length) {
+    for (const a of plan.appends) state.register_pending[a.master] = { lead_id: a.lead.id, ref: leadRef(a.lead.id), at: new Date(now()).toISOString(), formatted: false };
+    io.writeState(state); // durable BEFORE the append: a crash leaves a record of what may be on the sheet
+    // A network error or 5xx on append may or may not have landed: never repeat blindly, re-read and append only what is still missing.
+    let todo = plan.appends; let grid = reg.grid;
+    for (let attempt = 0; attempt < 2 && todo.length; attempt++) {
+      try { await guarded.appendValues(id, `${a1Tab(tab)}!A${cfg.registerHeaderRow}`, todo.map((a) => a.row)); } catch (e) { if (!/^http_(network|5\d\d)$/.test(e?.code ?? "")) throw e; }
+      grid = await guarded.getValues(id, a1);
+      const have = indexRegister(grid, head, cfg.registerHeaderRow).byMaster;
+      todo = todo.filter((a) => !have.has(a.master));
+    }
+    if (todo.length) throw new SyncError("append_not_found", `${todo.length} appended register row(s) are not on the sheet after two attempts`);
+    const idx = indexRegister(grid, head, cfg.registerHeaderRow);
+    const masters = grid.slice(1).map((r) => String(r?.[head.index["Master Lead ID"]] ?? "").trim());
+    for (const a of plan.appends) {
+      if (masters.filter((m) => m === a.master).length !== 1) throw new SyncError("register_duplicate_after_append", "an appended Master Lead ID is on the register more than once");
+      const sheetRow = idx.byMaster.get(a.master); a.sheetRow = sheetRow;
+      if (sheetRow <= plan.lastRow) throw new SyncError("register_append_position", "a row landed inside existing data; stopping");
+      const bad = expectedCells(a.row).filter((c) => String(grid[sheetRow - cfg.registerHeaderRow]?.[c.col] ?? "") !== c.value);
+      if (bad.length) throw new SyncError("readback_mismatch", `register read-back mismatch on ${bad.length} cell(s)`);
+      changes.push({ ts, sheet: "lead_register", action: "append", row: sheetRow, lead_ref: leadRef(a.lead.id), master_lead_id: a.master, columns: expectedCells(a.row).length });
+    }
+    flush(); out.appended = plan.appends.length;
+  }
+  // colour + note: freshly appended rows, plus rows of an earlier run that crashed before the format was applied
+  const toFormat = [...plan.appends.map((a) => ({ ...a, ms: now() })),
+    ...plan.present.filter((p) => state.register_pending[p.master] && !state.register_pending[p.master].formatted).map((p) => ({ lead: p.lead, master: p.master, sheetRow: p.sheetRow, row: buildRegisterRow(p.lead, head), ms: Date.parse(state.register_pending[p.master].at) || now() }))];
+  if (toFormat.length) {
+    const ops = []; const grid = await guarded.getValues(id, a1);
+    for (const f of toFormat) {
+      policy[id].formatRows.add(f.sheetRow);
+      const cur = grid[f.sheetRow - cfg.registerHeaderRow] ?? [];
+      const mine = formatOpsFor(f.sheetRow, f.row, f.ms, leadRef(f.lead.id)).filter((o) => String(cur[o.col] ?? "") === f.row[o.col]); // only cells that still hold what OS wrote
+      ops.push(...mine);
+    }
+    if (ops.length) await applyOps(guarded, id, tab, ops, () => {});
+    for (const f of toFormat) state.register_pending[f.master].formatted = true;
+    io.writeState(state);
+  }
+  // remember in OS (adopt rows that were already there too)
+  const marks = [...plan.appends.map((a) => ({ lead: a.lead, master: a.master, sheetRow: a.sheetRow })), ...plan.present];
+  let markError = null;
+  for (const m of marks) {
+    try {
+      await osReader.markRegisterAppended(m.lead.id, { master_lead_id: m.master, row: m.sheetRow, appended_at: state.register_pending[m.master]?.at ?? new Date(now()).toISOString(), by: state.register_pending[m.master] ? "os_register_append" : "found_on_register" }, fingerprintForMaster(m.master));
+      delete state.register_pending[m.master]; state.register_appended_total += 1; out.marked += 1;
+      if (!plan.appends.some((a) => a.master === m.master)) out.adopted += 1;
+    } catch (e) { markError = e; }
+  }
+  io.writeState(state);
+  if (markError) throw markError; // rows stay in register_pending: the next run adopts them and retries the mark
+  return out;
+}
+
 // ---------- the sync run ----------
 export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args = {}, now = () => Date.now(), log = console.log, leadsOverride = null }) {
   const startedAt = new Date(now()).toISOString();
@@ -207,20 +311,31 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   });
   // a person's value is never touched and never formatted: it is only counted, and logged once per distinct value
   const manualNew = planB.manual.filter((m) => state.x_manual_marked[m.lead_ref] !== hashText(m.current));
-  const planned = planA.updates.length + planA.appends.length + planB.writes.length;
+  // Lead Register append: read-only planning here, writes after the other stages. A register problem never stops the rest of the sync.
+  const registerOn = Boolean(cfg.registerAppend || (args.dryRun && args.registerSince)); // a dry-run preview needs --register-since (or "now")
+  let reg = null;
+  if (registerOn) {
+    if (!state.register_watermark && !args.dryRun) { state.register_watermark = startedAt; io.writeState(state); } // first enabled run: only leads created from now on
+    reg = await planRegister({ osReader, sheets, state, args, startedAt, leadsOverride, cfg });
+    if (!reg.error && reg.over) reg.error = "register_cap_exceeded";
+    summary.register = registerSummary(reg, cfg);
+  }
+  const registerAppends = reg && !reg.error ? reg.plan.appends.length : 0;
+  const planned = planA.updates.length + planA.appends.length + planB.writes.length + registerAppends;
   summary.planned_writes = planned;
 
   if (args.dryRun) {
     for (const u of planA.updates.slice(0, 5)) log(`dry-run: update Meta IDs row ${u.row}`);
     for (const w of planB.writes.slice(0, 5)) log(`dry-run: write ${cfg.clidColumn}${w.row} on ${cfg.salesTab} (${w.lead_ref})`);
-    return { summary, exitCode: planned > args.maxWrites ? 3 : 0 };
+    return { summary, exitCode: planned > args.maxWrites ? 3 : (reg?.error ? 1 : 0) };
   }
   assertWithinCap(planned, args.maxWrites); // throws before anything is written
 
   // 3. write + read back. Every stage logs what it wrote to the spool BEFORE the next thing that can fail.
   const changes = []; const ts = startedAt;
   const flush = () => { if (changes.length) io.appendChanges(day, changes.splice(0)); };
-  const guarded = guardSheets(sheets, buildWritePolicy({ ...cfg, metaTab: titles.meta }));
+  const policy = buildWritePolicy({ ...cfg, metaTab: titles.meta, registerSheetId: registerOn ? cfg.registerSheetId : null, registerTab: cfg.registerTab, registerHeaderRow: cfg.registerHeaderRow });
+  const guarded = guardSheets(sheets, policy);
   // Provenance format (blue row + notes) per Meta IDs row key, without the row number: the values may already be on
   // the sheet when the format request fails, and the next run would then plan nothing for that row. The ops are saved
   // in the state before the format write and cleared after it, so an unfinished set is replayed on the next run.
@@ -293,6 +408,12 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   for (const a of planB.ambiguousDestination) changes.push({ ts, sheet: "home_owners_x", action: "skipped_ambiguous_destination", row: a.row, lead_ref: a.lead_ref });
   flush();
 
+  let registerError = reg?.error ?? null;
+  if (reg && !reg.error && (reg.plan.appends.length || reg.plan.present.length || reg.plan.droppedPending.length)) {
+    try { Object.assign(summary.register, { done: await executeRegister({ reg, guarded, policy, osReader, io, state, cfg, now, flush, changes, ts }) }); } catch (e) { flush(); registerError = e instanceof SyncError ? e.code : "register_unexpected"; if (e?.code === "readback_mismatch" || e?.code === "write_blocked") throw e; }
+  }
+  if (registerError) summary.register = { ...(summary.register ?? {}), error: registerError };
+
   // 4. NAS upload: every day's spool that the NAS has not confirmed (a failed day is retried after midnight too)
   let nasError = null;
   for (const spool of io.listChanges()) {
@@ -316,7 +437,7 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   io.writeState(state);
   summary.nas_error = nasError ? nasError.code : null;
   summary.requests = sheets.requestCount ?? null;
-  return { summary, exitCode: nasError ? 1 : 0 };
+  return { summary, exitCode: nasError || registerError ? 1 : 0 };
 }
 
 // ---------- nightly reconcile ----------
@@ -349,7 +470,7 @@ export async function runReconcile({ osReader, sheets, io, cfg = DEFAULTS, now =
 
 // ---------- CLI ----------
 export function parseArgs(argv) {
-  const out = { dryRun: false, reconcile: false, full: false, maxWrites: DEFAULTS.maxWrites, leadsFile: null };
+  const out = { dryRun: false, reconcile: false, full: false, maxWrites: DEFAULTS.maxWrites, leadsFile: null, registerSince: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") out.dryRun = true;
@@ -357,20 +478,23 @@ export function parseArgs(argv) {
     else if (a === "--full") out.full = true;
     else if (a === "--max-writes") out.maxWrites = Number(argv[++i]);
     else if (a === "--leads-file") out.leadsFile = argv[++i];
+    else if (a === "--register-since") out.registerSince = argv[++i]; // dry-run preview only: leads created after this ISO time
     else throw new SyncError("usage", `unknown argument ${a}`);
   }
   if (!Number.isInteger(out.maxWrites) || out.maxWrites < 0) throw new SyncError("usage", "--max-writes needs a non-negative integer");
+  if (out.registerSince !== null && out.registerSince !== "now" && !Number.isFinite(Date.parse(out.registerSince))) throw new SyncError("usage", "--register-since needs an ISO time");
   return out;
 }
 
 async function main() {
   let args;
-  try { args = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`${e.message}\nUsage: os-drive-nas-sync.mjs [--dry-run] [--reconcile] [--full] [--max-writes N] [--leads-file F]`); process.exit(2); }
+  try { args = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`${e.message}\nUsage: os-drive-nas-sync.mjs [--dry-run] [--reconcile] [--full] [--max-writes N] [--leads-file F] [--register-since ISO|now]`); process.exit(2); }
   const env = process.env;
   if (!args.dryRun && env.OS_DRIVE_SYNC_ENABLED !== "true") { console.log("OS_DRIVE_SYNC_ENABLED is not true: nothing to do"); return; }
   const dataDir = env.OS_DRIVE_SYNC_DATA_DIR || "/var/lib/newme-os-drive-sync";
   const metaIdsDir = env.META_IDS_OUT_DIR || "/var/lib/newme-meta-ids";
-  const cfg = { ...DEFAULTS, metaSheetId: env.OS_DRIVE_META_SHEET_ID || DEFAULTS.metaSheetId, salesSheetId: env.OS_DRIVE_SALES_SHEET_ID || DEFAULTS.salesSheetId };
+  const cfg = { ...DEFAULTS, metaSheetId: env.OS_DRIVE_META_SHEET_ID || DEFAULTS.metaSheetId, salesSheetId: env.OS_DRIVE_SALES_SHEET_ID || DEFAULTS.salesSheetId,
+    registerAppend: env.OS_DRIVE_REGISTER_APPEND_ENABLED === "true", registerSheetId: env.OS_DRIVE_REGISTER_SHEET_ID || DEFAULTS.registerSheetId };
   const io = createIo(args.dryRun ? (env.OS_DRIVE_SYNC_DATA_DIR || `${process.env.TMPDIR || "/tmp"}/newme-os-drive-sync-dry`) : dataDir, metaIdsDir);
   const log = (m) => console.log(m);
   let exitCode = 1;
@@ -398,7 +522,7 @@ async function main() {
     if (!args.dryRun && !args.reconcile) {
       const state = io.readState(); state.consecutive_failures += 1; state.last_run_at = new Date().toISOString();
       try { io.writeState(state); } catch { /* ignore */ }
-      const fatal = ["readback_mismatch", "cap_exceeded", "write_blocked", "meta_header_mismatch", "sales_header_mismatch"].includes(code);
+      const fatal = ["readback_mismatch", "cap_exceeded", "write_blocked", "meta_header_mismatch", "sales_header_mismatch", "register_header_mismatch"].includes(code);
       exitCode = fatal || shouldAlert(state.consecutive_failures) ? 1 : 0;
     } else exitCode = code === "cap_exceeded" ? 3 : 1;
   }

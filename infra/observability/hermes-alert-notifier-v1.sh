@@ -13,6 +13,15 @@ DRILL_MODE="${NEWME_ALERT_DRILL_MODE:-}"
 DRILL_RELEASE_SHA="${NEWME_ALERT_DRILL_RELEASE_SHA:-}"
 DRILL_TRIGGER_SHA256="${NEWME_ALERT_DRILL_TRIGGER_SHA256:-}"
 
+# Send the provider's refusal line to the journal so a failed delivery is
+# diagnosable. The provider only prints "refused code=<code>", but redact any
+# Telegram bot token shape, flatten control characters and cap the length anyway.
+log_provider_failure() {
+  local text="${1:-}"
+  text="$(printf '%s' "$text" | sed -E 's/bot[0-9]+:[A-Za-z0-9_-]+/bot<redacted>/g; s/[0-9]{6,}:[A-Za-z0-9_-]{30,}/<redacted>/g' | tr -c '[:print:]' ' ' | cut -c1-512)"
+  logger -t newme-alert-provider -- "${text:-provider failed without output}" 2>/dev/null || true
+}
+
 case "$EVENT" in
   alert|recovery) ;;
   *) echo "hermes-alert-notifier-v1: invalid event" >&2; exit 2 ;;
@@ -28,7 +37,7 @@ if [ -n "$DRILL_MODE$DRILL_RELEASE_SHA$DRILL_TRIGGER_SHA256" ]; then
   [[ "$DRILL_TRIGGER_SHA256" =~ ^[0-9a-f]{64}$ ]] || exit 2
   [ "$SOURCE" = "postdeploy-acceptance-$DRILL_RELEASE_SHA" ] || exit 2
   [ "$DETAIL" = "canonical postdeploy $DRILL_MODE; receipt_challenge=$DRILL_TRIGGER_SHA256" ] || exit 2
-  PROVIDER_RESULT="$({ "$PROVIDER" "$DRILL_MODE" "$DRILL_RELEASE_SHA"; } 2>&1)" || exit 1
+  PROVIDER_RESULT="$({ "$PROVIDER" "$DRILL_MODE" "$DRILL_RELEASE_SHA"; } 2>&1)" || { log_provider_failure "$PROVIDER_RESULT"; exit 1; }
   [[ "$PROVIDER_RESULT" != *$'\n'* ]] || exit 1
   IFS=' ' read -r ACK_VERSION ACK_KIND ACK_EVENT ACK_RELEASE ACK_TRIGGER ACK_DELIVERY ACK_EXTRA <<< "$PROVIDER_RESULT"
   [ "$ACK_VERSION" = newme-alert-provider-v1 ] && [ "$ACK_KIND" = receipt ] &&
@@ -37,7 +46,7 @@ if [ -n "$DRILL_MODE$DRILL_RELEASE_SHA$DRILL_TRIGGER_SHA256" ]; then
     [[ "$ACK_DELIVERY" =~ ^telegram:message:[1-9][0-9]*$ ]] || exit 1
   exit 0
 fi
-PROVIDER_RESULT="$({ "$PROVIDER" notify "$EVENT" "$SOURCE" "$DETAIL" "$LEVEL"; } 2>&1)" || exit 1
+PROVIDER_RESULT="$({ "$PROVIDER" notify "$EVENT" "$SOURCE" "$DETAIL" "$LEVEL"; } 2>&1)" || { log_provider_failure "$PROVIDER_RESULT"; exit 1; }
 [[ "$PROVIDER_RESULT" != *$'\n'* ]] || exit 1
 IFS=' ' read -r ACK_VERSION ACK_KIND ACK_EVENT ACK_SOURCE ACK_DELIVERY ACK_EXTRA <<< "$PROVIDER_RESULT"
 [ "$ACK_VERSION" = newme-alert-provider-v1 ] && [ "$ACK_KIND" = notify ] &&

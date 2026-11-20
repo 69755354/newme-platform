@@ -13,8 +13,15 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Node's default Happy Eyeballs (autoSelectFamily, 250 ms per attempt) abandons a
+// slow-but-healthy IPv4 handshake to api.telegram.org and falls through to IPv6,
+// which has no route on this host (ENETUNREACH). Connect sequentially instead.
+// Must run before the first fetch() so undici's connector picks it up.
+net.setDefaultAutoSelectFamily(false);
 
 const RELEASE_SHA = /^[0-9a-f]{40}$/;
 const UUID_EVENT = /^[A-Za-z0-9][A-Za-z0-9._:/-]{5,255}$/;
@@ -124,18 +131,66 @@ function readTrigger(mode, releaseSha) {
   return { trigger, triggerSha256: sha256(bytes) };
 }
 
-async function providerRequest(config, method, body = undefined) {
+// Connection-phase failures only: the request never reached Telegram, so
+// repeating it cannot duplicate a send/edit. Anything after a response (any
+// HTTP status, bad JSON) and the overall timeout are never retried.
+const CONNECT_RETRY_CODES = new Set([
+  "ETIMEDOUT",
+  "ENETUNREACH",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+const CONNECT_RETRY_EXTRA_ATTEMPTS = 2;
+const CONNECT_RETRY_DELAY_MS = 1000;
+const PROVIDER_REQUEST_TIMEOUT_MS = 20_000;
+
+export function isConnectPhaseError(error) {
+  const cause = error?.cause;
+  if (!cause || typeof cause !== "object") return false;
+  if (CONNECT_RETRY_CODES.has(cause.code)) return true;
+  return Array.isArray(cause.errors)
+    && cause.errors.length > 0
+    && cause.errors.every((inner) => CONNECT_RETRY_CODES.has(inner?.code));
+}
+
+const defaultSleep = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal.aborted) { reject(signal.reason); return; }
+  const timer = setTimeout(() => { signal.removeEventListener("abort", onAbort); resolve(); }, ms);
+  const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+  signal.addEventListener("abort", onAbort, { once: true });
+});
+
+export async function providerRequest(config, method, body = undefined, {
+  fetchImpl = fetch,
+  sleep = defaultSleep,
+  retryDelayMs = CONNECT_RETRY_DELAY_MS,
+  timeoutMs = PROVIDER_REQUEST_TIMEOUT_MS,
+} = {}) {
+  // One deadline shared by every attempt keeps the worst-case duration unchanged.
+  const signal = AbortSignal.timeout(timeoutMs);
   let response;
-  try {
-    response = await fetch(`https://api.telegram.org/bot${config.bot_token}/${method}`, {
-      method: body === undefined ? "GET" : "POST",
-      headers: body === undefined ? { accept: "application/json" } : { accept: "application/json", "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: "error",
-      signal: AbortSignal.timeout(20_000),
-    });
-  } catch {
-    refuse("provider_request_failed");
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      response = await fetchImpl(`https://api.telegram.org/bot${config.bot_token}/${method}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: body === undefined ? { accept: "application/json" } : { accept: "application/json", "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        redirect: "error",
+        signal,
+      });
+      break;
+    } catch (error) {
+      if (attempt >= CONNECT_RETRY_EXTRA_ATTEMPTS || signal.aborted || !isConnectPhaseError(error)) {
+        refuse("provider_request_failed");
+      }
+    }
+    try {
+      await sleep(retryDelayMs, signal);
+    } catch {
+      refuse("provider_request_failed");
+    }
   }
   let parsed;
   try {

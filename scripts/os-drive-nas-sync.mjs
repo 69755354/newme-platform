@@ -221,7 +221,12 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   const changes = []; const ts = startedAt;
   const flush = () => { if (changes.length) io.appendChanges(day, changes.splice(0)); };
   const guarded = guardSheets(sheets, buildWritePolicy({ ...cfg, metaTab: titles.meta }));
-  const metaOps = [];
+  // Provenance format (blue row + notes) per Meta IDs row key, without the row number: the values may already be on
+  // the sheet when the format request fails, and the next run would then plan nothing for that row. The ops are saved
+  // in the state before the format write and cleared after it, so an unfinished set is replayed on the next run.
+  const fmtByKey = {}; const rowByKey = new Map();
+  const metaKeyOfRow = (r) => `${r?.[0] ?? ""}|${r?.[2] ?? ""}|${r?.[3] ?? ""}`;
+  grids.meta.slice(1).forEach((r, i) => { if (!rowByKey.has(metaKeyOfRow(r))) rowByKey.set(metaKeyOfRow(r), i + 2); });
   const metaRange = `${a1Tab(titles.meta)}!A:${WIDTH}`;
   if (planA.updates.length) {
     const data = planA.updates.map((u) => ({ range: `${a1Tab(titles.meta)}!A${u.row}:${WIDTH}${u.row}`, values: [u.values] }));
@@ -231,8 +236,10 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
     await verifyAndRetry(guarded, cfg.metaSheetId, data, (bad) => guarded.batchUpdateValues(cfg.metaSheetId, bad));
     for (const u of planA.updates) {
       const key = `${u.values[0]}|${u.values[2]}|${u.values[3]}`;
-      metaOps.push({ kind: "rowbg", row: u.row, c1: 0, c2: 14, bg: BLUE });
-      u.values.forEach((v, c) => { if (v !== u.previous[c]) metaOps.push({ kind: "cell", row: u.row, col: c, note: noteUpdated(now(), state.meta_times[key]) }); });
+      rowByKey.set(key, u.row);
+      const ops = [{ kind: "rowbg", c1: 0, c2: 14, bg: BLUE }];
+      u.values.forEach((v, c) => { if (v !== u.previous[c]) ops.push({ kind: "cell", col: c, note: noteUpdated(now(), state.meta_times[key]) }); });
+      fmtByKey[key] = ops;
       state.meta_times[key] = dubaiStamp(now());
     }
   }
@@ -256,16 +263,21 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
     const bad = planA.appends.filter((v) => { const r = grid[rowOf.get(keyOf(v)) - 1] ?? []; return v.some((x, c) => String(r[c] ?? "") !== x); });
     if (bad.length) throw new SyncError("readback_mismatch", "read-back mismatch after append");
     for (const v of planA.appends) {
-      const row = rowOf.get(keyOf(v));
-      metaOps.push({ kind: "rowbg", row, c1: 0, c2: 14, bg: BLUE }, { kind: "cell", row, col: 0, note: noteUpdated(now(), null) });
+      rowByKey.set(keyOf(v), rowOf.get(keyOf(v)));
+      fmtByKey[keyOf(v)] = [{ kind: "rowbg", c1: 0, c2: 14, bg: BLUE }, { kind: "cell", col: 0, note: noteUpdated(now(), null) }];
       state.meta_times[keyOf(v)] = dubaiStamp(now());
     }
   }
+  // replay what an earlier run could not finish (this run's own ops for the same row win; a row no longer on the sheet is dropped)
+  for (const [key, ops] of Object.entries(state.pending_meta_format)) if (!fmtByKey[key] && rowByKey.has(key)) fmtByKey[key] = ops;
+  const metaOps = Object.entries(fmtByKey).flatMap(([key, ops]) => ops.map((o) => ({ ...o, row: rowByKey.get(key) })));
   if (!state.meta_header_noted) metaOps.push({ kind: "headernote", row: 1, col: 0, note: HEADER_NOTE });
   if (metaOps.length) {
+    state.pending_meta_format = fmtByKey; io.writeState(state); // durable before the format write can fail
     await applyOps(guarded, cfg.metaSheetId, titles.meta, metaOps, () => {
       if (!state.meta_header_noted) { state.meta_header_noted = true; changes.push({ ts, sheet: "meta_ids", action: "header_note", row: 1 }); flush(); }
     });
+    state.pending_meta_format = {};
     io.writeState(state); // meta_times / header flag are facts about the sheet now; the cursor is not moved here
   }
   if (planB.writes.length) {
@@ -294,10 +306,13 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   const pendingNow = { ...state.pending_ctwa };
   for (const l of ctwaLeads) delete pendingNow[idByRef.get(l.lead_ref)];
   const stillOpen = new Set([...planB.unmatched.filter((u) => u.reason === "no_row").map((u) => u.lead_ref), ...planB.ambiguous.map((a) => a.lead_ref), ...planB.ambiguousDestination.map((a) => a.lead_ref)]);
-  for (const ref of stillOpen) pendingNow[idByRef.get(ref)] = pendingNow[idByRef.get(ref)] ?? startedAt;
+  // a retried lead keeps the time it FIRST went pending, so the pendingDays expiry below can fire
+  for (const ref of stillOpen) { const id = idByRef.get(ref); pendingNow[id] = state.pending_ctwa[id] ?? startedAt; }
   for (const [id, first] of Object.entries(pendingNow)) if (now() - Date.parse(first) > cfg.pendingDays * 86_400_000) delete pendingNow[id];
   state.pending_ctwa = pendingNow;
-  state.last_run_at = startedAt; state.last_ok_at = startedAt; state.consecutive_failures = 0;
+  state.last_run_at = startedAt;
+  // a failed NAS upload is a failed run for health: last_ok_at stays, the failure counter goes up
+  if (nasError) state.consecutive_failures += 1; else { state.last_ok_at = startedAt; state.consecutive_failures = 0; }
   io.writeState(state);
   summary.nas_error = nasError ? nasError.code : null;
   summary.requests = sheets.requestCount ?? null;
@@ -323,12 +338,13 @@ export async function runReconcile({ osReader, sheets, io, cfg = DEFAULTS, now =
   }
   const state = io.readState();
   const ageMin = state.last_ok_at ? Math.round((now() - Date.parse(state.last_ok_at)) / 60_000) : null;
-  const health = { last_ok_minutes_ago: ageMin ?? "never", consecutive_failures: state.consecutive_failures, pending_unmatched_click_ids: Object.keys(state.pending_ctwa).length };
+  const nasUnconfirmed = io.listChanges().filter((s) => state.nas_uploaded[s.day] !== s.size).length;
+  const health = { last_ok_minutes_ago: ageMin ?? "never", consecutive_failures: state.consecutive_failures, pending_unmatched_click_ids: Object.keys(state.pending_ctwa).length, nas_unconfirmed_spool_days: nasUnconfirmed };
   const stale = ageMin === null || ageMin > 60 || state.consecutive_failures >= 3;
-  const drift = meta.drift || (x?.would_write ?? 0) > 0 || stale;
+  const drift = meta.drift || (x?.would_write ?? 0) > 0 || stale || nasUnconfirmed > 0;
   const text = formatReport({ day, mode: drift ? "DRIFT" : "ok", meta, ctwa: x, health, notes: drift ? ["Drift found: the 5-minute worker normally closes it; if it persists, check the worker log."] : [] });
   const file = io.writeReport(day, text);
-  return { summary: { drift, report: file, ...meta }, exitCode: drift ? 1 : 0 };
+  return { summary: { ...meta, drift, report: file }, exitCode: drift ? 1 : 0 }; // overall drift, not only the Meta-sheet part
 }
 
 // ---------- CLI ----------

@@ -102,10 +102,15 @@ test("(d) a live delivery promotes a backfilled history row instead of returning
   assert.match(tail, /is distinct from/);
 });
 
-test("the release plumbing names the migration last and CI runs its database test", () => {
+test("the release plumbing names the migration (last until S32 followed) and CI runs its database test", () => {
   const manifest = JSON.parse(read("infra/release/release-manifest.json"));
-  assert.equal(manifest.deferred_contract.at(-1).file, "20261120100000_dispatch_and_history_corrections.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-1).name, "s31-dispatch-and-history-corrections-present");
+  // S32 (20261120200000) is the entry after S31 now; S31 keeps its place and predicate.
+  const at = manifest.deferred_contract.findIndex((x) => x.file === "20261120100000_dispatch_and_history_corrections.sql");
+  assert.ok(at >= 0 && at >= manifest.deferred_contract.length - 2, "S31 is the last or second-to-last deferred entry");
+  const predAt = manifest.posture.deferred_contract.predicates.findIndex((x) => x.name === "s31-dispatch-and-history-corrections-present");
+  assert.ok(predAt >= 0 && predAt >= manifest.posture.deferred_contract.predicates.length - 2);
+  assert.equal(manifest.deferred_contract.at(-1).file, "20261120200000_tasks_future_only_not_valid.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-1).name, "s32-tasks-future-only-not-valid");
   assert.match(read(".github/workflows/ci.yml"), /tests\/database\/s31-corrective\.sql/);
   const dbTest = read("tests/database/s31-corrective.sql");
   for (const marker of ["a-second-evaluation-without-confirmation-still-reviews-phone", "b-canonical-twin-is-found",

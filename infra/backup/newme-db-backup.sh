@@ -64,7 +64,7 @@ mkdir -p "$BACKUP_DIR"; chmod 700 "$BACKUP_DIR"
 [ "$(stat -c '%a' "$BACKUP_DIR")" = 700 ] || backup_die "backup dir must be mode 700: $BACKUP_DIR" 2
 
 if [ "$DRY_RUN" = 1 ]; then
-  backup_log "dry run: would dump production (schemas public, auth, supabase_migrations) to $BACKUP_DIR/newme-prod-$STAMP.dump.enc"
+  backup_log "dry run: would dump production (schemas public, auth, supabase_migrations, whatsapp_privacy) to $BACKUP_DIR/newme-prod-$STAMP.dump.enc"
   backup_log "dry run: retention ${RETENTION_DAYS} days (keep at least ${KEEP_MIN}); NAS sync: ${SYNC_TARGET:-not configured}"
   backup_log "dry run: configuration and permissions are valid"
   exit 0
@@ -83,10 +83,15 @@ write_pg_service "$DB_URL_FILE" "$SERVICE_FILE" >/dev/null
 export PGSERVICEFILE="$SERVICE_FILE" PGCONNECT_TIMEOUT=20
 
 PLAIN="$WORK/plain.dump"
-# auth sessions/tokens are re-creatable and large; accounts, identities and MFA are kept.
+# auth sessions/tokens are re-creatable and large; accounts, identities and MFA factors are kept.
+# auth.mfa_amr_claims rows belong to sessions (FK to auth.sessions): without the sessions they
+# only make the restore fail on that FK (restore drill 2026-11-20), so they go with the sessions.
+# whatsapp_privacy holds the deletion/suppression tables and the trigger functions that guard
+# public.whatsapp_pilot_events; a restore without it leaves those triggers uncreated.
 pg_dump "service=newme" --format=custom --no-owner --no-privileges \
-  --schema=public --schema=auth --schema=supabase_migrations \
+  --schema=public --schema=auth --schema=supabase_migrations --schema=whatsapp_privacy \
   --exclude-table-data='auth.refresh_tokens' --exclude-table-data='auth.sessions' \
+  --exclude-table-data='auth.mfa_amr_claims' \
   --exclude-table-data='auth.one_time_tokens' --exclude-table-data='auth.audit_log_entries' \
   --file="$PLAIN"
 [ "$(stat -c '%s' "$PLAIN")" -ge "$MIN_PLAIN_BYTES" ] || backup_die "dump is suspiciously small" 1

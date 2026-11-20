@@ -95,6 +95,10 @@ test("backup is encrypted, checksummed, private, leaves no plaintext and never e
   assert.equal(readFileSync(`${enc}.counts.tsv`, "utf8"), "public.leads\t3\npublic.profiles\t1\n");
   assert.ok(!s.log().includes(PASSWORD), "password must never reach a command line");
   assert.match(s.log(), /pg_dump service=newme /);
+  // Restore drill 2026-11-20: whatsapp_privacy (tables + trigger functions) must be in the dump,
+  // and session-bound MFA claims must leave with the sessions, or the restore fails on their FK.
+  const dumpLine = s.log().split("\n").find((l) => l.startsWith("pg_dump "));
+  for (const need of ["--schema=public", "--schema=auth", "--schema=supabase_migrations", "--schema=whatsapp_privacy", "--exclude-table-data=auth.sessions", "--exclude-table-data=auth.mfa_amr_claims"]) assert.ok(dumpLine.includes(need), `${need} in: ${dumpLine}`);
   assert.ok(!r.stderr.includes(PASSWORD) && !r.stdout.includes(PASSWORD));
   const back = spawnSync("openssl", ["enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "600000", "-pass", `file:${s.keyFile}`, "-in", enc], { maxBuffer: 1 << 24 });
   assert.ok(back.stdout.includes("SECRETROW"), "decrypts with the key file");
@@ -284,7 +288,7 @@ test("drill restores into a local socket-only instance: no URL file, no network,
   for (const line of log.split("\n").filter((l) => /^(psql|pg_restore) /.test(l))) assert.match(line, /-h \S+\/drill\/sock /, line);
   assert.ok(!/service=|postgres(ql)?:\/\//.test(log.slice(log.indexOf("runuser"))), "the drill uses no connection URL or service file");
   assert.ok(log.indexOf("create role anon") < log.indexOf("pg_restore -h"), "bootstrap runs before the restore");
-  for (const need of ["anon", "authenticated", "service_role", "supabase_auth_admin", "create schema if not exists extensions", 'uuid-ossp', "pgcrypto"]) assert.ok(log.includes(need), need);
+  for (const need of ["anon", "authenticated", "service_role", "supabase_auth_admin", "newme_whatsapp_maintenance", "create schema if not exists extensions", 'uuid-ossp', "pgcrypto"]) assert.ok(log.includes(need), need);
   assert.match(log, /pg_restore -h \S+\/drill\/sock -p 5439 -U postgres -d drill --no-owner --no-privileges /);
   assert.match(log, /pg_ctl -D \S+\/drill\/data -m immediate -w stop/);
   assert.ok(!existsSync(join(s.root, "drill")), "instance directory removed");
@@ -331,6 +335,16 @@ test("drill: known harmless restore errors are allowed, unknown categories raise
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /restore error category \(1x\): schema "X" already exists/);
   assert.match(s.log(), /alert db-restore-drill recovery/);
+
+  // The journal must name the failing object (never the DETAIL row data): the first real drill
+  // logged only 'check constraint "X"' and the cause (tasks_future_only) had to be found by hand.
+  s = setupBackup();
+  r = s.drill([], { DRILL_RESTORE_ERR: 'pg_restore: error: COPY failed for table "tasks": ERROR:  new row for relation "tasks" violates check constraint "tasks_future_only"\nDETAIL:  Failing row contains (secret-row-data).' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /restore error category \(1x\): new row for relation "X" violates check constraint "X"/);
+  assert.match(r.stderr, /restore error: COPY failed for table "tasks": ERROR: {2}new row for relation "tasks" violates check constraint "tasks_future_only"/);
+  assert.ok(!r.stderr.includes("secret-row-data"), "DETAIL lines (row data) never reach the journal");
+  assert.match(s.log(), /alert db-restore-drill failure restore drill: all 2 table counts match, but 1 unexpected restore error categories/);
 
   s = setupBackup();
   r = s.drill([], { DRILL_RESTORE_ERR: 'pg_restore: error: could not execute query: ERROR:  function "foo" does not exist' });
@@ -465,4 +479,12 @@ test("an alert that is not delivered is never silent: journal + alerts.log, and 
   const fresh = spawnSync("bash", [infra("newme-backup-freshness.sh")], { encoding: "utf8", env: s.env({ BACKUP_ALERT_SCRIPT: failing }) });
   assert.equal(fresh.status, 0, fresh.stderr);
   assert.match(fresh.stderr, /OK: newest backup/);
+});
+
+test("tasks_future_only is re-created NOT VALID so pg_dump emits it after the table data (restore drill 2026-11-20: 0 of 112 tasks restored)", () => {
+  const sql = readFileSync(fileURLToPath(new URL("../../supabase/migrations/20261120200000_tasks_future_only_not_valid.sql", import.meta.url)), "utf8");
+  assert.match(sql, /^-- NO_ROLLBACK: \S/m);
+  assert.match(sql, /add constraint tasks_future_only ' \|\| v_def \|\| ' not valid/);
+  assert.match(sql, /c\.convalidated/, "idempotent: only a validated constraint is re-created");
+  assert.ok(!/interval '1 day'/.test(sql), "keeps the expression production has, it does not change the window");
 });

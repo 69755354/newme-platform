@@ -222,6 +222,41 @@ SQL
   note "$db: production objects for the S2 migration added"
 }
 
+# The floor has no public.tasks either. The S32 migration (20261120200000, contract phase) re-creates
+# tasks_future_only NOT VALID only where the table and a validated constraint exist, so that one file applies to
+# both this floor and production; its manifest posture predicate states what production must look like (the
+# constraint NOT VALID with the production expression) and reads false on a bare floor. Add the table as the
+# production baseline has it (supabase/replay/production-schema-baseline.sql), with the validated constraint the
+# migration converts. Idempotent, and nothing here weakens the migration or the predicate.
+add_production_objects_for_s32() {
+  local db="$1"
+  "${PSQL[@]}" -d "$db" >/dev/null <<'SQL' || fail "the production objects the S32 migration guards on did not apply to $db"
+create table if not exists public.tasks (
+  id uuid default gen_random_uuid() primary key,
+  lead_id uuid not null,
+  title text not null,
+  assignee_id uuid,
+  due_at timestamptz not null,
+  status text default 'pending' not null,
+  source text default 'manual',
+  completed_at timestamptz,
+  created_at timestamptz default now() not null,
+  description text,
+  priority text
+);
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.tasks'::regclass and conname = 'tasks_future_only') then
+    alter table public.tasks add constraint tasks_future_only check (due_at > (now() - '30 days'::interval));
+  end if;
+end $$;
+drop trigger if exists trg_require_current_session on public.tasks;
+create trigger trg_require_current_session before insert or update or delete on public.tasks
+  for each statement execute function public.require_current_session();
+SQL
+  note "$db: production objects for the S32 migration added"
+}
+
 # The connection URL reaches the tool only through a 0600 file, because the tool
 # refuses a URL on the command line and this drill must exercise it the way an
 # operator runs it. Trust auth in the harness means the file holds no secret.
@@ -329,6 +364,7 @@ recorded="$("${PSQL[@]}" -c "select count(*) from supabase_migrations.schema_mig
 
 # 6 · the contract phase.
 add_production_objects_for_s2 "$PGDATABASE"
+add_production_objects_for_s32 "$PGDATABASE"
 run_phase ok "$PGDATABASE" deferred_contract --apply
 count_log "^applied             : " "$CONTRACT_COUNT"
 expect_log "posture OK          : release-mode-row-is-strict"
@@ -435,6 +471,7 @@ note "re-entry: $REENTRY_COUNT applied on the second attempt, $EXPAND_COUNT reco
 #      it and reaches the strict posture, so an interrupted expand phase is a delay
 #      and not a database that has to be rebuilt to be deployable.
 add_production_objects_for_s2 "$INTERRUPT_DB"
+add_production_objects_for_s32 "$INTERRUPT_DB"
 run_phase ok "$INTERRUPT_DB" deferred_contract --apply
 count_log "^applied             : " "$CONTRACT_COUNT"
 count_log "^posture OK          : " "$STRICT_POSTURE_COUNT"

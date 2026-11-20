@@ -270,12 +270,6 @@
       "version": "20261120100000",
       "file": "20261120100000_dispatch_and_history_corrections.sql",
       "sha256": "a51a5dba59b562e0149e60d8b711caa10f3ce2ecbbc8c542ecb8589306e556d6"
-    },
-    {
-      "$comment": "S32 (OS fix S32): public.tasks.tasks_future_only re-created NOT VALID with the same expression, so pg_dump emits it after the table data and the backup of public.tasks restores (first restore drill 2026-11-20 restored 0 of 112 rows). INSERT/UPDATE are still checked; no row, column, policy or routine changes.",
-      "version": "20261120200000",
-      "file": "20261120200000_tasks_future_only_not_valid.sql",
-      "sha256": "a7598950b422dbb8c18e4e19e3b5e9247e5d1f0cfddafb5888a486c892ae6a91"
     }
   ],
   "companions": [
@@ -641,11 +635,6 @@
           "name": "s31-dispatch-and-history-corrections-present",
           "expect": true,
           "sql": "SELECT (SELECT count(*)=5 FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.evaluate_lead_dispatch(uuid,uuid)'),to_regprocedure('public.dispatch_decide(uuid,uuid,text,text)'),to_regprocedure('public.sweep_lead_dispatch(timestamptz,integer)'),to_regprocedure('public.dispatch_reevaluate_dependents(uuid,uuid)'),to_regprocedure('public.record_whatsapp_ad_event(jsonb,boolean)')) AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[] AND p.prosrc LIKE '%S31 corrective v1%' AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE'))"
-        },
-        {
-          "name": "s32-tasks-future-only-not-valid",
-          "expect": true,
-          "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(NOT c.convalidated) AND bool_and(pg_catalog.pg_get_constraintdef(c.oid)='CHECK ((due_at > (now() - ''30 days''::interval))) NOT VALID') FROM pg_catalog.pg_constraint c WHERE c.conrelid=to_regclass('public.tasks') AND c.conname='tasks_future_only' AND c.contype='c'),false)"
         }
       ]
     }

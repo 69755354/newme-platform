@@ -165,7 +165,7 @@ ERRORS="$(grep -c '^pg_restore: error' "$RESTORE_LOG" || true)"
 UNEXPECTED=0
 if [ "$ERRORS" -gt 0 ]; then
   grep '^pg_restore: error' "$RESTORE_LOG" | sed -E 's/^.*ERROR: +//; s/"[^"]*"/"X"/g' | sort | uniq -c | while read -r n cat; do backup_log "restore error category (${n}x): $cat"; done
-  grep '^pg_restore: error' "$RESTORE_LOG" | sed -E 's/^pg_restore: error: //' | sort -u | head -20 | while IFS= read -r line; do backup_log "restore error: $line"; done
+  grep '^pg_restore: error' "$RESTORE_LOG" | sed -E 's/^pg_restore: error: //' | sort -u | sed -n '1,20p' | while IFS= read -r line; do backup_log "restore error: $line"; done
   while IFS= read -r category; do
     case "$ALLOWED_ERRORS" in *"$category"*) ;; *) UNEXPECTED=$((UNEXPECTED + 1)) ;; esac
   done < <(grep '^pg_restore: error' "$RESTORE_LOG" | sed -E 's/^.*ERROR: +//; s/"[^"]*"/"X"/g' | sort -u)

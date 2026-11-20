@@ -37,15 +37,20 @@ other suffixes.
 
 ## Order
 
-Switch and migration are in the same branch (PR #576), so one merge covers both:
+Same two releases as S31 (#563 then #564). The `contract_verified` path requires every candidate deferred
+migration to be recorded before the installer installs the new wrapper, and the installed wrapper has to know
+`s32-db-provision` before the migration can be applied, so switch and migration cannot share a release:
 
-1. Release the merged main commit through the normal `contract_verified` flow. It installs the new operations and
-   the updated backup scripts (`newme-db-backup.sh` now joins the installer's managed set next to
-   `newme-restore-drill.sh`; nothing is run by hand).
-2. From that main commit run `newme-deploy db-transition <sha> <run-id> s32-db-plan`, check that the plan lists
-   only `20261120200000`, then `s32-db-provision`. The gate verifies the constraint is `NOT VALID` with the same
-   expression afterwards.
-3. The next nightly backup (01:30 Dubai) carries the constraint after the data and the whatsapp_privacy schema;
+1. Release the switch on its own (this branch: the manifest has no S32 entry and the tree has no S32 migration
+   file) through the normal `contract_verified` flow. It installs the new operations and the updated backup
+   scripts (`newme-db-backup.sh` now joins the installer's managed set next to `newme-restore-drill.sh`; nothing
+   is run by hand).
+2. Merge the S32 migration branch (`fix/s32-tasks-future-only-migration`: migration file, manifest entry and
+   rule check, database test). From that main commit run
+   `newme-deploy db-transition <sha> <run-id> s32-db-plan`, check that the plan lists only `20261120200000`,
+   then `s32-db-provision`. The gate verifies the constraint is `NOT VALID` with the same expression afterwards.
+3. Release the application with `contract_verified` and the full required list.
+4. The next nightly backup (01:30 Dubai) carries the constraint after the data and the whatsapp_privacy schema;
    the restore drill then passes (`sudo systemctl start newme-restore-drill.service` to run it early).
 
 The switch accepts the migration only as the LAST deferred entry. If another deferred migration (for example S33,

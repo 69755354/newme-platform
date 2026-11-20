@@ -6,8 +6,9 @@
  * release that already carries every earlier deferred migration, including S31, the same way
  * check-s31-db-batch-provisioning.mjs did for S31.
  *
- * The switch and the migration ship in one branch here; the judge only ever sees live = the release in production
- * (no S32 entry) and candidate = live plus exactly the pinned entry and predicate.
+ * The switch ships on its own first (the manifest then has no S32 entry and the tree has no S32
+ * migration file); the judge itself only ever sees live = the release in production and candidate =
+ * live plus exactly the pinned entry and predicate, i.e. the state after the S32 migration branch is merged.
  */
 import fs from "node:fs";
 import path from "node:path";

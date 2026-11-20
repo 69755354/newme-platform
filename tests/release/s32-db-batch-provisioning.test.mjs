@@ -34,7 +34,7 @@ const judge=state=>judgeS32DbBatchProvisioning({...state,expectedSha256:state.ex
 
 // The S32 branch itself, read from git when that ref is available (never written into the tree).
 function fromGit(spec){
-  for(const ref of ['origin/fix/restore-drill']){
+  for(const ref of ['origin/fix/s32-tasks-future-only-migration']){
     try{return execFileSync('git',['show',`${ref}:${spec}`],{encoding:'utf8',stdio:['ignore','pipe','ignore'],maxBuffer:64*1024*1024});}catch{/* ref not available here */}
   }
   return null;

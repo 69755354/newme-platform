@@ -481,10 +481,3 @@ test("an alert that is not delivered is never silent: journal + alerts.log, and 
   assert.match(fresh.stderr, /OK: newest backup/);
 });
 
-test("tasks_future_only is re-created NOT VALID so pg_dump emits it after the table data (restore drill 2026-11-20: 0 of 112 tasks restored)", () => {
-  const sql = readFileSync(fileURLToPath(new URL("../../supabase/migrations/20261120200000_tasks_future_only_not_valid.sql", import.meta.url)), "utf8");
-  assert.match(sql, /^-- NO_ROLLBACK: \S/m);
-  assert.match(sql, /add constraint tasks_future_only ' \|\| v_def \|\| ' not valid/);
-  assert.match(sql, /c\.convalidated/, "idempotent: only a validated constraint is re-created");
-  assert.ok(!/interval '1 day'/.test(sql), "keeps the expression production has, it does not change the window");
-});

@@ -65,8 +65,8 @@ OS 只是小测试环境，云盘表格和 NAS 才是销售真实在用的。所
 - 起点水位线：开关第一次打开的那次运行记下当时时间（`state.register_watermark`），之后只处理 `created_at` 晚于它的线索，**绝不回填旧线索**。预览可用 `--dry-run --register-since <ISO|now>`。
 - 只处理未归档、来源为 Meta 表单/点击到 WhatsApp/官网/Instagram 的线索；从表格导入的线索（有 import_fingerprint 或 drive_sync.inserted_by）和手工来源（展厅、转介绍、自开发）不追加。
 - 去重：先按 Master Lead ID，再按「Source lead ID」里的 Meta 线索号，再按「Primary phone」规范化后的电话；同一批里同电话只追加最早一条。已在表里（崩溃后重跑）的行只补色和 OS 标记，不再追加。
-- 只写这些列：Master Lead ID、Received at（迪拜时间 `YYYY-MM-DD HH:mm`）、Intake channel、Client、Primary phone、Email、Campaign、Ad。Assigned to、Dispatch status 等其余列全部留空给人。
+- 只写这些列：Master Lead ID、Received at（迪拜时间 `YYYY-MM-DD HH:mm`）、Intake channel（Meta 表单含 Instagram 表单线索都写 FB Form，点击到 WhatsApp 写 WhatsApp，官网写 Website）、Client、Primary phone、Email、Campaign、Ad。Assigned to、Dispatch status 等其余列全部留空给人。
 - Master Lead ID：Meta 表单线索 `META-<meta_leadgen_id>`；点击到 WhatsApp `WA-NM-<线索号>`；其他 `OS-NM-<线索号>`（S29 的识别前缀新增了 `OS`）。追加后在 OS 线索上写 `raw_import_data.register_append`（行号、时间）并在 `import_fingerprint` 为空时填入该编号的指纹，S29 回读这一行时按指纹（其次 Meta 线索号、电话）匹配到同一条线索，不会新建重复线索。**不需要数据库迁移**。
 - 标记：写入的每个格子浅蓝底 + 批注「OS 写入 迪拜时间 …｜来源：OS｜线索 NM-xxxx****」；没写的格子不上色。
-- 安全：写入白名单只允许该页表头锚点 A5 的追加，上色只允许本次追加的行，禁止改值/整行格式；单次最多追加 30 行（超过一行都不写并报 `register_cap_exceeded`），也计入 `--max-writes`；追加后重读整表核对位置、重复和每个格子的值；追加前先把待办写入 state，崩溃后下一轮据此认领、补色、补标记。
+- 安全：不使用 values.append：读整页，取“任一格非空”的最后一行，写到其后的明确空行（values.update 逐格），写前重读目标行，有非空格就拒绝；白名单只允许这些行的 8 个写入列，上色/批注同样只限这些格；单次最多追加 30 行（超过一行都不写并报 `register_cap_exceeded`），也计入 `--max-writes`；追加后重读整表核对位置、重复和每个格子的值；追加前先把待办写入 state，崩溃后下一轮据此认领、补色、补标记。
 - 需要 Sam 授权：服务账号要对分配总表有「编辑者」权限（现在 S29 只读）。

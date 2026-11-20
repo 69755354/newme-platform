@@ -114,7 +114,14 @@ export function guardSheets(sheets, policy) {
     batchGetValues: (...a) => sheets.batchGetValues(...a),
     getFirstSheetTitle: (...a) => sheets.getFirstSheetTitle(...a),
     batchUpdateValues(id, data) {
-      if (policy[id]?.appendOnly) throw new SyncError("write_blocked", "this spreadsheet is append-only: existing cells cannot be edited");
+      if (policy[id]?.appendOnly) { // Lead Register: single cells of the write columns on rows this run chose (empty rows below the last used row)
+        const rule = policy[id];
+        for (const d of data) {
+          const bang = d.range.lastIndexOf("!"); const tab = d.range.slice(0, bang).replace(/^'|'$/g, "").replace(/''/g, "'"); const m = /^([A-Z]{1,2})(\d+)$/.exec(d.range.slice(bang + 1));
+          if (tab !== rule.tab || !m || !rule.writeCols.has(m[1]) || !rule.writeRows.has(Number(m[2])) || Number(m[2]) < rule.minRow || d.values?.length !== 1 || d.values[0]?.length !== 1) throw new SyncError("write_blocked", "register write outside the allowed new-row cells");
+        }
+        return sheets.batchUpdateValues(id, data);
+      }
       for (const d of data) check(id, d.range, "update"); return sheets.batchUpdateValues(id, data); },
     appendValues(id, range, values) { check(id, range, "append"); return sheets.appendValues(id, range, values); },
     getSheetId: (...a) => sheets.getSheetId(...a),
@@ -131,7 +138,7 @@ export function guardSheets(sheets, policy) {
         // append-only sheet: colour + note on rows this run appended, never a value and never a whole-row format
         if (rule.appendOnly) {
           if (op.kind !== "cell" || op.value !== undefined) throw new SyncError("write_blocked", "append-only sheet: only colour and note on cells are allowed");
-          if (!rule.formatRows || !rule.formatRows.has(op.row)) throw new SyncError("write_blocked", `format on row ${op.row} is not a row appended by this program`);
+          if (!rule.formatRows || !rule.formatRows.has(op.row) || !rule.writeCols.has(columnLetter(op.col))) throw new SyncError("write_blocked", `format on row ${op.row} is not a row appended by this program`);
         }
         const kinds = { cell: ["row", "col", "value", "bg", "note"], rowbg: ["row", "c1", "c2", "bg"], headernote: ["row", "col", "note"] };
         if (!kinds[op.kind]) throw new SyncError("write_blocked", "unknown format request");
@@ -151,11 +158,11 @@ export function guardSheets(sheets, policy) {
 }
 
 /**
- * Lead Register: append on the header-anchored cell of that one tab only; formatting only on rows listed in formatRows
- * (a Set the worker fills with the rows it appended); no value edits, no deletes. minRow keeps the header and the banner out.
+ * Lead Register: no values.append. Values go cell by cell with values.update, only on writeRows (the empty rows below the last used row,
+ * chosen and re-checked empty by the worker) and writeCols (the 8 intake columns); formatting only on the same rows/columns. Nothing existing is editable. minRow keeps the header and the banner out.
  */
 export function buildRegisterPolicy({ registerSheetId, registerTab, registerHeaderRow }) {
-  return { [registerSheetId]: { tab: registerTab, cells: new RegExp(`^A${registerHeaderRow}$`), formatCells: /^[A-Z]{1,2}\d+$/, minRow: registerHeaderRow + 1, append: true, appendOnly: true, formatRows: new Set() } };
+  return { [registerSheetId]: { tab: registerTab, cells: /^$^/, formatCells: /^[A-Z]{1,2}\d+$/, minRow: registerHeaderRow + 1, append: false, appendOnly: true, formatRows: new Set(), writeRows: new Set(), writeCols: new Set() } };
 }
 
 export function buildWritePolicy({ metaSheetId, metaTab, salesSheetId, salesTab, clidColumn, registerSheetId = null, registerTab = null, registerHeaderRow = 5 }) {

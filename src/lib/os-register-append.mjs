@@ -53,8 +53,9 @@ export function masterLeadId(lead) {
   if (norm(lead.ctwa_clid) || lead.source === "whatsapp") return `WA-${ref}`;
   return `OS-${ref}`;
 }
-const CHANNEL_LABEL = { fb: "FB Form", ins: "Instagram", whatsapp: "WhatsApp", website: "Website", referral: "Referral", show_room: "Showroom", offline: "Self-developed" };
-export const intakeChannelLabel = (lead) => CHANNEL_LABEL[lead.source] ?? (LEADGEN.test(norm(lead.meta_leadgen_id)) ? "FB Form" : norm(lead.ctwa_clid) ? "WhatsApp" : "");
+// The register only uses "FB Form" and "WhatsApp" for Meta intake; Instagram Instant Form leads are "FB Form" too.
+const CHANNEL_LABEL = { fb: "FB Form", ins: "FB Form", whatsapp: "WhatsApp", website: "Website", referral: "Referral", show_room: "Showroom", offline: "Self-developed" };
+export const intakeChannelLabel = (lead) => (LEADGEN.test(norm(lead.meta_leadgen_id)) ? "FB Form" : CHANNEL_LABEL[lead.source] ?? (norm(lead.ctwa_clid) ? "WhatsApp" : ""));
 const INTAKE_SOURCES = new Set(["fb", "ins", "whatsapp", "website"]);
 
 // ---------- which leads ----------

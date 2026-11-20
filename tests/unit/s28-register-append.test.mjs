@@ -181,7 +181,7 @@ test("idempotent: a second run, a crash after the append, and a lost append answ
   const before = sheets.writes.length; await run(sheets, rd, io, { now: NOW + 600_000 });
   assert.equal(sheets.writes.slice(before).filter((w) => w.id === REG).length, 0);
   // append whose answer is lost although the row landed
-  const s2 = world(); const io2 = mk(); io2.writeState({ ...io2.readState(), register_watermark: "2026-11-20T09:00:00.000Z" }); s2.inject.append = "landed";
+  const s2 = world(); const io2 = mk(); io2.writeState({ ...io2.readState(), register_watermark: "2026-11-20T09:00:00.000Z" }); { const orig = s2.batchUpdateValues; let once = true; s2.batchUpdateValues = async (i, d) => { const r = await orig(i, d); if (i === REG && once) { once = false; throw new SyncError("http_network", "answer lost"); } return r; }; }
   const l3 = lead(3); const r3 = await run(s2, osReader([l3]), io2);
   assert.equal(r3.exitCode, 0); assert.equal(s2.grids[REG].slice(5).length, 1);
 });
@@ -222,24 +222,44 @@ test("round trip: the S29 matcher finds the appended row's OS lead; no duplicate
   }
 });
 
-test("write whitelist: append on the register tab anchor only; no edits, no other tab, no formatting of old rows or values", async () => {
+test("write whitelist: only the 8 write columns of empty rows chosen by the worker; no edits, no append, no other tab, no wide formats", async () => {
   const sheets = world([regRow({ "Master Lead ID": "LEGACY-1" })]); const policy = buildWritePolicy({ ...DEFAULTS, metaTab: "Registry", registerSheetId: REG, registerTab: "Lead Register", registerHeaderRow: 5 });
-  const g = guardSheets(sheets, policy); const blocked = (p) => assert.rejects(p, (e) => e.code === "write_blocked");
-  await blocked(Promise.resolve().then(() => g.batchUpdateValues(REG, [{ range: "'Lead Register'!A6", values: [["x"]] }])));
-  await blocked(Promise.resolve().then(() => g.batchUpdateValues(REG, [{ range: "'Lead Register'!A5", values: [["x"]] }])));
-  await blocked(Promise.resolve().then(() => g.appendValues(REG, "'Other tab'!A5", [["x"]])));
-  await blocked(Promise.resolve().then(() => g.appendValues(REG, "'Lead Register'!A1", [["x"]])));
-  await blocked(Promise.resolve().then(() => g.appendValues(REG, "'Lead Register'!A6:Z6", [["x"]])));
-  await blocked(Promise.resolve().then(() => g.batchUpdateCells(REG, "Other tab", [{ kind: "cell", row: 7, col: 0, bg: BLUE, note: "n" }])));
-  await blocked(Promise.resolve().then(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "cell", row: 6, col: 0, bg: BLUE, note: "n" }]))); // existing row: not in formatRows
-  policy[REG].formatRows.add(7);
-  await blocked(Promise.resolve().then(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "cell", row: 7, col: 0, value: "x", bg: BLUE }])));
-  await blocked(Promise.resolve().then(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "rowbg", row: 7, c1: 0, c2: 3, bg: BLUE }])));
-  await blocked(Promise.resolve().then(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "headernote", row: 1, col: 0, note: "n" }])));
-  await g.appendValues(REG, "'Lead Register'!A5", [["x"]]); // the one allowed append
-  await g.batchUpdateCells(REG, "Lead Register", [{ kind: "cell", row: 7, col: 3, bg: BLUE, note: "n" }]); // the one allowed format
-  const noRegister = buildWritePolicy({ ...DEFAULTS, metaTab: "Registry", registerSheetId: null }); assert.equal(noRegister[REG], undefined); // switch off: register is not writable at all
-  await blocked(Promise.resolve().then(() => guardSheets(sheets, noRegister).appendValues(REG, "'Lead Register'!A5", [["x"]])));
+  const g = guardSheets(sheets, policy); const blocked = (f) => assert.rejects(Promise.resolve().then(f), (e) => e.code === "write_blocked");
+  const w = (range) => g.batchUpdateValues(REG, [{ range, values: [["x"]] }]);
+  await blocked(() => w("'Lead Register'!A6")); // not chosen yet
+  policy[REG].writeRows.add(7); policy[REG].formatRows.add(7); policy[REG].writeCols.add("A"); policy[REG].writeCols.add("D");
+  await blocked(() => w("'Lead Register'!A6")); // existing row
+  await blocked(() => w("'Lead Register'!B7")); // not a write column
+  await blocked(() => w("'Lead Register'!A7:D7")); // not a single cell
+  await blocked(() => w("'Other tab'!A7"));
+  await blocked(() => g.appendValues(REG, "'Lead Register'!A5", [["x"]])); // values.append is never allowed
+  await blocked(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "cell", row: 6, col: 0, bg: BLUE, note: "n" }]));
+  await blocked(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "cell", row: 7, col: 1, bg: BLUE, note: "n" }])); // not a write column
+  await blocked(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "cell", row: 7, col: 0, value: "x", bg: BLUE }]));
+  await blocked(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "rowbg", row: 7, c1: 0, c2: 3, bg: BLUE }]));
+  await blocked(() => g.batchUpdateCells(REG, "Lead Register", [{ kind: "headernote", row: 1, col: 0, note: "n" }]));
+  await w("'Lead Register'!A7"); await w("'Lead Register'!D7");
+  await g.batchUpdateCells(REG, "Lead Register", [{ kind: "cell", row: 7, col: 3, bg: BLUE, note: "n" }]);
+  const noRegister = buildWritePolicy({ ...DEFAULTS, metaTab: "Registry", registerSheetId: null }); assert.equal(noRegister[REG], undefined);
+  await blocked(() => guardSheets(sheets, noRegister).batchUpdateValues(REG, [{ range: "'Lead Register'!A7", values: [["x"]] }]));
+});
+
+test("no values.append, last row = last row with ANY cell, non-empty target refused, Instagram form lead is FB Form", async () => {
+  // sparse register: last used row is 12 (only a far column filled), blank rows inside
+  const rows = [regRow({ "Master Lead ID": "LEGACY-1" }), regRow({}), regRow({ "Master Lead ID": "LEGACY-2" }), regRow({}), regRow({}), regRow({ "Next action": "call" }), regRow({}), regRow({ "Sales Lead ID": "S9" })];
+  const sheets = world(rows); const io = mk(); io.writeState({ ...io.readState(), register_watermark: "2026-11-20T09:00:00.000Z" });
+  let appendCalled = false; const oa = sheets.appendValues; sheets.appendValues = (...a) => { appendCalled = true; return oa(...a); };
+  const ig = lead(1, { source: "ins", meta_leadgen_id: "123456789012345" });
+  await run(sheets, osReader([ig]), io);
+  assert.equal(appendCalled, false);
+  const lastExisting = 5 + rows.length; // header row 5 + 8 rows = row 13
+  assert.equal(sheets.grids[REG][lastExisting][col("Master Lead ID")], masterLeadId(ig)); // landed on row lastExisting+1
+  assert.equal(sheets.grids[REG][lastExisting][col("Intake channel")], "FB Form");
+  // target row not empty (someone typed in it between planning and writing)
+  const s2 = world(rows); const io2 = mk(); io2.writeState({ ...io2.readState(), register_watermark: "2026-11-20T09:00:00.000Z" });
+  const og = s2.getValues; let n = 0; s2.getValues = async (id, range) => { if (id === REG && /^'Lead Register'!A\d+:AS\d+$/.test(range) && !/A5:/.test(range)) { s2.grids[REG][lastExisting] = ["intruder"]; } n++; return og(id, range); };
+  const r = await run(s2, osReader([lead(2)]), io2);
+  assert.equal(r.summary.register.error, "register_target_not_empty"); assert.equal(s2.grids[REG][lastExisting][0], "intruder"); assert.equal(s2.writes.filter((x) => x.id === REG).length, 0);
 });
 
 test("caps: over the per-run append limit or --max-writes writes nothing to the register", async () => {

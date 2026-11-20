@@ -17,7 +17,7 @@ import {
   maxIso, normalizeState, parseCsv, planCtwaColumnX, planMetaIdsUpsert, reconcileMetaIds, shouldAlert, sinceFromCursor,
 } from "../src/lib/os-drive-sync.mjs";
 import {
-  REGISTER, checkRegisterHeader, expectedCells, fingerprintForMaster, formatOpsFor, indexRegister, planRegisterAppend, selectRegisterCandidates, buildRegisterRow,
+  REGISTER, WRITE_COLUMNS, checkRegisterHeader, expectedCells, fingerprintForMaster, formatOpsFor, indexRegister, planRegisterAppend, selectRegisterCandidates, buildRegisterRow,
 } from "../src/lib/os-register-append.mjs";
 
 const LEAD_COLUMNS = "id, meta_leadgen_id, ctwa_clid, campaign_id, campaign_name, adset_id, ad_id, ad_name, created_at, stage, final_status, archived, updated_at, phone";
@@ -215,19 +215,25 @@ export function registerSummary(r, cfg) {
 async function executeRegister({ reg, guarded, policy, osReader, io, state, cfg, now, flush, changes, ts }) {
   const { head, plan } = reg; const id = cfg.registerSheetId; const tab = cfg.registerTab; const a1 = `${a1Tab(tab)}!A${cfg.registerHeaderRow}:${REGISTER.lastColumn}`;
   const out = { appended: 0, adopted: 0, marked: 0 };
+  WRITE_COLUMNS.forEach((n) => policy[id].writeCols.add(columnLetter(head.index[n])));
   for (const m of plan.droppedPending) delete state.register_pending[m];
   if (plan.appends.length) {
     for (const a of plan.appends) state.register_pending[a.master] = { lead_id: a.lead.id, ref: leadRef(a.lead.id), at: new Date(now()).toISOString(), formatted: false };
     io.writeState(state); // durable BEFORE the append: a crash leaves a record of what may be on the sheet
-    // A network error or 5xx on append may or may not have landed: never repeat blindly, re-read and append only what is still missing.
-    let todo = plan.appends; let grid = reg.grid;
+    // Explicit rows below the last used row, written with values.update. A network error or 5xx may or may not have landed:
+    // re-read, and write only what is still missing, to rows chosen again from the fresh sheet.
+    let todo = plan.appends; let grid = reg.grid; let lastRow = plan.lastRow;
     for (let attempt = 0; attempt < 2 && todo.length; attempt++) {
-      try { await guarded.appendValues(id, `${a1Tab(tab)}!A${cfg.registerHeaderRow}`, todo.map((a) => a.row)); } catch (e) { if (!/^http_(network|5\d\d)$/.test(e?.code ?? "")) throw e; }
+      const first = lastRow + 1; const last = first + todo.length - 1;
+      const target = await guarded.getValues(id, `${a1Tab(tab)}!A${first}:${REGISTER.lastColumn}${last}`);
+      if (target.some((r) => (r ?? []).some((v) => String(v ?? "").trim() !== ""))) throw new SyncError("register_target_not_empty", "rows below the register are not empty; nothing written");
+      const data = []; todo.forEach((a, i) => { policy[id].writeRows.add(first + i); policy[id].formatRows.add(first + i); a.row.forEach((v, c) => { if (v !== "") data.push({ range: `${a1Tab(tab)}!${columnLetter(c)}${first + i}`, values: [[v]] }); }); });
+      try { await guarded.batchUpdateValues(id, data); } catch (e) { if (!/^http_(network|5\d\d)$/.test(e?.code ?? "")) throw e; }
       grid = await guarded.getValues(id, a1);
-      const have = indexRegister(grid, head, cfg.registerHeaderRow).byMaster;
-      todo = todo.filter((a) => !have.has(a.master));
+      const now2 = indexRegister(grid, head, cfg.registerHeaderRow);
+      todo = todo.filter((a) => !now2.byMaster.has(a.master)); lastRow = now2.lastRow;
     }
-    if (todo.length) throw new SyncError("append_not_found", `${todo.length} appended register row(s) are not on the sheet after two attempts`);
+    if (todo.length) throw new SyncError("append_not_found", `${todo.length} register row(s) are not on the sheet after two attempts`);
     const idx = indexRegister(grid, head, cfg.registerHeaderRow);
     const masters = grid.slice(1).map((r) => String(r?.[head.index["Master Lead ID"]] ?? "").trim());
     for (const a of plan.appends) {

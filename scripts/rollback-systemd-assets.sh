@@ -482,6 +482,8 @@ restore_managed_path() {
     mv -Tf "$RESTORE_TMP" "$dest" || return 1
     RESTORE_TMP=""
   else
+    # A timer this transaction added and enabled must not stay enabled once its unit file is gone.
+    case "$dest" in /etc/systemd/system/*.timer) systemctl disable --now --no-reload "${dest##*/}" 2>/dev/null || true ;; esac
     rm -f -- "$dest" || return 1
   fi
 }

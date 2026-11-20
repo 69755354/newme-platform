@@ -48,10 +48,17 @@
 - S18（PR #526）：WhatsApp「点击进 WhatsApp」广告的点击编号 ctwa_clid 入库并自动建/对线索，回传 Conversions API for Business Messaging。webhook 现有 `src/app/api/whatsapp/webhook/route.ts`，别名 `src/app/api/meta/whatsapp-webhook/route.ts`；线索详情面板 `src/app/(dashboard)/leads/[id]/LeadWhatsAppAdPanel.tsx`；市场导出 `src/app/api/leads/whatsapp-ads/export/route.ts`；迁移 `20261118200000_whatsapp_ctwa_leads.sql`。
 - 供应链：glob/minimatch 已降为中危、picomatch 公告撤回，S17 登记的三条高危例外过期移除，登记表恢复为空。
 
+## 2026-11-20 S29 云盘表格 → OS 只读同步（第一版，默认关闭）
+
+- 读取脚本 `scripts/drive-to-os-sync.mjs`（`--run-now`，默认预演，`--apply` 才写）、只读表格客户端 `scripts/lib/drive-sheets-readonly.mjs`、表与行规范化 `scripts/lib/drive-sync-sources.mjs`；共享规则 `src/lib/drive-sync.mjs`（字段归属、匹配、冲突、幂等哈希、写入上限）。云盘文件只读，营销表 Lead Quality Feedback 页永不读取。
+- 写入只经 `src/app/api/sync/drive-ingest/route.ts`：默认关闭（`DRIVE_SYNC_INGEST_ENABLED`），令牌常量时间比较、限速、每次条数上限、失败即停的追加式日志、写后核对通知/任务/回传四表不变；不做迁移，用 activities（来源 drive_sync）与 `raw_import_data.drive_sync`。
+- 定时单元 `infra/drive-sync/newme-drive-sync.service|timer`（迪拜 02:30 与 13:00，after-flag）；说明 `docs/s29-drive-to-os-sync.md`；测试 `tests/unit/s29-drive-sync.test.mjs`。
+
 ## 2026-11-19 S19–S21 发布批次：编号总表、跟进监控
 
 - 发布批次 1（已上线 100006be）：Meta 编号总表导出 `src/app/api/export/meta-ids/route.ts`、每日取数与 NAS 上传脚本 `infra/meta-ids/newme-meta-ids-export.sh`、`infra/nas/newme-nas-upload.sh`；测试账号对真人不可见（`src/lib/system-accounts.mjs`）；数据导入门禁操作与 S21 开关。
 - S21 应用：WhatsApp 对话正文入库、首次响应/联系次数/跟进状态：线索页卡片 `src/app/(dashboard)/leads/[id]/LeadFollowupCard.tsx`、接口 `src/app/api/leads/[id]/followup/route.ts`、定时接口 `src/app/api/cron/check-whatsapp-followups/route.ts`（默认关闭）；迁移 `20261119100000_whatsapp_followup_monitor.sql`。
+- S25 应用：WhatsApp 共存一次性同步（聊天历史 `history`、通讯录 `smb_app_state_sync`）经现有 webhook `src/app/api/whatsapp/webhook/route.ts` 入库：解析 `src/lib/whatsapp-history.mjs`，写入 `whatsapp_message_events`（`backfilled=true`，按消息编号去重）与 `whatsapp_synced_contacts`；历史不建线索、不发提醒、不推 Meta、不影响首次响应监控（`check-whatsapp-followups` 只读 `backfilled=false`）；开关 `WHATSAPP_HISTORY_SYNC_ENABLED`；迁移 `20261119400000_whatsapp_history_backfill.sql`，说明 `docs/s25-whatsapp-history.md`。
 
 ## 2026-11-19 S23 商机与拜访报告（PR #538，迁移 20261119200000 经 s23 开关提供）
 
@@ -1307,3 +1314,8 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 | `infra/nas/newme-nas-upload.sh` | 备份上传到 NAS 的主机脚本。 |
 
 验证边界：`scripts/check-published-credentials.mjs` 对本批次新增的测试夹具按文件和标识符逐条登记豁免并写明理由，规则本身未放宽。
+
+## 2026-11-20 S28 OS 到云盘表格与 NAS 的增量推送（第一版，默认关闭）
+
+- 工作程序 `scripts/os-drive-nas-sync.mjs`（每 5 分钟增量、`--reconcile` 每晚对账、`--dry-run` 只读演练）；纯函数 `src/lib/os-drive-sync.mjs`（电话规范化、按键对号入座、写入白名单、总闸、退避）；表格客户端 `src/lib/google-sheets-client.mjs`；单元模板 `infra/os-drive-sync/newme-os-drive-sync.service`、`infra/os-drive-sync/newme-os-drive-reconcile.service` 及对应定时器，开关 OS_DRIVE_SYNC_ENABLED 默认关；说明见 `docs/s28-drive-nas-sync.md`。
+- 只写两处：Meta 编号表（原地更新、追加、不删）与销售表 Home-owners 页 X 列的单个格子；每次写后读回核对；超过 200 格总闸一格不写；无数据库迁移。

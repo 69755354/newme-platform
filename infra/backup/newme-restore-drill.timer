@@ -1,8 +1,12 @@
 [Unit]
-Description=Monthly NewMe restore drill (3rd of each month, 22:30 UTC)
+Description=Weekly NewMe restore drill (Sunday 23:15 UTC = Monday 03:15 Dubai, after the 21:30 UTC backup)
 
+# STATUS: after-flag
+# Installed by scripts/install-systemd-assets.sh, but enabled there only once the PostgreSQL 17 server programs
+# (/usr/lib/postgresql/17/bin/initdb and pg_ctl) exist; without them every run would fail. The hourly freshness
+# check reports a missing drill from DRILL_REQUIRED_FROM on, so a timer that is never enabled does not stay silent.
 [Timer]
-OnCalendar=*-*-03 22:30:00 UTC
+OnCalendar=Sun *-*-* 23:15:00 UTC
 Persistent=true
 
 [Install]

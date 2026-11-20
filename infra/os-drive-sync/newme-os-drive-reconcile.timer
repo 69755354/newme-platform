@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly OS vs Google Sheets vs NAS reconcile (02:30 Asia/Dubai, after the 02:10 Meta ID export)
+# STATUS: after-flag. Template, not installed; install together with newme-os-drive-sync.timer.
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Dubai
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

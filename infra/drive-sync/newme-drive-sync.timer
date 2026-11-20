@@ -1,0 +1,14 @@
+[Unit]
+Description=NewMe Drive -> OS sync twice a day (02:30 night = final state of the sales day, 13:00 daytime, Asia/Dubai)
+# STATUS: after-flag
+# install only together with DRIVE_SYNC_INGEST_ENABLED=true and Sam approval; see docs/s29-drive-to-os-sync.md
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Dubai
+OnCalendar=*-*-* 13:00:00 Asia/Dubai
+RandomizedDelaySec=60
+Persistent=true
+Unit=newme-drive-sync.service
+
+[Install]
+WantedBy=timers.target

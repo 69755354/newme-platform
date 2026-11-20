@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Shared helpers for the NewMe database backup and restore drill (S7 item 7).
 # Sourced, not executed. Nothing here prints a credential.
+# ALERT_FAILED is set here and read by the scripts that source this file.
+# shellcheck disable=SC2034
 
 backup_log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 # Every failure path must reach a person (S7 review must-fix 4): backup_die alerts
@@ -72,12 +74,32 @@ table_counts() {
 encrypt_file() { openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass "file:$3" -in "$1" -out "$2"; }
 decrypt_file() { openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$3" -in "$1" -out "$2"; }
 
+# ALERT_FAILED=1 once any alert of this run was not delivered. send_alert itself never fails the caller
+# (a backup must not stop because the phone is unreachable), but nothing is swallowed: the sender's own
+# messages go to stderr (the journal), and a sender that is missing or exits non-zero leaves an ERROR line
+# in the journal and in alerts.log (audit 2026-11-20 F6: this used to go to /dev/null). The OnFailure
+# handler exits 1 on it, so an undelivered alert shows as a failed unit.
+ALERT_FAILED=0
+alert_log_line() {
+  local dir="${ALERT_STATE_DIR:-/var/lib/newme-alerts}"
+  [ -d "$dir" ] || mkdir -m 0700 "$dir" 2>/dev/null || true
+  printf '%s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${BACKUP_ALERT_KEY:-db-backup}" "$1" "$2" >> "$dir/alerts.log" 2>/dev/null || true
+}
 send_alert() {
-  # send_alert <failure|recovery> <summary>; best effort, never fails the caller.
-  # Dry runs only validate configuration and never alert.
-  local event="$1" summary="$2"
+  # send_alert <failure|recovery> <summary>. Dry runs only validate configuration and never alert.
+  local event="$1" summary="$2" rc=0
   [ "${BACKUP_DRY_RUN:-0}" = 1 ] && return 0
-  if [ -n "${BACKUP_ALERT_SCRIPT:-}" ] && [ -x "$BACKUP_ALERT_SCRIPT" ]; then
-    bash "$BACKUP_ALERT_SCRIPT" "${BACKUP_ALERT_KEY:-db-backup}" "$event" "$summary" >/dev/null 2>&1 || backup_log "alert delivery failed"
+  if [ -z "${BACKUP_ALERT_SCRIPT:-}" ] || [ ! -x "$BACKUP_ALERT_SCRIPT" ]; then
+    ALERT_FAILED=1
+    backup_log "ERROR: alert sender ${BACKUP_ALERT_SCRIPT:-(unset)} is missing or not executable; ${BACKUP_ALERT_KEY:-db-backup} $event NOT delivered: $summary"
+    alert_log_line "$event" "FAILED alert sender missing or not executable (${BACKUP_ALERT_SCRIPT:-unset})"
+    return 0
   fi
+  bash "$BACKUP_ALERT_SCRIPT" "${BACKUP_ALERT_KEY:-db-backup}" "$event" "$summary" >&2 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    ALERT_FAILED=1
+    backup_log "ERROR: alert delivery failed (sender exit $rc): ${BACKUP_ALERT_KEY:-db-backup} $event: $summary"
+    alert_log_line "$event" "FAILED sender exit $rc (reported by the backup tooling)"
+  fi
+  return 0
 }

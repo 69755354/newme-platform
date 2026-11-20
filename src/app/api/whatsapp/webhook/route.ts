@@ -1,12 +1,15 @@
 // External authorization: Meta App Secret HMAC, exact opt-in channel allowlist.
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { MAX_WEBHOOK_BYTES, extractWhatsAppEvents, isWhatsAppEventFresh, verifyWhatsAppSignature, type PilotChannel } from "@/lib/whatsapp-pilot.mjs";
+import { extractWhatsAppEvents, isWhatsAppEventFresh, verifyWhatsAppSignature, type PilotChannel } from "@/lib/whatsapp-pilot.mjs";
 import { extractWhatsAppAdEvents } from "@/lib/whatsapp-ctwa.mjs";
+import { extractWhatsAppHistory, hasHistorySyncFields, historySyncEnabled, recordWhatsAppHistory, MAX_HISTORY_WEBHOOK_BYTES } from "@/lib/whatsapp-history.mjs";
 import { adLeadsEnabled, organicLeadsEnabled, recordWhatsAppAdEvents } from "@/lib/whatsapp-ctwa-ingest.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// History chunks are larger than ordinary messages; the signature is still checked before anything is parsed.
+const MAX_BODY_BYTES = MAX_HISTORY_WEBHOOK_BYTES;
 const reply = (body: Record<string, unknown>, status = 200) => NextResponse.json(body, {
   status, headers: { "Cache-Control": "no-store" },
 });
@@ -28,7 +31,7 @@ export async function POST(request: Request) {
   const salt = process.env.WHATSAPP_PILOT_CONTACT_SALT;
   if (process.env.WHATSAPP_PILOT_ENABLED !== "true" || secrets.length === 0 || !salt) return reply({ error: "pilot_disabled" }, 503);
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return reply({ error: "unsupported_media_type" }, 415);
-  if (Number(request.headers.get("content-length")) > MAX_WEBHOOK_BYTES) return reply({ error: "payload_too_large" }, 413);
+  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return reply({ error: "payload_too_large" }, 413);
   const reader = request.body?.getReader();
   if (!reader) return reply({ error: "invalid_body" }, 400);
   const chunks: Uint8Array[] = [];
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
       const chunk = await reader.read();
       if (chunk.done) break;
       length += chunk.value.byteLength;
-      if (length > MAX_WEBHOOK_BYTES) {
+      if (length > MAX_BODY_BYTES) {
         await reader.cancel();
         return reply({ error: "payload_too_large" }, 413);
       }
@@ -92,6 +95,18 @@ export async function POST(request: Request) {
       } catch { adFailed = true; }
     }
     if (adFailed) return reply({ error: "ad_event_write_failed" }, 503);
+    // One-time coexistence sync (S25): chat history and phone contacts are stored as backfilled rows only.
+    // They never reach the lead writer, the follow-up monitor or Meta. A failed write answers 503 so Meta
+    // retries the delivery; rows already stored are skipped by the database.
+    if (historySyncEnabled() && hasHistorySyncFields(payload)) {
+      try {
+        const parsed = extractWhatsAppHistory(payload, (channels ?? []) as PilotChannel[], writeTime);
+        if (parsed.messages.length || parsed.contacts.length) {
+          const summary = await recordWhatsAppHistory(supabaseAdmin, parsed);
+          if (summary.failed > 0) return reply({ error: "history_write_failed" }, 503);
+        }
+      } catch { return reply({ error: "history_write_failed" }, 503); }
+    }
     return reply({ received: true });
   } catch {
     // Do not log raw bodies, customer identifiers, secrets or database errors.

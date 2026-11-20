@@ -269,7 +269,7 @@
       "$comment": "S31 corrections (OS fix S31): evaluate_lead_dispatch, dispatch_decide, sweep_lead_dispatch and record_whatsapp_ad_event replaced in place with the same signatures (null-safe phone confirmation, canonical phone matching, newer twins re-evaluated when an older candidate changes, a live WhatsApp delivery promotes a backfilled history row) plus one service-role helper. No table, column, policy or client grant changes.",
       "version": "20261120100000",
       "file": "20261120100000_dispatch_and_history_corrections.sql",
-      "sha256": "7d9c25112239e36eedce2a5c9620d1645031e7897920431963bf884867aa21dd"
+      "sha256": "a51a5dba59b562e0149e60d8b711caa10f3ce2ecbbc8c542ecb8589306e556d6"
     }
   ],
   "companions": [

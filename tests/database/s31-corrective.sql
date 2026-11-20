@@ -152,4 +152,26 @@ select pg_temp.expect((:'h2'::jsonb->>'duplicate')::int = 1 and (select not back
 select public.record_whatsapp_ad_event(pg_temp.live('wamid.S31D2', '2026-11-19T10:05:00Z', p_body => 'second')) as d3 \gset
 select pg_temp.expect(not (:'d3'::jsonb->>'duplicate')::boolean and not (:'d3'::jsonb->>'promoted')::boolean and not (:'d3'::jsonb->>'lead_created')::boolean
   and (:'d3'::jsonb->>'lead_id')::uuid = (:'d1'::jsonb->>'lead_id')::uuid, 'd-new-live-message-uses-the-normal-path');
+-- (d2) history never counts for live timing: five-month-old backfilled inbound + outbound, then a live inbound today
+select (now() - interval '5 months') as h_at, (now() - interval '5 months' + interval '5 minutes') as h_reply_at, date_trunc('second', now()) as live_at \gset
+select public.record_whatsapp_history_messages(jsonb_build_array(
+  jsonb_build_object('waba_id', '987654321', 'phone_number_id', '123456789', 'customer_phone', '971503139002', 'direction', 'inbound',
+    'message_id', 'wamid.S31H1', 'message_type', 'text', 'occurred_at', :'h_at', 'body', 'old question', 'body_kind', 'text'),
+  jsonb_build_object('waba_id', '987654321', 'phone_number_id', '123456789', 'customer_phone', '971503139002', 'direction', 'outbound',
+    'message_id', 'wamid.S31H2', 'message_type', 'text', 'occurred_at', :'h_reply_at', 'body', 'old answer', 'body_kind', 'text'))) as h3 \gset
+select pg_temp.expect((:'h3'::jsonb->>'inserted')::int = 2, 'd2-history-stored');
+select public.record_whatsapp_ad_event(pg_temp.live('wamid.S31L1', :'live_at', p_phone => '971503139002', p_body => 'new question today')) as d4 \gset
+select pg_temp.expect((select c.first_inbound_at = :'live_at'::timestamptz and c.first_reply_at is null and c.inbound_count = 1 and c.outbound_count = 0
+  and c.first_outbound_at is null and c.last_inbound_at = :'live_at'::timestamptz
+  from public.whatsapp_conversations c where c.waba_id = '987654321' and c.customer_key = '971503139002'), 'd2-conversation-timing-ignores-backfilled-rows');
+select pg_temp.expect((select l.wa_first_inbound_at = :'live_at'::timestamptz and l.wa_first_reply_at is null
+  from public.leads l where l.id = (:'d4'::jsonb->>'lead_id')::uuid), 'd2-lead-timing-ignores-backfilled-rows');
+-- the one-time repair in the file restores live-only values where an earlier writer counted history
+update public.whatsapp_conversations set first_inbound_at = :'h_at'::timestamptz, first_reply_at = :'h_reply_at'::timestamptz, inbound_count = 2, outbound_count = 1
+ where waba_id = '987654321' and customer_key = '971503139002';
+update public.leads set wa_first_inbound_at = :'h_at'::timestamptz, wa_first_reply_at = :'h_reply_at'::timestamptz where id = (:'d4'::jsonb->>'lead_id')::uuid;
+\ir ../../supabase/migrations/20261120100000_dispatch_and_history_corrections.sql
+select pg_temp.expect((select c.first_inbound_at = :'live_at'::timestamptz and c.first_reply_at is null and c.inbound_count = 1 and c.outbound_count = 0
+  from public.whatsapp_conversations c where c.waba_id = '987654321' and c.customer_key = '971503139002')
+  and (select l.wa_first_inbound_at = :'live_at'::timestamptz and l.wa_first_reply_at is null from public.leads l where l.id = (:'d4'::jsonb->>'lead_id')::uuid), 'd2-one-time-repair-recomputes-from-live-rows');
 rollback;

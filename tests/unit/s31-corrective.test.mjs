@@ -18,6 +18,10 @@ const body = (name) => {
 test("the migration is additive: only CREATE OR REPLACE of routines, grants and comments", () => {
   assert.match(sql.split("\n", 1)[0], /^-- NO_ROLLBACK: \S/);
   assert.doesNotMatch(sql, /\b(drop|truncate|delete\s+from|alter\s+table|create\s+table|create\s+(unique\s+)?index)\b/i);
+  // the only data writes outside the routines are the two derived-column repairs
+  const outside = sql.replace(/\$fn\$[\s\S]*?\$fn\$;/g, "");
+  assert.equal((outside.match(/^update public\./gm) ?? []).length, 2);
+  assert.doesNotMatch(outside, /^insert into/im);
   const created = [...sql.matchAll(/create or replace function public\.([a-z_]+)\(/g)].map((m) => m[1]);
   assert.deepEqual(created, ["evaluate_lead_dispatch", "dispatch_reevaluate_dependents", "dispatch_decide", "sweep_lead_dispatch", "record_whatsapp_ad_event"]);
   for (const name of created) {
@@ -86,6 +90,16 @@ test("(d) a live delivery promotes a backfilled history row instead of returning
   assert.match(b, /S21 \(S18 review, item 1\)/);
   assert.match(b, /body_kind/);
   assert.match(b, /'promoted', v_promoted/);
+  // timing and counts never include backfilled history rows (conversation: 2 + 5 sub-queries, lead: 2)
+  assert.equal((b.match(/and not backfilled;/g) ?? []).length, 2);
+  assert.equal((b.match(/and not e\.backfilled\)/g) ?? []).length, 5);
+  assert.equal((b.match(/and not e\.backfilled;/g) ?? []).length, 2);
+  assert.doesNotMatch(b, /where e\.conversation_id = c\.id and e\.direction = '(?:in|out)bound'\)/);
+  // and the file repairs rows written before this correction, from live rows only
+  const tail = sql.slice(sql.indexOf("one-time, idempotent repair"));
+  assert.match(tail, /update public\.whatsapp_conversations c set/);
+  assert.match(tail, /update public\.leads l set wa_first_inbound_at = n\.v_in, wa_first_reply_at = n\.v_reply/);
+  assert.match(tail, /is distinct from/);
 });
 
 test("the release plumbing names the migration last and CI runs its database test", () => {
@@ -96,7 +110,8 @@ test("the release plumbing names the migration last and CI runs its database tes
   const dbTest = read("tests/database/s31-corrective.sql");
   for (const marker of ["a-second-evaluation-without-confirmation-still-reviews-phone", "b-canonical-twin-is-found",
     "c1-test-mark-withdraws-the-newer-review", "c2-archived-candidate-reaches-the-newer-lead-through-the-sweep",
-    "c3-edited-older-lead-opens-the-newer-review", "d-live-delivery-promotes-instead-of-returning-early"]) {
+    "c3-edited-older-lead-opens-the-newer-review", "d-live-delivery-promotes-instead-of-returning-early",
+    "d2-conversation-timing-ignores-backfilled-rows", "d2-lead-timing-ignores-backfilled-rows", "d2-one-time-repair-recomputes-from-live-rows"]) {
     assert.ok(dbTest.includes(`'${marker}'`), `database test asserts ${marker}`);
   }
 });

@@ -1,4 +1,4 @@
--- NO_ROLLBACK: additive only (four existing routines replaced in place with CREATE OR REPLACE and the same signatures, one new service-role helper); no table, column, policy, grant to clients or row changes. Manual undo is described at the end of the file.
+-- NO_ROLLBACK: additive only (four existing routines replaced in place with CREATE OR REPLACE and the same signatures, one new service-role helper, one idempotent recompute of derived WhatsApp timing/count columns from live rows); no table, column, policy or client grant changes. Manual undo is described at the end of the file.
 -- ============================================================================
 -- OS fix S31 - corrections to the S24 dispatch routines and the S25 history backfill
 -- ============================================================================
@@ -395,7 +395,7 @@ set search_path = pg_catalog, public, pg_temp
 set lock_timeout = '5s'
 set statement_timeout = '20s'
 as $fn$
--- S31 corrective v1: a live delivery promotes a backfilled history row.
+-- S31 corrective v1: a live delivery promotes a backfilled history row; timing and counts ignore backfilled rows.
 begin
   perform public.assert_current_session_at_entry();
   declare
@@ -507,21 +507,22 @@ begin
       select * into v_conv from public.whatsapp_conversations where id = v_conv.id;
     end if;
 
-    -- Timing and counts are recomputed from the stored events, so arrival order does not matter.
+    -- Timing and counts are recomputed from the stored live events, so arrival order does not matter. S31: backfilled
+    -- history rows never count (they are not live conversation activity).
     select min(occurred_at) filter (where direction = 'inbound') into v_first_in
-      from public.whatsapp_message_events where conversation_id = v_conv.id;
+      from public.whatsapp_message_events where conversation_id = v_conv.id and not backfilled;
     select min(occurred_at) into v_first_reply
       from public.whatsapp_message_events
-      where conversation_id = v_conv.id and direction = 'outbound' and v_first_in is not null and occurred_at > v_first_in;
+      where conversation_id = v_conv.id and direction = 'outbound' and v_first_in is not null and occurred_at > v_first_in and not backfilled;
     update public.whatsapp_conversations c set
       phone_number_id = v_phone_id,
       first_inbound_at = v_first_in,
       first_reply_at = v_first_reply,
-      first_outbound_at = (select min(occurred_at) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'outbound'),
-      last_inbound_at = (select max(occurred_at) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'inbound'),
-      last_outbound_at = (select max(occurred_at) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'outbound'),
-      inbound_count = (select count(*) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'inbound'),
-      outbound_count = (select count(*) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'outbound'),
+      first_outbound_at = (select min(occurred_at) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'outbound' and not e.backfilled),
+      last_inbound_at = (select max(occurred_at) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'inbound' and not e.backfilled),
+      last_outbound_at = (select max(occurred_at) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'outbound' and not e.backfilled),
+      inbound_count = (select count(*) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'inbound' and not e.backfilled),
+      outbound_count = (select count(*) from public.whatsapp_message_events e where e.conversation_id = c.id and e.direction = 'outbound' and not e.backfilled),
       is_ad = c.is_ad or v_is_ad,
       updated_at = now()
     where c.id = v_conv.id;
@@ -586,10 +587,10 @@ begin
       -- first message and first reply come from every conversation linked to it, not from this one.
       select min(e.occurred_at) filter (where e.direction = 'inbound') into v_first_in
         from public.whatsapp_message_events e join public.whatsapp_conversations c on c.id = e.conversation_id
-        where c.lead_id = v_lead_id;
+        where c.lead_id = v_lead_id and not e.backfilled;
       select min(e.occurred_at) into v_first_reply
         from public.whatsapp_message_events e join public.whatsapp_conversations c on c.id = e.conversation_id
-        where c.lead_id = v_lead_id and e.direction = 'outbound' and v_first_in is not null and e.occurred_at > v_first_in;
+        where c.lead_id = v_lead_id and e.direction = 'outbound' and v_first_in is not null and e.occurred_at > v_first_in and not e.backfilled;
       update public.leads set wa_first_inbound_at = v_first_in, wa_first_reply_at = v_first_reply
         where id = v_lead_id
           and (wa_first_inbound_at is distinct from v_first_in or wa_first_reply_at is distinct from v_first_reply);
@@ -606,6 +607,60 @@ grant execute on function public.record_whatsapp_ad_event(jsonb, boolean) to ser
 
 comment on function public.record_whatsapp_ad_event(jsonb, boolean) is
   'S18/S21/S31: record one WhatsApp message (text body kept for text messages), match or create the lead by canonical phone, keep the first ctwa_clid and ad id per live lead, queue LeadSubmitted; a live delivery promotes a backfilled history row. Idempotent per message id and per (WABA, phone). Service role only.';
+
+-- ---------------------------------------------------------------------------
+-- (d) one-time, idempotent repair: conversations that hold backfilled rows and their linked leads get the timing and
+-- counts recomputed from live rows only (an earlier live delivery may have counted history). Recomputing again gives
+-- the same values; rows already equal are not written.
+-- ---------------------------------------------------------------------------
+with live as (
+  select c.id,
+         min(e.occurred_at) filter (where e.direction = 'inbound' and not e.backfilled) as first_in,
+         min(e.occurred_at) filter (where e.direction = 'outbound' and not e.backfilled) as first_out,
+         max(e.occurred_at) filter (where e.direction = 'inbound' and not e.backfilled) as last_in,
+         max(e.occurred_at) filter (where e.direction = 'outbound' and not e.backfilled) as last_out,
+         count(e.id) filter (where e.direction = 'inbound' and not e.backfilled) as n_in,
+         count(e.id) filter (where e.direction = 'outbound' and not e.backfilled) as n_out
+    from public.whatsapp_conversations c
+    join public.whatsapp_message_events e on e.conversation_id = c.id
+   where exists (select 1 from public.whatsapp_message_events b where b.conversation_id = c.id and b.backfilled)
+   group by c.id
+), nxt as (
+  select l.*,
+         (select min(e.occurred_at) from public.whatsapp_message_events e
+           where e.conversation_id = l.id and e.direction = 'outbound' and not e.backfilled
+             and l.first_in is not null and e.occurred_at > l.first_in) as first_reply
+    from live l
+)
+update public.whatsapp_conversations c set
+  first_inbound_at = n.first_in, first_reply_at = n.first_reply, first_outbound_at = n.first_out,
+  last_inbound_at = n.last_in, last_outbound_at = n.last_out, inbound_count = n.n_in, outbound_count = n.n_out
+  from nxt n
+ where c.id = n.id
+   and (c.first_inbound_at, c.first_reply_at, c.first_outbound_at, c.last_inbound_at, c.last_outbound_at, c.inbound_count, c.outbound_count)
+       is distinct from (n.first_in, n.first_reply, n.first_out, n.last_in, n.last_out, n.n_in, n.n_out);
+
+with touched as (
+  select distinct c.lead_id
+    from public.whatsapp_conversations c
+   where c.lead_id is not null
+     and exists (select 1 from public.whatsapp_message_events b where b.conversation_id = c.id and b.backfilled)
+), first_in as (
+  select t.lead_id,
+         (select min(e.occurred_at) from public.whatsapp_message_events e join public.whatsapp_conversations c on c.id = e.conversation_id
+           where c.lead_id = t.lead_id and e.direction = 'inbound' and not e.backfilled) as v_in
+    from touched t
+), nxt as (
+  select f.lead_id, f.v_in,
+         (select min(e.occurred_at) from public.whatsapp_message_events e join public.whatsapp_conversations c on c.id = e.conversation_id
+           where c.lead_id = f.lead_id and e.direction = 'outbound' and not e.backfilled
+             and f.v_in is not null and e.occurred_at > f.v_in) as v_reply
+    from first_in f
+)
+update public.leads l set wa_first_inbound_at = n.v_in, wa_first_reply_at = n.v_reply
+  from nxt n
+ where l.id = n.lead_id
+   and (l.wa_first_inbound_at is distinct from n.v_in or l.wa_first_reply_at is distinct from n.v_reply);
 
 -- ---------------------------------------------------------------------------
 -- Manual undo (not executed): re-run the definitions of evaluate_lead_dispatch, dispatch_decide and

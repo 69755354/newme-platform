@@ -31,6 +31,12 @@
 - S18（PR #526）：WhatsApp「点击进 WhatsApp」广告的点击编号 ctwa_clid 入库并自动建/对线索，回传 Conversions API for Business Messaging。webhook 现有 `src/app/api/whatsapp/webhook/route.ts`，别名 `src/app/api/meta/whatsapp-webhook/route.ts`；线索详情面板 `src/app/(dashboard)/leads/[id]/LeadWhatsAppAdPanel.tsx`；市场导出 `src/app/api/leads/whatsapp-ads/export/route.ts`；迁移 `20261118200000_whatsapp_ctwa_leads.sql`。
 - 供应链：glob/minimatch 已降为中危、picomatch 公告撤回，S17 登记的三条高危例外过期移除，登记表恢复为空。
 
+## 2026-11-20 S29 云盘表格 → OS 只读同步（第一版，默认关闭）
+
+- 读取脚本 `scripts/drive-to-os-sync.mjs`（`--run-now`，默认预演，`--apply` 才写）、只读表格客户端 `scripts/lib/drive-sheets-readonly.mjs`、表与行规范化 `scripts/lib/drive-sync-sources.mjs`；共享规则 `src/lib/drive-sync.mjs`（字段归属、匹配、冲突、幂等哈希、写入上限）。云盘文件只读，营销表 Lead Quality Feedback 页永不读取。
+- 写入只经 `src/app/api/sync/drive-ingest/route.ts`：默认关闭（`DRIVE_SYNC_INGEST_ENABLED`），令牌常量时间比较、限速、每次条数上限、失败即停的追加式日志、写后核对通知/任务/回传四表不变；不做迁移，用 activities（来源 drive_sync）与 `raw_import_data.drive_sync`。
+- 定时单元 `infra/drive-sync/newme-drive-sync.service|timer`（迪拜 02:30 与 13:00，after-flag）；说明 `docs/s29-drive-to-os-sync.md`；测试 `tests/unit/s29-drive-sync.test.mjs`。
+
 ## 2026-11-19 S19–S21 发布批次：编号总表、跟进监控
 
 - 发布批次 1（已上线 100006be）：Meta 编号总表导出 `src/app/api/export/meta-ids/route.ts`、每日取数与 NAS 上传脚本 `infra/meta-ids/newme-meta-ids-export.sh`、`infra/nas/newme-nas-upload.sh`；测试账号对真人不可见（`src/lib/system-accounts.mjs`）；数据导入门禁操作与 S21 开关。

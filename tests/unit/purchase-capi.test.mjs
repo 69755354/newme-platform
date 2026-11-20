@@ -6,6 +6,8 @@ import { sendMetaCrmEvents } from "../../scripts/meta-crm-events-send.mjs";
 import { buildWebsiteValuedPayload, enqueueWebsiteValuedEvent } from "../../src/lib/website-capi-valued.mjs";
 import { buildWhatsAppCapiPayload } from "../../src/lib/whatsapp-capi.mjs";
 import { sendWhatsAppCapiEvents } from "../../scripts/whatsapp-capi-send.mjs";
+import { retryCapiDeliveries } from "../../scripts/meta-capi-retry.mjs";
+import { decideChange, buildIndexes, resolveConfig } from "../../src/lib/drive-sync.mjs";
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 const NOW = Date.parse("2026-11-20T12:00:00Z");
@@ -97,7 +99,7 @@ const websiteLead = { final_status: "won", raw_import_data: { intake: "newme.ae"
 test("website lead won with a contract queues one Purchase and tries delivery", async () => {
   const db = webDb({ lead: websiteLead }); const sent = [];
   assert.equal(await enqueueWebsiteValuedEvent(db, "lead1", "purchase", { attempt: async (_d, row) => sent.push(row.event_data.payload), nowSeconds: NOW / 1000 }), "queued");
-  assert.equal(db.inserts[0].event_type, "meta_capi_purchase_delivery");
+  assert.equal(db.inserts[0].event_type, "meta_capi_lead_delivery");
   assert.equal(sent.length, 1); assert.equal(sent[0].data[0].custom_data.value, 90000);
 });
 
@@ -171,7 +173,7 @@ test("website quote event: InitiateCheckout with the quoted amount, once per lea
   const db = quoteDb(); const tried = [];
   assert.equal(await enqueueWebsiteQuoteForProgress(db, "l1", "quotation_submitted", { attempt: async (_d, row, kind) => tried.push([row, kind]), nowSeconds: NOW / 1000 }), "queued");
   const e = db.inserts[0];
-  assert.equal(e.event_type, "meta_capi_quote_delivery");
+  assert.equal(e.event_type, "meta_capi_lead_delivery");
   assert.equal(e.event_data.payload.data[0].event_name, "InitiateCheckout");
   assert.equal(e.event_data.payload.data[0].event_id, "quote:evt1");
   assert.deepEqual(e.event_data.payload.data[0].custom_data, { currency: "AED", value: 150000, lead_event_source: "website" });
@@ -180,21 +182,85 @@ test("website quote event: InitiateCheckout with the quoted amount, once per lea
   assert.equal(await enqueueWebsiteQuoteForProgress(quoteDb({ quotes: [] }), "l1", "quotation", {}), "skipped");
 });
 
-test("WhatsApp quotation step queues QualifiedLead and a valued InitiateCheckout", async () => {
-  const rows = [];
+test("WhatsApp quotation step queues QualifiedLead (table) and a valued InitiateCheckout (outbox, no schema change)", async () => {
+  const rows = []; const outbox = []; const tried = [];
   const from = (table) => {
     const q = { select: () => q, eq: () => q, not: () => q, order: () => q, limit: () => q,
       upsert: (r) => { rows.push(r); return Promise.resolve({ error: null }); },
-      maybeSingle: async () => table === "leads" ? { data: { ctwa_clid: "AfcT3sTcLiCkId_abc-123XYZ" }, error: null }
-        : table === "whatsapp_conversations" ? { data: { waba_id: "987654321" }, error: null } : { data: null, error: null },
+      insert: (r) => { outbox.push(r); return q; },
+      maybeSingle: async () => table === "leads" ? { data: { ctwa_clid: "AfcT3sTcLiCkId_abc-123XYZ", phone: "0501234567" }, error: null }
+        : table === "whatsapp_conversations" ? { data: { waba_id: "987654321" }, error: null } : { data: { id: "x" }, error: null },
       then: (res, rej) => Promise.resolve({ data: table === "quotations" ? [{ total_amount: 90000, currency: "AED" }] : null, error: null }).then(res, rej) };
     return q;
   };
-  await enqueueWhatsAppCapiForProgress({ from }, "l1", "quotation_submitted");
-  assert.deepEqual(rows.map((r) => r.event_name), ["QualifiedLead", "InitiateCheckout"]);
-  assert.equal(rows[1].value, 90000); assert.equal(rows[1].currency, "AED");
-  const p = buildWhatsAppCapiPayload({ eventId: "e", wabaId: "123456", ctwaClid: "AfcT3sTcLiCkId_abc-123XYZ", eventName: "InitiateCheckout", eventTime: 5, value: 90000, currency: "AED" });
-  assert.deepEqual(p.data[0].custom_data, { currency: "AED", value: 90000 });
+  await enqueueWhatsAppCapiForProgress({ from }, "l1", "quotation_submitted", { attempt: async (_d, row) => tried.push(row), env: {} });
+  assert.deepEqual(rows.map((r) => r.event_name), ["QualifiedLead"]);
+  const e = outbox[0].event_data.payload.data[0];
+  assert.equal(outbox[0].event_type, "meta_capi_lead_delivery");
+  assert.equal([e.event_name, e.action_source, e.messaging_channel].join("|"), "InitiateCheckout|business_messaging|whatsapp");
+  assert.deepEqual(e.custom_data, { currency: "AED", value: 90000 });
+  assert.equal(e.user_data.ph, undefined); assert.equal(tried.length, 1);
+  await enqueueWhatsAppCapiForProgress({ from }, "l1", "quotation_submitted", { env: { WA_CAPI_SEND_HASHED_PHONE: "true" } });
+  assert.deepEqual(outbox[1].event_data.payload.data[0].user_data.ph, [sha("971501234567")]);
+});
+
+test("retry tool picks the delivery kind and sender from the stored payload", async () => {
+  const mk = (id, payload) => ({ id, event_data: { status: "pending", attempts: 0, queued_at: new Date(NOW - 3600e3).toISOString(), event_id: payload.data[0].event_id, payload } });
+  const wa = buildWhatsAppCapiPayload({ eventId: "wa-quote:l1", wabaId: "123456", ctwaClid: "AfcT3sTcLiCkId_abc-123XYZ", eventName: "InitiateCheckout", eventTime: NOW / 1000 - 3600, value: 5, currency: "AED" });
+  const web = buildWebsiteValuedPayload({ kind: "quote", leadEventId: "evt1", storedUserData: stored, value: 5, currency: "AED", eventTime: NOW / 1000 - 3600 });
+  const rows = [mk("a", wa), mk("b", web), { id: "c", event_data: { status: "pending", attempts: 0, queued_at: new Date(NOW).toISOString(), event_id: "z", payload: { data: [{ event_name: "Mystery" }] } } }];
+  const updates = [];
+  const db = { from: () => { let patch = null; const q = { select: () => q, eq: () => q, in: () => q, gte: () => q, order: () => q, limit: () => q,
+    update: (p) => { patch = p; updates.push(p); return q; }, maybeSingle: async () => ({ data: { id: "x" }, error: null }),
+    then: (res, rej) => Promise.resolve({ data: patch ? null : rows, error: null }).then(res, rej) }; return q; } };
+  const sentMeta = []; const sentWa = [];
+  const summary = await retryCapiDeliveries(db, { execute: true, now: NOW, send: async (p) => sentMeta.push(p), sendWhatsApp: async (p) => sentWa.push(p) });
+  assert.equal(summary.examined, 2); assert.equal(summary.delivered, 2);
+  assert.equal(sentWa[0].data[0].action_source, "business_messaging");
+  assert.equal(sentMeta[0].data[0].action_source, "system_generated");
+});
+
+const DS = { opp_stage: "Quotation reported", quote_value: "AED 120,000" };
+const dsChange = (o = {}) => ({ key: "META-123456789012345", sheet: "lead_register", row: 8, identity: { phone_digits: "971501234567" }, owned: {}, ...DS, ...o });
+const dsLead = (o = {}) => ({ id: "L1", phone: "+971501234567", stage: "contacted", final_status: null, archived: false, quality: "normal", quotation_value: null, updated_at: "2026-11-01T00:00:00.000Z", drive_sync: null, ...o });
+const dsDecide = (change, lead) => decideChange(change, buildIndexes([lead]), resolveConfig({}), new Map());
+
+test("drive sync: a quote already in the sheet at the first sync is stored but never sent", () => {
+  const d = dsDecide(dsChange(), dsLead());
+  assert.equal(d.quote, undefined); assert.equal(d.set.quotation_value, 120000);
+  assert.equal(d.raw_patch.drive_sync.quote_state, "baseline_skipped"); assert.equal(d.raw_patch.drive_sync.quote_baseline, true);
+  const ins = decideChange(dsChange(), buildIndexes([]), resolveConfig({ DRIVE_SYNC_ALLOW_INSERT: "true" }), new Map());
+  assert.equal(ins.action, "hold"); // insertable false by default: no insert without the flag/shape
+});
+
+test("drive sync: a quote that appears after the baseline fires once and never moves the stage", () => {
+  const base = dsDecide(dsChange({ opp_stage: "", quote_value: "" }), dsLead());
+  assert.equal(base.raw_patch.drive_sync.quote_baseline, true); assert.equal(base.set.stage, undefined);
+  const prev = { ...base.raw_patch.drive_sync, row_hash: base.row_hash, synced_at: "2026-11-02T00:00:00.000Z" };
+  const d = dsDecide(dsChange(), dsLead({ drive_sync: prev }));
+  assert.equal(d.quote.value, 120000); assert.equal(d.quote.currency, "AED"); assert.equal(d.set.quotation_value, 120000);
+  assert.ok(!("stage" in d.set) && !("final_status" in d.set));
+  const again = dsDecide(dsChange({ quote_value: "130000" }), dsLead({ drive_sync: { ...d.raw_patch.drive_sync, row_hash: "old" }, quotation_value: 120000 }));
+  assert.equal(again.quote, undefined); assert.equal(again.set.quotation_value, 130000);
+});
+
+test("drive sync: OS-final, archived and OS-edited values are left alone", () => {
+  const prev = { quote_baseline: true, row_hash: "old" };
+  for (const l of [dsLead({ final_status: "won", drive_sync: prev }), dsLead({ stage: "lost", drive_sync: prev }), dsLead({ archived: true, drive_sync: prev })]) {
+    const d = dsDecide(dsChange(), l);
+    assert.equal(d.quote, undefined); assert.equal(d.set?.quotation_value, undefined);
+  }
+  const edited = dsDecide(dsChange(), dsLead({ drive_sync: prev, quotation_value: 99000 }));
+  assert.equal(edited.set.quotation_value, undefined);
+  assert.equal(dsDecide(dsChange({ opp_stage: "Negotiation" }), dsLead({ drive_sync: prev })).quote, undefined);
+  assert.equal(dsDecide(dsChange({ quote_value: "" }), dsLead({ drive_sync: prev })).quote, undefined);
+});
+
+test("quote amount falls back to the sheet-reported quotation_value", async () => {
+  const db = { from: (t) => { const q = { select: () => q, eq: () => q, not: () => q, order: () => q, limit: () => q,
+    maybeSingle: async () => ({ data: { quotation_value: "88000.00" }, error: null }),
+    then: (res, rej) => Promise.resolve({ data: t === "quotations" ? [] : null, error: null }).then(res, rej) }; return q; } };
+  assert.deepEqual(await latestQuotationAmount(db, "l"), { value: 88000, currency: "AED" });
 });
 
 test("CRM Quoted carries the quoted amount from the newest live quotation", async () => {

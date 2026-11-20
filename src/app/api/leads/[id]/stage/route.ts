@@ -11,8 +11,8 @@ import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
-import { enqueueWhatsAppCapiForProgress, enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
-import { enqueueWebsitePurchaseForLead, enqueueWebsiteQuoteForProgress } from "@/lib/website-capi-valued";
+import { enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
+import { enqueueWebsitePurchaseForLead, enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
 const VALID_STAGES = new Set([
   ...PIPELINE_STAGES.map((stage) => stage.key),
@@ -130,7 +130,7 @@ export async function PATCH(
           await enqueueWebsitePurchaseForLead(supabaseAdmin, leadId);
         }
         else {
-          await enqueueWhatsAppCapiForProgress(supabaseAdmin, leadId, committedStage);
+          await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, leadId, committedStage);
           await enqueueWebsiteQuoteForProgress(supabaseAdmin, leadId, committedStage);
         }
       }

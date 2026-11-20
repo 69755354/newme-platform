@@ -24,13 +24,25 @@ export const LEAD_DELIVERY: CapiDeliveryKind = {
 // Valued follow-up events (quote sent, deal signed) are queued days after the visit; Meta rejects events older than
 // 7 days, so retry for up to 6 days and never change event_id/event_time.
 export const QUOTE_DELIVERY: CapiDeliveryKind = {
-  eventType: "meta_capi_quote_delivery", eventName: "InitiateCheckout", actionSource: "system_generated",
+  eventType: "meta_capi_lead_delivery", eventName: "InitiateCheckout", actionSource: "system_generated",
   maxAgeMs: 6 * 86_400_000, requireSiteUrl: false,
 };
 export const PURCHASE_DELIVERY: CapiDeliveryKind = {
-  eventType: "meta_capi_purchase_delivery", eventName: "Purchase", actionSource: "system_generated",
+  eventType: "meta_capi_lead_delivery", eventName: "Purchase", actionSource: "system_generated",
   maxAgeMs: 6 * 86_400_000, requireSiteUrl: false,
 };
+// Click-to-WhatsApp quote: business-messaging payload, sent to the WhatsApp dataset by the caller's sender.
+export const WA_QUOTE_DELIVERY: CapiDeliveryKind = {
+  eventType: "meta_capi_lead_delivery", eventName: "InitiateCheckout", actionSource: "business_messaging",
+  maxAgeMs: 6 * 86_400_000, requireSiteUrl: false,
+};
+export const OUTBOX_KINDS = { LEAD_DELIVERY, QUOTE_DELIVERY, PURCHASE_DELIVERY, WA_QUOTE_DELIVERY } as const;
+
+/** Which delivery kind an outbox row is, from its stored payload; null when unknown. */
+export function kindOfOutboxRow(row: { event_data?: { payload?: { data?: Array<{ event_name?: string; action_source?: string }> } } }): CapiDeliveryKind | null {
+  const e = row?.event_data?.payload?.data?.[0];
+  return Object.values(OUTBOX_KINDS).find((k) => k.eventName === e?.event_name && k.actionSource === e?.action_source) ?? null;
+}
 
 /** A database compare-and-set coordinates independent requests/processes. */
 export async function attemptCapiDelivery(

@@ -19,3 +19,11 @@ export function hashedContactKeys(contact = {}) {
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) out.em = [sha256(email)];
   return out;
 }
+
+/** Deterministic UUID (v5 style) so an outbox row for one lead and event kind can be inserted only once. */
+export function deterministicUuid(text) {
+  const b = createHash("sha1").update(`newme-capi-outbox:${text}`).digest().subarray(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x50; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = b.toString("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}

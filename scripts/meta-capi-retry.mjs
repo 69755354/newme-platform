@@ -2,27 +2,34 @@
 // Prepared operator tool. Default is read-only; no scheduler is installed here.
 import { pathToFileURL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { attemptCapiDelivery, LEAD_DELIVERY, QUOTE_DELIVERY, PURCHASE_DELIVERY } from "../src/lib/meta-capi-delivery.ts";
+import { attemptCapiDelivery, kindOfOutboxRow, LEAD_DELIVERY, OUTBOX_KINDS, WA_QUOTE_DELIVERY } from "../src/lib/meta-capi-delivery.ts";
+import { sendWhatsAppCapiPayload } from "../src/lib/whatsapp-capi.mjs";
 import { sendMetaCapiPayload } from "../src/lib/meta-capi.ts";
 
 export async function retryCapiDeliveries(db, { execute = false, limit = 20, now = Date.now(),
-  send = sendMetaCapiPayload, kinds = [LEAD_DELIVERY] } = {}) {
+  send = sendMetaCapiPayload, sendWhatsApp = sendWhatsAppCapiPayload } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid retry limit");
   const summary = { mode: execute ? "execute" : "dry_run", examined: 0,
     delivered: 0, failed: 0, busy: 0, review_required: 0, errors: 0 };
-  for (const kind of kinds) {
+  // One outbox type; the kind (website Lead, website quote/purchase, WhatsApp quote) comes from the stored payload.
+  const widest = Math.max(...Object.values(OUTBOX_KINDS).map((k) => k.maxAgeMs));
   const result = await db.from("business_events").select("id, event_data")
-    .eq("event_type", kind.eventType)
+    .eq("event_type", LEAD_DELIVERY.eventType)
     .in("event_data->>status", ["pending", "failed", "sending"])
     .in("event_data->>attempts", ["0", "1", "2", "3", "4"])
-    .gte("created_at", new Date(now - kind.maxAgeMs).toISOString())
+    .gte("created_at", new Date(now - widest).toISOString())
     .order("created_at", { ascending: true }).limit(limit);
   if (result.error) throw new Error("CAPI retry queue unavailable");
   for (const row of result.data || []) {
+    const kind = kindOfOutboxRow(row);
+    const queuedMs = Date.parse(row.event_data?.queued_at);
+    // Unknown kinds are left alone; rows past their kind's window keep the old behaviour (not retried here).
+    if (!kind || (Number.isFinite(queuedMs) && now - queuedMs >= kind.maxAgeMs)) continue;
     summary.examined++;
     if (!execute) continue;
     try {
-      const outcome = await attemptCapiDelivery(db, row, send, Date.now(), kind);
+      const sender = kind === WA_QUOTE_DELIVERY ? sendWhatsApp : send;
+      const outcome = await attemptCapiDelivery(db, row, sender, Date.now(), kind);
       if (outcome === "review_required") {
         // Persist terminal validation failures so subsequent batches advance.
         // Compare the observed state; never replace a concurrent sender's receipt.
@@ -39,7 +46,6 @@ export async function retryCapiDeliveries(db, { execute = false, limit = 20, now
       summary[outcome]++;
     }
     catch { summary.errors++; }
-  }
   }
   // Only aggregate counts leave this tool; no payloads, contacts or credentials.
   return summary;
@@ -59,7 +65,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         throw new Error("CAPI sender configuration unavailable");
       }
       const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-      const summary = await retryCapiDeliveries(db, { execute: args.includes("--execute"), kinds: [LEAD_DELIVERY, QUOTE_DELIVERY, PURCHASE_DELIVERY] });
+      const summary = await retryCapiDeliveries(db, { execute: args.includes("--execute") });
       console.log(JSON.stringify(summary));
       if (summary.errors || summary.failed || summary.review_required) process.exitCode = 1;
     } catch {

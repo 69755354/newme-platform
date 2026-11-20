@@ -17,8 +17,7 @@ import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 import { advanceStageForMilestone } from "@/lib/milestone-stage-advance.mjs";
 import { isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
-import { enqueueWhatsAppCapiForProgress } from "@/lib/whatsapp-capi.mjs";
-import { enqueueWebsiteQuoteForProgress } from "@/lib/website-capi-valued";
+import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
 const VALID_DEVICE_IDS = new Set<string>(
   DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
@@ -294,7 +293,7 @@ export async function POST(request: NextRequest) {
     if (stageAdvance.advanced && stageAdvance.stage === "quotation_submitted") {
       try {
         await enqueueMetaCrmEventForLead(supabaseAdmin, lead_id, "quotation_submitted");
-        await enqueueWhatsAppCapiForProgress(supabaseAdmin, lead_id, "quotation_submitted");
+        await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, lead_id, "quotation_submitted");
         await enqueueWebsiteQuoteForProgress(supabaseAdmin, lead_id, "quotation_submitted");
       } catch { /* tracking must never fail a quotation */ }
     }

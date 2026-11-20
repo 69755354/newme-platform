@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { deterministicUuid } from "./capi-hash.mjs";
 import { activeContractAmount } from "./whatsapp-capi.mjs";
 import { latestQuotationAmount } from "./quote-amount.mjs";
 
@@ -10,20 +10,16 @@ import { latestQuotationAmount } from "./quote-amount.mjs";
  * so no customer contact is read or hashed here. IP and user agent are dropped: this happens days after the visit.
  * Idempotent: one outbox row per (website lead, kind) with a deterministic id and event_id; never throws.
  */
+// All outbox rows use the existing business_events type "meta_capi_lead_delivery" (the only CAPI type the table
+// constraint allows, so no schema change); the kind is told apart by the stored payload (event_name + action_source).
+export const CAPI_OUTBOX_EVENT_TYPE = "meta_capi_lead_delivery";
 export const WEBSITE_VALUED = Object.freeze({
-  quote: { eventType: "meta_capi_quote_delivery", eventName: "InitiateCheckout", prefix: "quote" },
-  purchase: { eventType: "meta_capi_purchase_delivery", eventName: "Purchase", prefix: "purchase" },
+  quote: { eventType: CAPI_OUTBOX_EVENT_TYPE, eventName: "InitiateCheckout", prefix: "quote" },
+  purchase: { eventType: CAPI_OUTBOX_EVENT_TYPE, eventName: "Purchase", prefix: "purchase" },
 });
 const MATCH_KEYS = ["em", "ph", "fn", "ln", "external_id", "fbc", "fbp"];
 // Meta rejects a request whose event_time is older than 7 days.
 export const WEBSITE_VALUED_MAX_EVENT_AGE_SECONDS = 6 * 86_400;
-
-export function deterministicUuid(text) {
-  const b = createHash("sha1").update(`newme-website-valued:${text}`).digest().subarray(0, 16);
-  b[6] = (b[6] & 0x0f) | 0x50; b[8] = (b[8] & 0x3f) | 0x80;
-  const h = b.toString("hex");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
 
 export function buildWebsiteValuedPayload({ kind, leadEventId, storedUserData, value, currency, eventTime }) {
   const spec = WEBSITE_VALUED[kind];
@@ -46,7 +42,7 @@ export function buildWebsiteValuedPayload({ kind, leadEventId, storedUserData, v
 }
 
 /** `attempt(db, row, kind)` tries one delivery (injected: the TS wrapper binds the real sender). */
-export async function enqueueWebsiteValuedEvent(db, leadId, kind, { attempt = null, nowSeconds = Math.floor(Date.now() / 1000) } = {}) {
+export async function enqueueWebsiteValuedEvent(db, leadId, kind, { attempt = /** @type {Function | null} */ (null), nowSeconds = Math.floor(Date.now() / 1000) } = {}) {
   try {
     const spec = WEBSITE_VALUED[kind];
     if (!spec) return "skipped";

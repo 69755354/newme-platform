@@ -3,6 +3,7 @@
 // Parsing, phone normalisation and the import fingerprint are the ones of the one-time backfill (review/reimport/import_sheets.mjs)
 // so rows imported by the backfill are matched, not duplicated.
 import { createHash, timingSafeEqual } from "node:crypto";
+import { planSheetQuote } from "./sheet-quote.mjs";
 
 export const IMPORT_VERSION = "newme/sheet-reimport/v1"; // same value as the backfill: same fingerprint for the same Master Lead ID
 export const SYNC_SOURCE = "drive_sync";
@@ -63,6 +64,13 @@ export const QUALITY_MAP = { good: "good", normal: "normal", nurture: "normal", 
 export const CHANNEL_SOURCE = { "fb form": "fb", facebook: "fb", "face book": "fb", "meta ads": "fb", instagram: "ins", ig: "ins", whatsapp: "whatsapp", referral: "referral", "self-developed": "offline", showroom: "show_room", "show room": "show_room", website: "website", "existing portfolio": "unknown_import", imported: "unknown_import", "company assigned": "unknown_import" };
 export const OS_SOURCES = new Set(["ins", "fb", "show_room", "whatsapp", "website", "offline", "referral", "other", "unknown_import", "unknown"]);
 export const OWNED_FIELDS = Object.freeze(["quality", "quality_reason", "next_action", "next_followup_date"]); // Drive/sales owns these
+// Narrow, documented exception to OS ownership (PURCHASE-CAPI-20261120.md): a sheet row whose "Opportunity stage" says a
+// quotation was reported, with "Quote value AED" > 0, (a) stores leads.quotation_value (never over a value OS changed itself)
+// and (b) queues the Meta feedback for the quote. The lead's stage is NOT moved here: the audited stage routine needs a
+// signed-in actor and direct writes are blocked by the stage triggers. Won / lost / archived leads are never touched.
+export const QUOTE_STAGES = Object.freeze(["quotation reported", "quote reported"]);
+export const moneyNumber = (raw) => { const n = Number(norm(raw).replace(/[^\d.]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+export const isQuoteReported = (change) => QUOTE_STAGES.includes(key(change?.opp_stage)) && moneyNumber(change?.quote_value) !== null;
 export const OS_OWNED = Object.freeze(["id", "source", "ad_id", "campaign_id", "meta_leadgen_id", "assigned_to", "stage", "final_status", "milestones", "contract"]);
 
 export function tokenMatches(provided, expected) {
@@ -90,7 +98,7 @@ export function resolveConfig(env = process.env) {
 /** Hash of the Drive-owned content of one row. Unchanged hash = nothing new to apply (idempotency). */
 export function rowHashOf(change) {
   const o = change.owned ?? {};
-  return sha(JSON.stringify([o.quality ?? "", o.quality_reason ?? "", o.next_action ?? "", o.next_followup_date ?? "", change.followup_text ?? "", change.contact_note ?? "", change.first_contact_at ?? "", change.contact_rule ?? ""]));
+  return sha(JSON.stringify([o.quality ?? "", o.quality_reason ?? "", o.next_action ?? "", o.next_followup_date ?? "", change.followup_text ?? "", change.contact_note ?? "", change.first_contact_at ?? "", change.contact_rule ?? "", key(change.opp_stage), moneyNumber(change.quote_value) ?? ""]));
 }
 
 const nonEmpty = (v) => v !== null && v !== undefined && norm(v) !== "";
@@ -104,6 +112,7 @@ export function validateChange(c) {
   if (!Number.isInteger(c.row) || c.row < 1) return "bad_row";
   if (c.source_modified_at != null && !Number.isFinite(Date.parse(c.source_modified_at))) return "bad_source_modified_at";
   if (c.owned != null && typeof c.owned !== "object") return "bad_owned";
+  for (const f of ["opp_stage", "quote_value"]) if (c[f] != null && (typeof c[f] !== "string" && typeof c[f] !== "number" || String(c[f]).length > 60)) return `bad_${f}`;
   for (const f of ["followup_text", "contact_note"]) if (c[f] != null && (typeof c[f] !== "string" || c[f].length > 8000)) return `bad_${f}`;
   if (c.identity != null && typeof c.identity !== "object") return "bad_identity";
   return null;
@@ -159,14 +168,17 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
     if (nonEmpty(owned.next_action)) set.next_action = norm(owned.next_action);
     if (owned.quality === "poor" && nonEmpty(owned.quality_reason)) set.poor_reason = norm(owned.quality_reason);
     if (cfg.writeNextDate && nonEmpty(owned.next_followup_date)) set.next_followup_date = norm(owned.next_followup_date);
-    return { action: "insert", row_hash: hash, set, notes: notesOf(change), raw_patch: rawPatchOf(change, hash, null, {}), claim_tag: tag };
+    // A quote already in the sheet when the lead is first seen is history: stored, never sent to Meta.
+    const quoted = isQuoteReported(change);
+    if (quoted) set.quotation_value = moneyNumber(change.quote_value);
+    return { action: "insert", row_hash: hash, set, notes: notesOf(change), raw_patch: rawPatchOf(change, hash, null, {}, quoted ? { state: "baseline_skipped", value: set.quotation_value } : { baseline: true }), claim_tag: tag };
   }
   const lead = m.lead;
   if (claimed.has(lead.id) && claimed.get(lead.id) !== tag) return { action: "hold", reason: "ambiguous_two_rows_same_lead", lead_id: lead.id };
   claimed.set(lead.id, tag);
   if (lead.archived && !cfg.allowUnarchive) return { action: "hold", reason: "archived_frozen", lead_id: lead.id };
   const prev = lead.drive_sync ?? null;
-  if (prev?.row_hash === hash && !(lead.archived && cfg.allowUnarchive)) return { action: "noop", reason: "unchanged_since_last_sync", lead_id: lead.id, matched_by: m.by };
+  if (prev?.row_hash === hash && prev?.quote_baseline && !(lead.archived && cfg.allowUnarchive)) return { action: "noop", reason: "unchanged_since_last_sync", lead_id: lead.id, matched_by: m.by };
 
   const sheetAt = change.source_modified_at ? Date.parse(change.source_modified_at) : null;
   const osAt = lead.updated_at ? Date.parse(lead.updated_at) : null;
@@ -197,18 +209,33 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   const notes = notesOf(change);
   // A blank Drive cell keeps an earlier OS-won record (the empty value never overwrote anything).
   for (const f of OWNED_FIELDS) if (!nonEmpty(owned[f]) && prevOsWon[f]) osWon[f] = prevOsWon[f];
-  const raw_patch = rawPatchOf(change, hash, prev, osWon);
+  // Quote reported in the sheet: store the amount (forward-only information; OS-edited values win) and queue the Meta event
+  // once, only for a quote that appeared after the lead was already baselined (older quotes are history: 7-day Meta window).
+  let quote = null; let quotePatch = { baseline: true };
+  if (isQuoteReported(change) && !isFrozenFinal(lead) && !lead.archived) {
+    const amount = moneyNumber(change.quote_value);
+    const osValue = Number(lead.quotation_value) || 0;
+    const osEdited = osValue > 0 && osValue !== Number(prev?.quote_value ?? 0);
+    if (!osEdited && osValue !== amount) { set.quotation_value = amount; fields.push("quotation_value"); }
+    if (!prev?.quote_baseline) quotePatch = { state: "baseline_skipped", value: amount };
+    else if (!prev?.quote_state) {
+      const verdict = planSheetQuote({ lead, sheet: { amount }, firstSeenIso: new Date(cfg.nowMs ?? Date.now()).toISOString(), nowMs: cfg.nowMs ?? Date.now() });
+      if (verdict.action === "queue") { quote = { value: verdict.value, currency: verdict.currency, eventTime: verdict.eventTime, stage_pending: verdict.advanceStage }; quotePatch = { state: "queued", value: amount, at: new Date(verdict.eventTime * 1000).toISOString() }; }
+      else quotePatch = { state: `skipped_${verdict.reason}`, value: amount };
+    } else quotePatch = { value: amount };
+  }
+  const raw_patch = rawPatchOf(change, hash, prev, osWon, quotePatch);
   const unarchive = !!(lead.archived && cfg.allowUnarchive);
   // A write happens whenever the row changed since the last sync: at least the sync state and the note go in.
-  return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash };
+  return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash, ...(quote ? { quote } : {}) };
 }
 
 function notesOf(change) {
   return nonEmpty(change.followup_text) ? [{ import_key: `${change.key}/daily-feedback`, type: "note", content: `[Sheet sales feedback] ${norm(change.followup_text)}`.slice(0, 4000) }] : [];
 }
-function rawPatchOf(change, hash, prev, osWon) {
+function rawPatchOf(change, hash, prev, osWon, q = {}) {
   const owned = change.owned ?? {};
-  return { drive_sync: mergeDriveSync(prev, { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason, next_followup_date: owned.next_followup_date, contact_days_filled: change.contact_days_filled, first_contact_at: change.first_contact_at, contact_rule: change.contact_rule, source_modified_at: change.source_modified_at, os_won: osWon }) };
+  return { drive_sync: mergeDriveSync(prev, { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason, next_followup_date: owned.next_followup_date, contact_days_filled: change.contact_days_filled, first_contact_at: change.first_contact_at, contact_rule: change.contact_rule, source_modified_at: change.source_modified_at, os_won: osWon, quote_baseline: q.baseline === true || q.state !== undefined ? true : undefined, quote_state: q.state, quote_value: q.value, quote_at: q.at }) };
 }
 /** Merge new drive_sync metadata over the stored one: a blank sheet cell keeps the stored value instead of erasing it. */
 export function mergeDriveSync(prev, patch) {

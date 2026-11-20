@@ -37,8 +37,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A release-candidate dispatch on main must never be cancelled by a push to
+  # main (a merge landing while the release gate waits for its evidence), so
+  # dispatches get their own group; pushes and pull requests keep cancelling
+  # superseded runs of the same ref.
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
   NEXT_TELEMETRY_DISABLED: '1'

@@ -466,7 +466,7 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   assert.match(liveReleaseGate, /fi\nif \[ "\$ROLLBACK_SHA" != "\$LEGACY_EVIDENCELESS_BASELINE" \]; then/);
   assert.match(
     liveReleaseGate,
-    /current release must have exactly one finalized deployment evidence file[\s\S]*verify_live_release_permits_new_release \\\n[\s\S]*"\$DB_TRANSITION_ONLY" "\$DB_TRANSITION_OPERATION" "\$MIRROR" \|\| exit \$\?\nfi$/,
+    /current release must have exactly one finalized deployment evidence file[\s\S]*verify_live_release_permits_new_release \\\n[\s\S]*"\$DB_TRANSITION_ONLY" "\$DB_TRANSITION_OPERATION" "\$MIRROR" "\$LITE_LANE" \|\| exit \$\?\nfi$/,
   );
 
   assert.match(immutableDeploy, /ROLLBACK=.*current\.rollback/);
@@ -504,7 +504,7 @@ test("production deploy and sudo policy require the versioned rollback boundary"
   const postSwitchComposite = immutableDeploy.indexOf("bash /opt/hermes-scripts/observability/l0-composite-probe.sh");
   assert.ok(candidateStop >= 0 && hostLoadSettle > candidateStop);
   assert.ok(firstReleaseMutation > hostLoadSettle && postSwitchComposite > firstReleaseMutation);
-  assert.match(immutableDeploy, /HOST_LOAD_SETTLE_INTERVAL_SECONDS=10[\s\S]*HOST_LOAD_SETTLE_TIMEOUT_SECONDS=120[\s\S]*HOST_LOAD_SETTLE_REQUIRED_SAMPLES=2[\s\S]*HOST_LOAD_SETTLE_THRESHOLD_PCT=90/);
+  assert.match(immutableDeploy, /HOST_LOAD_SETTLE_INTERVAL_SECONDS=10[\s\S]*HOST_LOAD_SETTLE_TIMEOUT_SECONDS="\$\(\[ "\$RELEASE_LANE" = lite \] && echo 600 \|\| echo 120\)"[\s\S]*HOST_LOAD_SETTLE_REQUIRED_SAMPLES=2[\s\S]*HOST_LOAD_SETTLE_THRESHOLD_PCT=90/);
   assert.match(immutableDeploy, /HOST_LOADAVG_FILE=\/proc\/loadavg[\s\S]*HOST_LOAD_READER=[\s\S]*HOST_LOAD_NPROC_BIN=\/usr\/bin\/nproc[\s\S]*HOST_LOAD_AWK_BIN=\/usr\/bin\/awk[\s\S]*HOST_LOAD_SLEEP_BIN=\/usr\/bin\/sleep/);
   assert.match(hostLoadHelper, /^#!\/usr\/bin\/env bash/);
   assert.match(hostLoadHelper, /HOST_LOAD_SETTLE_REQUIRED_SAMPLES/);

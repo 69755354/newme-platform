@@ -121,7 +121,7 @@ function evidence(name, body) {
 }
 
 /** Run the lifted function with the wrapper's own argument order. */
-function ask({ status, live = REPO.live, candidate = REPO.source, dbTransition = "0", operation = "", gitSha }) {
+function ask({ status, live = REPO.live, candidate = REPO.source, dbTransition = "0", operation = "", gitSha, lane = "0" }) {
   const file = evidence(`${status}-${Math.random().toString(36).slice(2)}`, {
     git_sha: gitSha === undefined ? live : gitSha,
     release_status: status,
@@ -129,9 +129,9 @@ function ask({ status, live = REPO.live, candidate = REPO.source, dbTransition =
   const script = path.join(TMP, "run.sh");
   writeFileSync(
     script,
-    `${FUNCTION}\n${FUNCTION_NAME} "$1" "$2" "$3" "$4" "$5" "$6"\n`,
+    `${FUNCTION}\n${FUNCTION_NAME} "$1" "$2" "$3" "$4" "$5" "$6" "$7"\n`,
   );
-  const result = spawnSync("bash", [script, file, live, candidate, dbTransition, operation, REPO.mirror], {
+  const result = spawnSync("bash", [script, file, live, candidate, dbTransition, operation, REPO.mirror, lane], {
     encoding: "utf8",
   });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -206,6 +206,46 @@ test("an expand transition is not a contract transition and gets the ordinary re
   }
 });
 
+// ---------------------------------------------------------------------------
+// Gate-lite (2026-11-20): the lite lane's view of the same function
+// ---------------------------------------------------------------------------
+
+test("lite lane: a live release awaiting the full lane's browser acceptance is superseded by a newer tested release", () => {
+  for (const status of ["awaiting_uat", "acceptance_verified"]) {
+    const result = ask({ status, lane: "1" });
+    assert.equal(result.code, 0, `${status}: ${result.stderr}`);
+    assert.match(result.stdout, new RegExp(`^superseded_release=${REPO.live} superseded_status=${status} lane=lite commits_since=1$`, "m"));
+  }
+});
+
+test("lite lane: a completed live release is the ordinary case and claims nothing", () => {
+  const result = ask({ status: "complete", lane: "1" });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, "");
+});
+
+test("lite lane: a leftover full-lane closure record does not block the next release", () => {
+  const result = ask({ status: "acceptance_verified", candidate: REPO.closure, lane: "1" });
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /lane=lite commits_since=1$/m);
+});
+
+test("CONTROL (lite lane): a divergent candidate, the live SHA itself, foreign evidence and a non-deployed status are still refused", () => {
+  assert.equal(ask({ status: "awaiting_uat", candidate: REPO.sibling, lane: "1" }).code, 65);
+  assert.equal(ask({ status: "awaiting_uat", candidate: REPO.live, lane: "1" }).code, 65);
+  assert.equal(ask({ status: "awaiting_uat", gitSha: "f".repeat(40), lane: "1" }).code, 65);
+  for (const status of ["uat_failed", "rolled_back", "superseded", ""]) {
+    const result = ask({ status, lane: "1" });
+    assert.equal(result.code, 65, `${status || "(empty)"} must not be supersedable by the lite lane`);
+  }
+});
+
+test("CONTROL (lite lane): the lane flag is opt-in; the default call keeps every full-lane refusal", () => {
+  const result = ask({ status: "awaiting_uat" });
+  assert.equal(result.code, 65);
+  assert.match(result.stderr, /never attested, so it cannot be superseded/);
+});
+
 test("the deploy preamble calls the function it defines, and keeps no second copy of the rule", () => {
   const wrapper = readFileSync(WRAPPER, "utf8").replaceAll("\r\n", "\n");
   assert.equal(wrapper.split(`${FUNCTION_NAME}() (`).length - 1, 1, "the function is defined once");
@@ -214,7 +254,7 @@ test("the deploy preamble calls the function it defines, and keeps no second cop
   assert.ok(call > definition, "the call site must follow the definition");
   assert.match(
     wrapper.slice(call),
-    /^ {2}verify_live_release_permits_new_release \\\n {4}"\$\{CURRENT_EVIDENCE_FILES\[0\]\}" "\$ROLLBACK_SHA" "\$SHA" \\\n {4}"\$DB_TRANSITION_ONLY" "\$DB_TRANSITION_OPERATION" "\$MIRROR" \|\| exit \$\?\n/,
+    /^ {2}verify_live_release_permits_new_release \\\n {4}"\$\{CURRENT_EVIDENCE_FILES\[0\]\}" "\$ROLLBACK_SHA" "\$SHA" \\\n {4}"\$DB_TRANSITION_ONLY" "\$DB_TRANSITION_OPERATION" "\$MIRROR" "\$LITE_LANE" \|\| exit \$\?\n/,
   );
   assert.doesNotMatch(wrapper, /elif release_status != "complete":/, "the inline copy of the rule is gone");
 });

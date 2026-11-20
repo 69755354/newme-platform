@@ -69,7 +69,13 @@ export const OWNED_FIELDS = Object.freeze(["quality", "quality_reason", "next_ac
 // and (b) queues the Meta feedback for the quote. The lead's stage is NOT moved here: the audited stage routine needs a
 // signed-in actor and direct writes are blocked by the stage triggers. Won / lost / archived leads are never touched.
 export const QUOTE_STAGES = Object.freeze(["quotation reported", "quote reported"]);
-export const moneyNumber = (raw) => { const n = Number(norm(raw).replace(/[^\d.]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+// Strict: only a plain amount, optionally with an AED/Dhs label and thousands separators. Anything else ("12k", "1.2M",
+// "TBD", ranges, negatives) is not a quote, so a mis-typed cell never reaches Meta as a wrong value.
+export const moneyNumber = (raw) => {
+  const t = norm(raw).replace(/^(aed|dhs?|د\.إ)\s*/i, "").replace(/\s*(aed|dhs?|د\.إ)$/i, "").replace(/[,\s]/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const n = Number(t); return Number.isFinite(n) && n > 0 ? n : null;
+};
 export const isQuoteReported = (change) => QUOTE_STAGES.includes(key(change?.opp_stage)) && moneyNumber(change?.quote_value) !== null;
 export const OS_OWNED = Object.freeze(["id", "source", "ad_id", "campaign_id", "meta_leadgen_id", "assigned_to", "stage", "final_status", "milestones", "contract"]);
 

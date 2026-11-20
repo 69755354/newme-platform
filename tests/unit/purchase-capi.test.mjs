@@ -7,7 +7,7 @@ import { buildWebsiteValuedPayload, enqueueWebsiteValuedEvent } from "../../src/
 import { buildWhatsAppCapiPayload } from "../../src/lib/whatsapp-capi.mjs";
 import { sendWhatsAppCapiEvents } from "../../scripts/whatsapp-capi-send.mjs";
 import { retryCapiDeliveries } from "../../scripts/meta-capi-retry.mjs";
-import { decideChange, buildIndexes, resolveConfig } from "../../src/lib/drive-sync.mjs";
+import { decideChange, buildIndexes, moneyNumber, resolveConfig } from "../../src/lib/drive-sync.mjs";
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 const NOW = Date.parse("2026-11-20T12:00:00Z");
@@ -218,6 +218,24 @@ test("retry tool picks the delivery kind and sender from the stored payload", as
   assert.equal(summary.examined, 2); assert.equal(summary.delivered, 2);
   assert.equal(sentWa[0].data[0].action_source, "business_messaging");
   assert.equal(sentMeta[0].data[0].action_source, "system_generated");
+});
+
+test("retry tool: stale Lead rows inside the 6-day fetch window do not starve newer rows", async () => {
+  const leadRow = (id, ageMs) => ({ id, event_data: { status: "failed", attempts: 1, queued_at: new Date(NOW - ageMs).toISOString(), event_id: id,
+    payload: { data: [{ event_name: "Lead", action_source: "website", event_id: id, event_time: Math.floor((NOW - ageMs) / 1000) }] } } });
+  const web = buildWebsiteValuedPayload({ kind: "quote", leadEventId: "evt9", storedUserData: stored, value: 5, currency: "AED", eventTime: NOW / 1000 - 60 });
+  const rows = [...Array.from({ length: 25 }, (_, i) => leadRow(`old${i}`, 2 * 86_400_000)),
+    { id: "fresh", event_data: { status: "pending", attempts: 0, queued_at: new Date(NOW - 60e3).toISOString(), event_id: web.data[0].event_id, payload: web } }];
+  let asked = 0;
+  const db = { from: () => { const q = { select: () => q, eq: () => q, in: () => q, gte: () => q, order: () => q,
+    limit: (n) => { asked = n; return q; }, then: (res, rej) => Promise.resolve({ data: rows.slice(0, asked), error: null }).then(res, rej) }; return q; } };
+  const summary = await retryCapiDeliveries(db, { limit: 20, now: NOW });
+  assert.equal(summary.examined, 1); // the fresh quote row is reached; the 25 stale Lead rows are skipped
+});
+
+test("drive sync: quote amount parsing is strict (no wrong value to Meta from a mis-typed cell)", () => {
+  for (const [raw, want] of [["AED 120,000", 120000], ["120000", 120000], ["120,000.50 AED", 120000.5], ["Dhs 5 000", 5000], [95000, 95000],
+    ["12k", null], ["1.2M", null], ["TBD", null], ["-5", null], ["0", null], ["100-200", null], ["", null]]) assert.equal(moneyNumber(raw), want, String(raw));
 });
 
 const DS = { opp_stage: "Quotation reported", quote_value: "AED 120,000" };

@@ -18,9 +18,12 @@ export async function retryCapiDeliveries(db, { execute = false, limit = 20, now
     .in("event_data->>status", ["pending", "failed", "sending"])
     .in("event_data->>attempts", ["0", "1", "2", "3", "4"])
     .gte("created_at", new Date(now - widest).toISOString())
-    .order("created_at", { ascending: true }).limit(limit);
+    // Over-fetch: rows past their own kind's window (e.g. a Lead older than 24h) are skipped below and must not
+    // use up the batch, or they would starve newer rows. At most `limit` rows are examined.
+    .order("created_at", { ascending: true }).limit(Math.min(limit * 10, 1000));
   if (result.error) throw new Error("CAPI retry queue unavailable");
   for (const row of result.data || []) {
+    if (summary.examined >= limit) break;
     const kind = kindOfOutboxRow(row);
     const queuedMs = Date.parse(row.event_data?.queued_at);
     // Unknown kinds are left alone; rows past their kind's window keep the old behaviour (not retried here).

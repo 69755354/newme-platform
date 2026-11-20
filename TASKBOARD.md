@@ -1205,3 +1205,15 @@ p75 79 ms / p95 99 ms, within policy. The delayed verification passed at `2026-1
 canonical attestation sealed the bundle below.
 
 <!-- postdeploy-acceptance-sha256:cca3934869410298d8b6333d3909e9719fc9e517c20d3f6199468f8f42ab1d42 -->
+
+## OS fix Remove committed data export technical acceptance (2026-11-20)
+
+Release `9daa2c9849ddc6a2d3dae38ef3b674f7e82c60be` (Remove committed production data export; ignore export pattern) passed its candidate CI and was deployed through the protected
+coordinator at `2026-11-20T01:45:30Z`, replacing the finalized release `a341f2ae`. The database phase stayed
+strict with 11 deferred migrations present (`contract_verified`). Canonical production
+acceptance verified all four roles, eight browser sessions and bound artifacts. All fixture
+objects were cleaned, with zero residuals and exact KPI restoration. Performance measured
+p75 57 ms / p95 71 ms, within policy. The delayed verification passed at `2026-11-20T02:03:08Z`;
+canonical attestation sealed the bundle below.
+
+<!-- postdeploy-acceptance-sha256:ba4ed7dab4affb8d7153716ffb58abbbf160c1a3475d0654b7623a15a785a4e7 -->

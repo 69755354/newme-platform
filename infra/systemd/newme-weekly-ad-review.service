@@ -8,6 +8,8 @@ OnFailure=newme-unit-alert@%n.service
 Type=oneshot
 User=root
 EnvironmentFile=/etc/newme/newme-runtime.env
+# The database URL is kept in capi-wa.env on the host; newme-runtime.env holds only the key
+EnvironmentFile=-/etc/newme/capi-wa.env
 # The switch lives here: WEEKLY_AD_REVIEW_ENABLED=true. Absent or anything else = the run does nothing.
 EnvironmentFile=-/etc/newme/weekly-ad-review.env
 WorkingDirectory=/opt/newme/current

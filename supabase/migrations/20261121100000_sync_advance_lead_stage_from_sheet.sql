@@ -16,7 +16,9 @@
 --     follow-up date present) are checked up front and answered as a refusal reason, not as an error;
 --   * the same audit row as the normal transition: one business_events 'stage_change' per step, with user_id NULL and
 --     event_data.actor = 'system:drive_sync' as the system marker (plus from, to, note and the run id);
---   * all-or-nothing: a rule that stops it half way rolls back the steps already taken and answers advanced = false.
+--   * all-or-nothing: a rule that stops it half way rolls back the steps already taken and answers advanced = false;
+--   * the same entry guard as every other SECURITY DEFINER routine (assert_current_session_at_entry: a request with an
+--     end-user identity must come from a current session; the service-role path carries no identity and passes).
 -- Returns jsonb {advanced boolean, from text, to text, reason text}. Safe to run twice (a second call finds the lead at the
 -- target and does nothing).
 set local lock_timeout = '5s';
@@ -41,6 +43,7 @@ declare
   v_next text;
   v_note text := 'Sheet reported a quotation (drive sync)';
 begin
+  perform public.assert_current_session_at_entry();
   if p_target_stage is null or array_position(v_order, p_target_stage) is null or p_target_stage = 'new' then
     raise exception 'INVALID_TARGET_STAGE';
   end if;

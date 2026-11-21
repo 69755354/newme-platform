@@ -9,7 +9,7 @@ import { SyncError, BLUE, DEFAULTS, buildWritePolicy, columnIndex, columnLetter,
 import { REGISTER_HEADER, WRITE_COLUMNS, masterLeadId, selectRegisterCandidates, checkRegisterHeader } from "../../src/lib/os-register-append.mjs";
 import { buildIndexes, decideChange } from "../../src/lib/drive-sync.mjs";
 import { SOURCES, buildChanges, toTab } from "../../scripts/lib/drive-sync-sources.mjs";
-import { createIo, runSync } from "../../scripts/os-drive-nas-sync.mjs";
+import { createIo, parseArgs, runRegisterIdBackfill, runSync } from "../../scripts/os-drive-nas-sync.mjs";
 
 const META = DEFAULTS.metaSheetId; const SALES = DEFAULTS.salesSheetId; const REG = DEFAULTS.registerSheetId;
 const A1 = /^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/;
@@ -276,4 +276,92 @@ test("dry run: counts only, no personal data, no writes, no watermark change", a
   assert.equal(r.summary.register.would_append, 1); const txt = JSON.stringify(r.summary);
   assert.ok(!/Zed|9876543|example\.invalid/.test(txt)); assert.equal(sheets.writes.length, 0); assert.equal(io.readState().register_watermark, null); assert.equal(l.register_append, null);
   const none = await run(world(), osReader([l]), mk(), { cfg: DEFAULTS, args: { dryRun: true } }); assert.equal(none.summary.register, undefined);
+});
+
+// ---------- WhatsApp click id + ad ids (AK..AN) ----------
+const waLead = (n, extra = {}) => lead(n, { source: "whatsapp", ctwa_clid: `AffCLID${n}xyz`, campaign_id: `12000${n}`, adset_id: `23000${n}`, ad_id: `34000${n}`, ...extra });
+
+test("append: WhatsApp lead gets ctwa:<clid> and c:/as:/ag: ids; form lead gets l:<leadgen> and its ids", async () => {
+  const sheets = world(); const io = mk(); io.writeState({ ...io.readState(), register_watermark: "2026-11-20T09:00:00.000Z" });
+  const wa = waLead(1); const form = lead(2, { source: "fb", meta_leadgen_id: "123456789012345", campaign_id: "111", adset_id: "222", ad_id: "333" });
+  await run(sheets, osReader([wa, form]), io);
+  const [r1, r2] = appended(sheets);
+  assert.equal(r1[col("Master Lead ID")], masterLeadId(wa)); assert.match(r1[col("Master Lead ID")], /^WA-NM-/);
+  assert.equal(r1[col("Source lead ID")], "ctwa:AffCLID1xyz"); assert.equal(r1[col("Campaign ID")], "c:120001"); assert.equal(r1[col("Adset ID")], "as:230001"); assert.equal(r1[col("Ad ID")], "ag:340001");
+  assert.equal(r2[col("Source lead ID")], "l:123456789012345"); assert.equal(r2[col("Campaign ID")], "c:111"); assert.equal(r2[col("Adset ID")], "as:222"); assert.equal(r2[col("Ad ID")], "ag:333");
+  assert.equal(sheets.fmt[`${REG}:6,${col("Source lead ID")}`].bg, BLUE); // blue + note like the other written cells
+  assert.ok(sheets.fmt[`${REG}:6,${col("Ad ID")}`].note);
+});
+
+test("append: WhatsApp lead without ad ids writes only the click id; ids OS lacks stay empty", async () => {
+  const sheets = world(); const io = mk(); io.writeState({ ...io.readState(), register_watermark: "2026-11-20T09:00:00.000Z" });
+  await run(sheets, osReader([waLead(1, { campaign_id: null, adset_id: "", ad_id: null })]), io);
+  const row = appended(sheets)[0];
+  assert.equal(row[col("Source lead ID")], "ctwa:AffCLID1xyz");
+  for (const n of ["Campaign ID", "Adset ID", "Ad ID"]) assert.ok(!row[col(n)]);
+});
+
+// ---------- one-off backfill ----------
+const bfLeads = () => [waLead(1), waLead(2, { campaign_id: null, adset_id: null, ad_id: null }), waLead(3), lead(4, { source: "fb", meta_leadgen_id: "123456789012345", campaign_id: "9" })];
+const bfRows = (ls) => [
+  regRow({ "Master Lead ID": masterLeadId(ls[0]), Client: "A" }),                                              // row 6: all four empty -> filled
+  regRow({ "Master Lead ID": masterLeadId(ls[1]), Client: "B" }),                                              // row 7: click id only
+  regRow({ "Master Lead ID": masterLeadId(ls[2]), Client: "C", "Source lead ID": "human value", "Ad ID": "ag:777" }), // row 8: human cells kept, Campaign/Adset filled
+  regRow({ "Master Lead ID": masterLeadId(ls[3]), Client: "D" }),                                              // row 9: META- row: never touched
+  regRow({ "Master Lead ID": "LEGACY-1", Client: "E" }),                                                       // row 10: not ours
+  regRow({ "Master Lead ID": "WA-NM-ffffffffffff", Client: "F" }),                                             // row 11: lead unknown
+];
+const bfRun = (sheets, ls, args, io = mk()) => runRegisterIdBackfill({ osReader: null, sheets, io, cfg: DEFAULTS, args: { maxWrites: 200, ...args }, now: () => NOW, leadsOverride: ls });
+
+test("backfill dry-run (default): plans only empty AK..AN cells of WA-NM- rows, writes nothing", async () => {
+  const ls = bfLeads(); const sheets = world(bfRows(ls)); const before = JSON.stringify(sheets.grids[REG]);
+  const r = await bfRun(sheets, ls, {});
+  assert.equal(r.summary.mode, "dry_run"); assert.equal(r.summary.written, 0);
+  assert.equal(r.summary.cells, 4 + 1 + 2); assert.equal(r.summary.rows, 3);
+  assert.equal(regWrites(sheets).length, 0); assert.equal(JSON.stringify(sheets.grids[REG]), before);
+  assert.equal(JSON.stringify(r.summary).includes("AffCLID"), false); // counts only, no ids in the output
+});
+
+test("backfill --execute: fills only empty cells, blue + note, never touches other cells; second run is a no-op", async () => {
+  const ls = bfLeads(); const sheets = world(bfRows(ls)); const io = mk();
+  const before = sheets.grids[REG].map((r) => [...r]);
+  const r = await bfRun(sheets, ls, { execute: true }, io);
+  assert.equal(r.summary.written, 7);
+  const g = sheets.grids[REG];
+  assert.equal(g[5][col("Source lead ID")], "ctwa:AffCLID1xyz"); assert.equal(g[5][col("Ad ID")], "ag:340001");
+  assert.equal(g[6][col("Source lead ID")], "ctwa:AffCLID2xyz"); assert.ok(!g[6][col("Campaign ID")]);
+  assert.equal(g[7][col("Source lead ID")], "human value"); assert.equal(g[7][col("Ad ID")], "ag:777"); // human values kept
+  assert.equal(g[7][col("Campaign ID")], "c:120003"); assert.equal(g[7][col("Adset ID")], "as:230003");
+  assert.deepEqual(g[8], before[8]); assert.deepEqual(g[9], before[9]); assert.deepEqual(g[10], before[10]); // META, legacy, unknown rows untouched
+  // every changed cell is inside AK..AN of a WA-NM- row
+  const idCols = new Set(["Source lead ID", "Campaign ID", "Adset ID", "Ad ID"].map(col));
+  g.forEach((row, i) => row.forEach((v, c) => { if (v !== (before[i]?.[c] ?? "")) assert.ok(idCols.has(c) && [5, 6, 7].includes(i), `unexpected change at row ${i + 1} col ${c}`); }));
+  assert.equal(sheets.fmt[`${REG}:6,${col("Source lead ID")}`].bg, BLUE); assert.match(sheets.fmt[`${REG}:6,${col("Source lead ID")}`].note, /^OS 补写编号/);
+  assert.equal(sheets.fmt[`${REG}:8,${col("Source lead ID")}`], undefined); // the human cell is not coloured
+  assert.ok(regWrites(sheets).every((w) => w.id === REG));
+  const n = sheets.writes.length; const again = await bfRun(sheets, ls, { execute: true }, io);
+  assert.equal(again.summary.cells, 0); assert.equal(sheets.writes.length, n);
+});
+
+test("backfill: header mismatch writes nothing; duplicate Master Lead ID on the sheet is skipped; cap is enforced", async () => {
+  const ls = bfLeads(); const bad = [...HEAD]; bad[col("Primary phone")] = "Phone";
+  await assert.rejects(bfRun(world(bfRows(ls), bad), ls, { execute: true }), (e) => e.code === "register_header_mismatch");
+  const dup = world([...bfRows(ls), regRow({ "Master Lead ID": masterLeadId(ls[0]) })]);
+  const r = await bfRun(dup, ls, { execute: true });
+  assert.equal(r.summary.skipped.duplicate_master_id, 2); assert.equal(dup.grids[REG][5][col("Source lead ID")], "");
+  const capped = world(bfRows(ls));
+  await assert.rejects(bfRun(capped, ls, { execute: true, maxWrites: 3 }), (e) => e.code === "cap_exceeded"); assert.equal(regWrites(capped).length, 0);
+});
+
+test("backfill: a cell filled by someone between plan and write is not overwritten (fresh re-read)", async () => {
+  const ls = bfLeads(); const sheets = world(bfRows(ls)); const orig = sheets.getValues; let n = 0;
+  sheets.getValues = async (id, range) => { const out = await orig(id, range); if (++n === 1) sheets.grids[REG][5][col("Source lead ID")] = "typed meanwhile"; return out; };
+  await bfRun(sheets, ls, { execute: true });
+  assert.equal(sheets.grids[REG][5][col("Source lead ID")], "typed meanwhile"); assert.equal(sheets.grids[REG][5][col("Ad ID")], "ag:340001");
+});
+
+test("parseArgs: --execute only with --backfill-register-ids", () => {
+  assert.equal(parseArgs(["--backfill-register-ids"]).execute, false);
+  assert.equal(parseArgs(["--backfill-register-ids", "--execute"]).execute, true);
+  assert.throws(() => parseArgs(["--execute"]), (e) => e.code === "usage");
 });

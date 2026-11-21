@@ -148,7 +148,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exitCode = 2;
   } else {
     try {
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (!url || !key) throw new Error("database configuration unavailable");
       const { createClient } = await import("@supabase/supabase-js");
       const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });

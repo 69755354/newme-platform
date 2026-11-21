@@ -95,6 +95,9 @@ function writeLedger(name, day, value) {
 }
 
 export async function runBrief(db, { execute = false, now = new Date(), send = sendWhatsapp, env = process.env } = {}) {
+  // Switch first: the timer is enabled by the installer, so a switched-off run must not even read the database
+  // (a read error would fail the unit and fire newme-unit-alert every day).
+  if (execute && !isTrue(env.NEWME_DAILY_BRIEF_ENABLED)) return { job: "brief", mode: "disabled", sent: false };
   const data = await loadData(db, now);
   const extras = await loadBriefExtras(db, data, now);
   const counts = countNewLeads(data.leads, { now, excludedTestIds: data.excludedTestIds });
@@ -114,6 +117,9 @@ export async function runBrief(db, { execute = false, now = new Date(), send = s
 }
 
 export async function runReminders(db, { execute = false, now = new Date(), send = sendWhatsapp, env = process.env } = {}) {
+  // Switch and window first: a switched-off (or out-of-hours) hourly run does nothing at all, not even a read.
+  if (execute && !isTrue(env.NEWME_LEAD_REMINDER_ENABLED)) return { job: "reminders", mode: "disabled", sent: 0, failed: 0 };
+  if (execute && !inReminderWindow(now)) return { job: "reminders", mode: "outside_window", sent: 0, failed: 0 };
   const data = await loadData(db, now);
   const plan = planFrom(data, now);
   const today = dubaiDateKey(now);

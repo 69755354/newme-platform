@@ -220,6 +220,11 @@ test("runner: both jobs are off without their switch, even with --execute", asyn
   assert.equal((await runBrief(fakeDb(tables()), { execute: true, now: NOW, send, env: {} })).mode, "disabled");
   assert.equal((await runReminders(fakeDb(tables()), { execute: true, now: new Date("2026-11-21T06:00:00Z"), send, env: { NEWME_LEAD_REMINDER_ENABLED: "false" } })).mode, "disabled");
   assert.deepEqual(sent, []);
+  // Switched off (or out of hours), the hourly/daily timer run never reads the database, so it cannot fail and alert.
+  const exploding = { from() { throw new Error("database must not be read while switched off"); } };
+  assert.equal((await runBrief(exploding, { execute: true, now: NOW, send, env: {} })).mode, "disabled");
+  assert.equal((await runReminders(exploding, { execute: true, now: NOW, send, env: {} })).mode, "disabled");
+  assert.equal((await runReminders(exploding, { execute: true, now: NOW, send, env: { NEWME_LEAD_REMINDER_ENABLED: "true" } })).mode, "outside_window");
 });
 
 test("runner: brief goes out once a day; a reminder goes to each salesperson once a day and only inside the window", async () => {

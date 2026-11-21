@@ -20,7 +20,7 @@ export const S33_EVENTS = Object.freeze([
   Object.freeze({
     "version": "20261121100000",
     "file": "20261121100000_sync_advance_lead_stage_from_sheet.sql",
-    "sha256": "f3fce65019997861ca8293fc33a45dc0b46deb80741539277a261ffb64b6bf8c"
+    "sha256": "09143457b6cf6fce1255173eec0d279a8c2e4a235300d9364efbc5a4fc0ae072"
   }),
 ]);
 export const S33_PREDICATE_NAMES = Object.freeze([

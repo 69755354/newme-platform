@@ -35,7 +35,9 @@ security definer
 set search_path = pg_catalog, public, pg_temp
 as $$
 declare
+  -- the steps this routine may walk (targets), and the whole funnel ladder (to place a lead that is already further on)
   v_order constant text[] := array['new','contacted','requirement_confirmed','solution_submitted','quotation_submitted'];
+  v_ladder constant text[] := array['new','contacted','requirement_confirmed','solution_submitted','quotation_submitted','negotiation','pending_decision'];
   v_lead public.leads%rowtype;
   v_from text;
   v_cur int;
@@ -60,10 +62,11 @@ begin
   if v_lead.stage in ('won', 'lost') or v_lead.final_status in ('won', 'lost') then
     return jsonb_build_object('advanced', false, 'from', v_from, 'reason', 'terminal');
   end if;
-  v_cur := array_position(v_order, v_lead.stage);
+  v_cur := array_position(v_ladder, v_lead.stage);
   if v_cur is null then
     return jsonb_build_object('advanced', false, 'from', v_from, 'reason', 'stage_not_on_funnel');
   end if;
+  -- a lead at the target, or already further on (negotiation, pending_decision), is left exactly where it is
   if v_cur >= v_target then
     return jsonb_build_object('advanced', false, 'from', v_from, 'to', v_from, 'reason', 'already_at_or_past');
   end if;

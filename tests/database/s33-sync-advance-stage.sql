@@ -51,8 +51,11 @@ select pg_temp.expect((public.sync_advance_lead_stage_from_sheet('33000000-0000-
   'new-without-contact-refused-unchanged');
 
 -- 4. a new lead with contact and quality walks new -> ... -> quotation_submitted, four audited steps, system actor
-select pg_temp.expect((public.sync_advance_lead_stage_from_sheet('33000000-0000-4000-8000-000000000002', 'quotation_submitted', 'run-33') ->> 'advanced')::boolean
-  and (select stage = 'quotation_submitted' and final_status is null from public.leads where id = '33000000-0000-4000-8000-000000000002'),
+--    (the call and the state check are separate statements: an uncorrelated sub-select in the same expression is
+--    evaluated before the function runs, so one combined expression would read the stage from before the call)
+select pg_temp.expect((public.sync_advance_lead_stage_from_sheet('33000000-0000-4000-8000-000000000002', 'quotation_submitted', 'run-33') ->> 'advanced')::boolean,
+  'new-with-contact-advanced');
+select pg_temp.expect((select stage = 'quotation_submitted' and final_status is null from public.leads where id = '33000000-0000-4000-8000-000000000002'),
   'new-with-contact-advanced-to-quotation');
 select pg_temp.expect((select count(*) = 4 and bool_and(user_id is null) and bool_and(event_data ->> 'actor' = 'system:drive_sync')
     and bool_and(event_data ->> 'run_id' = 'run-33')
@@ -68,8 +71,9 @@ select pg_temp.expect((public.sync_advance_lead_stage_from_sheet('33000000-0000-
   'second-call-idempotent');
 
 -- 6. a contacted lead needs three steps
-select pg_temp.expect((public.sync_advance_lead_stage_from_sheet('33000000-0000-4000-8000-000000000003') ->> 'advanced')::boolean
-  and (select stage = 'quotation_submitted' from public.leads where id = '33000000-0000-4000-8000-000000000003')
+select pg_temp.expect((public.sync_advance_lead_stage_from_sheet('33000000-0000-4000-8000-000000000003') ->> 'advanced')::boolean,
+  'contacted-advanced');
+select pg_temp.expect((select stage = 'quotation_submitted' from public.leads where id = '33000000-0000-4000-8000-000000000003')
   and (select count(*) = 3 from public.business_events where lead_id = '33000000-0000-4000-8000-000000000003' and event_type = 'stage_change'),
   'contacted-advanced-three-steps');
 

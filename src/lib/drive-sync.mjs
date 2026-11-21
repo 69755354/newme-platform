@@ -3,7 +3,7 @@
 // Parsing, phone normalisation and the import fingerprint are the ones of the one-time backfill (review/reimport/import_sheets.mjs)
 // so rows imported by the backfill are matched, not duplicated.
 import { createHash, timingSafeEqual } from "node:crypto";
-import { planSheetQuote } from "./sheet-quote.mjs";
+import { planSheetQuote, shouldAdvanceStageForQuote } from "./sheet-quote.mjs";
 
 export const IMPORT_VERSION = "newme/sheet-reimport/v1"; // same value as the backfill: same fingerprint for the same Master Lead ID
 export const SYNC_SOURCE = "drive_sync";
@@ -66,8 +66,10 @@ export const OS_SOURCES = new Set(["ins", "fb", "show_room", "whatsapp", "websit
 export const OWNED_FIELDS = Object.freeze(["quality", "quality_reason", "next_action", "next_followup_date"]); // Drive/sales owns these
 // Narrow, documented exception to OS ownership (PURCHASE-CAPI-20261120.md): a sheet row whose "Opportunity stage" says a
 // quotation was reported, with "Quote value AED" > 0, (a) stores leads.quotation_value (never over a value OS changed itself)
-// and (b) queues the Meta feedback for the quote. The lead's stage is NOT moved here: the audited stage routine needs a
-// signed-in actor and direct writes are blocked by the stage triggers. Won / lost / archived leads are never touched.
+// and (b) queues the Meta feedback for the quote, and (c) asks the database to move the lead forward to quotation_submitted
+// (decision.stage_advance; the ingest route calls the service-role routine sync_advance_lead_stage_from_sheet, S33: forward
+// only, one audited step at a time, never past quotation_submitted). The audited stage routine for people needs a signed-in
+// actor and direct writes are blocked by the stage triggers, hence that routine. Won / lost / archived leads are never touched.
 export const QUOTE_STAGES = Object.freeze(["quotation reported", "quote reported"]);
 // Strict: only a plain amount, optionally with an AED/Dhs label and thousands separators. Anything else ("12k", "1.2M",
 // "TBD", ranges, negatives) is not a quote, so a mis-typed cell never reaches Meta as a wrong value.
@@ -217,9 +219,11 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   for (const f of OWNED_FIELDS) if (!nonEmpty(owned[f]) && prevOsWon[f]) osWon[f] = prevOsWon[f];
   // Quote reported in the sheet: store the amount (forward-only information; OS-edited values win) and queue the Meta event
   // once, only for a quote that appeared after the lead was already baselined (older quotes are history: 7-day Meta window).
-  let quote = null; let quotePatch = { baseline: true };
+  let quote = null; let quotePatch = { baseline: true }; let stageAdvance = false;
   if (isQuoteReported(change) && !isFrozenFinal(lead) && !lead.archived) {
     const amount = moneyNumber(change.quote_value);
+    // The stage follows the sheet whether the quote is new or history: moving the OS stage has no Meta time window.
+    stageAdvance = shouldAdvanceStageForQuote(lead);
     const osValue = Number(lead.quotation_value) || 0;
     const osEdited = osValue > 0 && osValue !== Number(prev?.quote_value ?? 0);
     if (!osEdited && osValue !== amount) { set.quotation_value = amount; fields.push("quotation_value"); }
@@ -233,7 +237,7 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   const raw_patch = rawPatchOf(change, hash, prev, osWon, quotePatch);
   const unarchive = !!(lead.archived && cfg.allowUnarchive);
   // A write happens whenever the row changed since the last sync: at least the sync state and the note go in.
-  return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash, ...(quote ? { quote } : {}) };
+  return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash, ...(quote ? { quote } : {}), ...(stageAdvance ? { stage_advance: true } : {}) };
 }
 
 function notesOf(change) {

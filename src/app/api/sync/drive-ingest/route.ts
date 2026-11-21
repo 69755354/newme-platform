@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     if (plan.counts.writes > cfg.maxWritesPerRun) return reply({ error: "Planned writes exceed the cap", writes: plan.counts.writes, cap: cfg.maxWritesPerRun }, 413);
 
     const before = await sideEffectCounts();
-    const applied = { inserted: 0, updated: 0, notes: 0, failed: 0 };
+    const applied = { inserted: 0, updated: 0, rehashed: 0, notes: 0, failed: 0 };
     let quotesFired = 0;
     let stagesAdvanced = 0;
     let lateQuotes = 0;
@@ -170,6 +170,15 @@ export async function POST(request: NextRequest) {
           if (hashErr) throw new Error("hash_commit_failed");
           applied.updated += 1;
           log({ event: "update", key: k, sheet: change.sheet, row: change.row, lead_id: d.lead_id, fields: d.fields, conflicts: d.conflicts, row_hash: d.row_hash, cost: writeCost(d) });
+        } else if (d.action === "rehash") {
+          // Only the sync state moves (new row hash + sheet owner); the lead's fields and notes are untouched.
+          const { data: cur, error: curErr } = await supabaseAdmin.from("leads").select("raw_import_data").eq("id", d.lead_id).single();
+          if (curErr) throw new Error("read_failed");
+          const curRaw = ((cur?.raw_import_data as Json | null) ?? {});
+          const { error: hashErr } = await supabaseAdmin.from("leads").update({ raw_import_data: { ...curRaw, drive_sync: { ...mergeDriveSync(curRaw.drive_sync, d.raw_patch.drive_sync), synced_at: new Date().toISOString() } } }).eq("id", d.lead_id);
+          if (hashErr) throw new Error("hash_commit_failed");
+          applied.rehashed += 1;
+          log({ event: "rehash", key: k, sheet: change.sheet, row: change.row, lead_id: d.lead_id, reason: d.reason, row_hash: d.row_hash, cost: writeCost(d) });
         } else if (d.action !== "noop") {
           log({ event: d.action, key: k, sheet: change.sheet, row: change.row, reason: d.reason ?? null });
         }

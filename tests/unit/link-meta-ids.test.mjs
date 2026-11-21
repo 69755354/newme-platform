@@ -187,3 +187,20 @@ test("two rows with different Meta ids matching the same lead: only the first fi
   const plan = planBatch([idsRow({ key: "C", identity: { leadgen: LG2, phone_digits: "971501234567" }, meta_ids: { ad_id: "666666" } })], leads, cfg, Object.fromEntries(claimed));
   assert.equal(plan.decisions[0].d.set?.ad_id, undefined);
 });
+
+test("a row whose only change is the newly hashed sheet owner records the owner with one write (no field re-apply, no sync note)", async () => {
+  const { rowHashOf, writeCost } = await import("../../src/lib/drive-sync.mjs");
+  const reg = { key: "LEGACY-o", sheet: "lead_register", row: 9, identity: { phone_digits: "971501234567" }, owned: { next_action: "Call back" }, insertable: true, sheet_owner: "Faizan" };
+  const oldHash = rowHashOf({ ...reg, sheet_owner: undefined });
+  // OS was edited after the last sync (next_action differs): the old-hash row must not re-apply the sheet value.
+  const d = decide(reg, [lead({ next_action: "Edited in OS", drive_sync: baselined({ row_hash: oldHash }) })]);
+  assert.equal(d.action, "rehash"); assert.equal(d.reason, "sheet_owner_recorded"); assert.equal(d.set, undefined); assert.equal(d.notes, undefined);
+  assert.deepEqual(d.raw_patch.drive_sync, { row_hash: rowHashOf(reg), sheet_owner: "Faizan" }); assert.equal(writeCost(d), 1);
+  // once recorded, the same row is a plain no-op
+  assert.equal(decide(reg, [lead({ drive_sync: baselined({ row_hash: rowHashOf(reg), sheet_owner: "Faizan" }) })]).action, "noop");
+  // a real sheet change alongside the owner is still a normal update
+  const changed = decide({ ...reg, owned: { next_action: "Visit" } }, [lead({ drive_sync: baselined({ row_hash: oldHash }) })]);
+  assert.equal(changed.action, "update");
+  const plan = planBatch([reg], [lead({ drive_sync: baselined({ row_hash: oldHash }) })], cfg);
+  assert.equal(plan.counts.rehashed, 1); assert.equal(plan.counts.updated, 0); assert.equal(plan.counts.writes, 1);
+});

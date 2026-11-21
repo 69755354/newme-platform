@@ -232,6 +232,9 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   const metaIds = planMetaIds(change, lead, idx, claimed, tag);
   const idsToFill = Object.keys(metaIds.set).length > 0;
   if (change.ids_only && !idsToFill) return metaIds.conflicts.length ? { action: "noop", reason: "meta_id_conflict", lead_id: lead.id, matched_by: m.by, conflicts: metaIds.conflicts } : { action: "skip", reason: "marketing_no_drive_owned_content" };
+  // The sheet owner joined the row hash on 2026-11-21 (only when present). A row whose stored hash still matches without the
+  // owner changed nothing else: record the owner and the new hash only (one write; no field re-apply, no sync note).
+  if (prev?.quote_baseline && prev.row_hash !== hash && !idsToFill && !(lead.archived && cfg.allowUnarchive) && nonEmpty(change.sheet_owner) && prev.row_hash === rowHashOf({ ...change, sheet_owner: undefined })) return { action: "rehash", reason: "sheet_owner_recorded", lead_id: lead.id, matched_by: m.by, row_hash: hash, raw_patch: { drive_sync: { row_hash: hash, sheet_owner: change.sheet_owner, os_won: osWonForUnchangedRow(change, lead, prev, cfg) } } };
   if (prev?.row_hash === hash && prev?.quote_baseline && !idsToFill && !(lead.archived && cfg.allowUnarchive)) return { action: "noop", reason: "unchanged_since_last_sync", lead_id: lead.id, matched_by: m.by, ...(metaIds.conflicts.length ? { conflicts: metaIds.conflicts } : {}) };
 
   const sheetAt = change.source_modified_at ? Date.parse(change.source_modified_at) : null;
@@ -321,6 +324,23 @@ export function mergeDriveSync(prev, patch) {
   }
   return out;
 }
+/**
+ * OS-won record for a row whose sheet values did not change since the last sync (rehash). Every owned field where OS now holds a
+ * different non-empty value was edited in OS, so it is recorded as OS-won; earlier records stay for blank sheet cells. Without
+ * this, the rehash's fresh synced_at would let the next unrelated sheet edit overwrite those OS edits with the stale sheet value.
+ */
+function osWonForUnchangedRow(change, lead, prev, cfg) {
+  const owned = change.owned ?? {}; const prevOsWon = prev?.os_won ?? {}; const out = {};
+  const current = { quality: lead.quality, next_action: lead.next_action, quality_reason: lead.poor_reason, next_followup_date: cfg.writeNextDate ? lead.next_followup_date : prev?.next_followup_date };
+  for (const f of OWNED_FIELDS) {
+    const v = norm(owned[f]);
+    if (!nonEmpty(v)) { if (prevOsWon[f]) out[f] = prevOsWon[f]; continue; }
+    if (f === "quality" && v === "pending") continue;
+    const cur = current[f];
+    if (nonEmpty(cur) && norm(cur) !== v) out[f] = valueTag(v);
+  }
+  return out;
+}
 const valueTag = (v) => sha(`os_won/${norm(v)}`).slice(0, 16); // no sheet text stored, only a tag of it
 export const claimTag = (k) => sha(`claim/${k}`).slice(0, 24);
 function identityClaimsOf(change) {
@@ -340,6 +360,7 @@ export function validateClaims(c) {
 /** Number of database writes one decision costs, for the per-run cap. */
 export function writeCost(d) {
   if (d.action === "insert") return 3 + (d.notes?.length ?? 0); // lead insert + notes + sync note + hash commit
+  if (d.action === "rehash") return 1; // drive_sync commit only
   if (d.action === "update") { // field/unarchive update (only when there is one) + notes + sync note + hash commit
     const fieldUpdate = Object.keys(d.set ?? {}).length > 0 || d.unarchive ? 1 : 0;
     return fieldUpdate + (d.notes?.length ?? 0) + 2;
@@ -354,7 +375,7 @@ export function writeCost(d) {
 export function planBatch(changes, leads, cfg, claims = null) {
   const idx = buildIndexes(leads); const claimed = new Map(Object.entries(claims ?? {}));
   const decisions = changes.map((c) => ({ change: c, d: decideChange(c, idx, cfg, claimed) }));
-  const counts = { read: changes.length, matched: 0, inserted: 0, would_insert: 0, updated: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0, ids_leadgen: 0, ids_ads: 0, id_conflicts: 0, quotes_after_link: 0, quotes_not_sendable: 0 };
+  const counts = { read: changes.length, matched: 0, inserted: 0, would_insert: 0, updated: 0, rehashed: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0, ids_leadgen: 0, ids_ads: 0, id_conflicts: 0, quotes_after_link: 0, quotes_not_sendable: 0 };
   for (const { d } of decisions) {
     if (d.ids_gained?.includes("meta_leadgen_id")) counts.ids_leadgen += 1;
     if (d.ids_gained?.some((f) => META_ID_AD_FIELDS.includes(f))) counts.ids_ads += 1;
@@ -362,7 +383,7 @@ export function planBatch(changes, leads, cfg, claims = null) {
     if (d.quote_late) counts.quotes_after_link += 1;
     if (String(d.quote_meta_state ?? "").startsWith("not_sendable")) counts.quotes_not_sendable += 1;
     if (d.lead_id) counts.matched += 1;
-    if (d.action === "insert") counts.inserted += 1; else if (d.action === "update") counts.updated += 1; else if (d.action === "noop") counts.noop += 1; else if (d.action === "skip") counts.skipped += 1; else if (d.action === "hold") { counts.held += 1; if (d.would === "insert") counts.would_insert += 1; }
+    if (d.action === "insert") counts.inserted += 1; else if (d.action === "update") counts.updated += 1; else if (d.action === "rehash") counts.rehashed += 1; else if (d.action === "noop") counts.noop += 1; else if (d.action === "skip") counts.skipped += 1; else if (d.action === "hold") { counts.held += 1; if (d.would === "insert") counts.would_insert += 1; }
     counts.conflicts += d.conflicts?.length ?? 0; counts.writes += writeCost(d);
   }
   return { decisions, counts, claims: Object.fromEntries(claimed) };

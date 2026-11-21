@@ -91,7 +91,7 @@ if (isMainModule()) {
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (!url || !key) throw new Error("database configuration unavailable");
-      const configured = Boolean(process.env.META_WA_DATASET_ID && process.env.META_CAPI_ACCESS_TOKEN);
+      const configured = Boolean(process.env.META_WA_DATASET_ID && (process.env.META_WA_CAPI_ACCESS_TOKEN || process.env.META_CAPI_ACCESS_TOKEN));
       const execute = args.includes("--execute") && configured;
       const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
       const summary = await sendWhatsAppCapiEvents(db, { execute });

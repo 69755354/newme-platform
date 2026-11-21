@@ -34,10 +34,11 @@ if (isMain()) {
     if (flag !== "--execute") {
       console.log("dry run; body (hashes shortened):", req.body.replace(/[0-9a-f]{64}/g, (h) => `${h.slice(0, 8)}...`));
     } else {
-      if (!req.dataset || !process.env.META_CAPI_ACCESS_TOKEN) throw new Error("dataset id or token missing");
+      const token = kind === "wa" ? (process.env.META_WA_CAPI_ACCESS_TOKEN || process.env.META_CAPI_ACCESS_TOKEN) : process.env.META_CAPI_ACCESS_TOKEN;
+      if (!req.dataset || !token) throw new Error("dataset id or token missing");
       const v = process.env.META_GRAPH_API_VERSION || "v25.0";
       const r = await fetch(`https://graph.facebook.com/${v}/${encodeURIComponent(req.dataset)}/events`, {
-        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.META_CAPI_ACCESS_TOKEN}` },
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: req.body, signal: AbortSignal.timeout(10_000) });
       console.log(r.status, await r.text());
       if (!r.ok) process.exitCode = 1;

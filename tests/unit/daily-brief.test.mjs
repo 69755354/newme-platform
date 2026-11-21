@@ -46,6 +46,9 @@ test("new leads: Dubai day edges, archived, synthetic QA and test records are ex
 test("first contact: OS fields, follow-up log, stage and the sheet's first contact / Day 1 feedback all count", () => {
   assert.equal(hasFirstContact(lead()), false);
   assert.equal(hasFirstContact(lead({ last_contact_date: "2026-11-19" })), true);
+  // intake time is not contact: a Meta form / website / WhatsApp lead gets first_touch_at the moment it arrives
+  assert.equal(hasFirstContact(lead({ first_touch_at: "2026-11-19T08:00:00Z" })), false);
+  assert.equal(hasFirstContact(lead({ wa_first_reply_at: "2026-11-19T08:05:00Z" })), true);
   assert.equal(hasFirstContact(lead({ followup_count: 1 })), true);
   assert.equal(hasFirstContact(lead({ stage: "contacted" })), true);
   assert.equal(hasFirstContact(lead({ no_answer_flag: true })), true);

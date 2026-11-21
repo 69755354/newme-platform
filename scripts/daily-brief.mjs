@@ -75,9 +75,12 @@ function sendWhatsapp({ key, text, number }) {
   const env = { ...process.env };
   if (number) {
     // One salesperson only, and never the ops Telegram chat: a missing WhatsApp delivery is a failure, not a fallback.
+    // ALERT_WHATSAPP_ONLY is read by the sender from its process environment before /etc/newme/alerts.env is loaded and
+    // cannot be set from that file, so neither a configured Telegram bot nor ALERT_CHANNEL=telegram there can redirect it.
     env.ALERT_WHATSAPP_RECIPIENTS = number;
+    env.ALERT_WHATSAPP_ONLY = "1";
     env.ALERT_TELEGRAM_PROVIDER_CONFIG = "/nonexistent/no-telegram-fallback";
-    delete env.TELEGRAM_BOT_TOKEN; delete env.TELEGRAM_CHAT_ID;
+    delete env.TELEGRAM_BOT_TOKEN; delete env.TELEGRAM_CHAT_ID; delete env.ALERT_CHANNEL;
   }
   return new Promise((resolve) => execFile(SENDER, [key, "info", text], { env, timeout: 120_000 }, (error) => resolve(!error)));
 }

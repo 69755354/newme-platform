@@ -81,7 +81,9 @@ export function countNewLeads(leads, { now = new Date(), excludedTestIds = new S
 export function hasFirstContact(lead, logLeadIds = new Set()) {
   if (!lead) return false;
   if (logLeadIds.has(lead.id)) return true;
-  if (lead.last_contact_date || lead.first_touch_at || lead.wa_first_reply_at || lead.no_answer_flag === true) return true;
+  // first_touch_at is the intake time (form received, website submit, first WhatsApp message in): it says the lead arrived,
+  // not that anyone contacted the customer, so it is deliberately not contact evidence. wa_first_reply_at is our first reply.
+  if (lead.last_contact_date || lead.wa_first_reply_at || lead.no_answer_flag === true) return true;
   if ((lead.followup_count ?? 0) > 0) return true;
   const outcome = leadOutcome(lead);
   if (outcome && outcome !== "new") return true; // any stage past "new" (and won / lost) means contact happened

@@ -259,6 +259,29 @@ test("WhatsApp 404 falls back to the release gate's Telegram bot: exit 0, both o
   f.close();
 });
 
+test("ALERT_WHATSAPP_ONLY=1: a failed WhatsApp delivery is a failure, never the Telegram fallback, whatever alerts.env says", async () => {
+  const f = await fixture({ status: 404 });
+  // alerts.env carries a Telegram bot and even asks for Telegram as the channel; the file is read, but WhatsApp-only wins
+  const file = join(f.root, "alerts.env");
+  writeFileSync(file, `ALERT_CHANNEL=telegram\nTELEGRAM_BOT_TOKEN=${TG_TOKEN}\nTELEGRAM_CHAT_ID=-1001234567890\nALERT_WHATSAPP_ONLY=1\n`, { mode: 0o600 });
+  const r = await f.run(["newme-lead-reminder", "info", "reminder"], { ALERT_ENV_FILE: file, ALERT_WHATSAPP_ONLY: "1", ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root) });
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(f.requests.filter((x) => x.url.startsWith("/bot")).length, 0, "no Telegram request at all");
+  assert.equal(f.requests.length, 2, "WhatsApp was tried for both recipients");
+  assert.match(r.stderr, /WhatsApp-only mode/);
+  const log = readFileSync(join(f.env.ALERT_STATE_DIR, "alerts.log"), "utf8");
+  assert.doesNotMatch(log, /delivered via telegram/);
+  // the flag is never taken from the file: without it in the environment the same file does fall back
+  const back = await f.run(["newme-lead-reminder", "info", "reminder"], { ALERT_ENV_FILE: file, ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root) });
+  assert.equal(back.status, 0, back.stderr);
+  assert.ok(f.requests.some((x) => x.url.startsWith("/bot")));
+  // and with WhatsApp not configured at all it refuses instead of using Telegram
+  const none = await f.run(["newme-lead-reminder", "info", "reminder"], { ALERT_ENV_FILE: file, ALERT_WHATSAPP_ONLY: "1", ALERT_WHATSAPP_ACCESS_TOKEN: "", ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root) });
+  assert.notEqual(none.status, 0);
+  assert.match(none.stderr, /WhatsApp-only mode/);
+  f.close();
+});
+
 test("one WhatsApp recipient failing also sends the Telegram copy", async () => {
   const f = await fixture({ perRecipient: (to) => (to === "15550000001" ? 500 : 200) });
   const r = await f.run(["k", "failure", "x"], { ALERT_TELEGRAM_PROVIDER_CONFIG: providerFile(f.root) });

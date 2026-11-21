@@ -26,7 +26,9 @@ export const REGISTER_HEADER = Object.freeze([
   "Master Lead ID", "Source lead ID", "Campaign ID", "Adset ID", "Ad ID", "Source URL", "Original source comment", "Test record", "Sales Lead ID", "Routed owner",
 ]);
 /** The only columns this program ever writes. */
-export const WRITE_COLUMNS = Object.freeze(["Master Lead ID", "Received at", "Intake channel", "Client", "Primary phone", "Email", "Campaign", "Ad"]);
+export const WRITE_COLUMNS = Object.freeze(["Master Lead ID", "Received at", "Intake channel", "Client", "Primary phone", "Email", "Campaign", "Ad", "Source lead ID", "Campaign ID", "Adset ID", "Ad ID"]);
+/** The id columns (AK..AN): same prefixes as the sheet importer reads back (l: / ctwa: / c: / as: / ag:). */
+export const ID_COLUMNS = Object.freeze(["Source lead ID", "Campaign ID", "Adset ID", "Ad ID"]);
 
 /**
  * rowValues: the grid read from the register starting at the header row (index 0 = header). Returns {index: {name: columnIndex}}.
@@ -81,12 +83,23 @@ export function selectRegisterCandidates(leads, watermark) {
   return { candidates, skipped };
 }
 
+// ---------- ids (AK..AN) ----------
+const idCell = (prefix, v) => { const t = norm(v); return t ? `${prefix}${t}` : ""; };
+/** Form lead: l:<leadgen>. WhatsApp click lead: ctwa:<ctwa_clid>. Campaign / adset / ad ids only when OS has them. Empty string = nothing to write. */
+export function idFields(lead) {
+  const lg = norm(lead.meta_leadgen_id);
+  return {
+    "Source lead ID": LEADGEN.test(lg) ? `l:${lg}` : idCell("ctwa:", lead.ctwa_clid),
+    "Campaign ID": idCell("c:", lead.campaign_id), "Adset ID": idCell("as:", lead.adset_id), "Ad ID": idCell("ag:", lead.ad_id),
+  };
+}
+
 // ---------- row ----------
 export const receivedAt = (iso) => dubaiStamp(Date.parse(iso)); // "2026-11-20 14:05" Dubai time: S29 parses it as dubai_local
 export function rowFields(lead) {
   return {
     "Master Lead ID": masterLeadId(lead), "Received at": receivedAt(lead.created_at), "Intake channel": intakeChannelLabel(lead),
-    Client: norm(lead.customer_name), "Primary phone": norm(lead.phone), Email: norm(lead.email), Campaign: norm(lead.campaign_name), Ad: norm(lead.ad_name),
+    Client: norm(lead.customer_name), "Primary phone": norm(lead.phone), Email: norm(lead.email), Campaign: norm(lead.campaign_name), Ad: norm(lead.ad_name), ...idFields(lead),
   };
 }
 /** Sparse row up to the last written column; every other cell stays "" (left for people). */
@@ -156,3 +169,38 @@ export function formatOpsFor(sheetRow, row, ms, ref) {
 /** What read-back must find on the sheet for an appended row: {col, value}. */
 export const expectedCells = (row) => row.flatMap((v, c) => (v === "" ? [] : [{ col: c, value: v }]));
 export const fingerprintForMaster = (master) => fingerprintOf(master);
+
+
+// ---------- one-off backfill of AK..AN on rows this program appended for WhatsApp leads ----------
+export const BACKFILL_MASTER_PREFIX = "WA-NM-";
+export const noteBackfilled = (ms, ref) => `OS 补写编号 迪拜时间 ${dubaiStamp(ms)}｜来源：OS｜线索 ${maskRef(ref)}`;
+/**
+ * grid: register from the header row (index 0). leads: OS rows {id, ctwa_clid, meta_leadgen_id, campaign_id, adset_id, ad_id}.
+ * Plans ONLY cells in AK..AN that are empty on rows whose Master Lead ID starts with WA-NM- and whose lead OS knows.
+ * A cell that holds anything (a person's value included) is never planned. A Master Lead ID that is on the sheet twice is skipped.
+ * Returns {cells:[{row, col, name, value, ref}], rows, skipped:{reason:count}}.
+ */
+export function planIdBackfill(grid, head, leads, headerRow = REGISTER.headerRow) {
+  const byRef = new Map(leads.map((l) => [leadRef(l.id).toLowerCase(), l]));
+  const mi = head.index["Master Lead ID"];
+  const count = new Map();
+  for (let i = 1; i < grid.length; i++) { const m = norm(grid[i]?.[mi]); if (m.startsWith(BACKFILL_MASTER_PREFIX)) count.set(m, (count.get(m) ?? 0) + 1); }
+  const cells = []; const skipped = {}; const rows = new Set();
+  const skip = (why) => { skipped[why] = (skipped[why] ?? 0) + 1; };
+  for (let i = 1; i < grid.length; i++) {
+    const r = grid[i] ?? []; const m = norm(r[mi]);
+    if (!m.startsWith(BACKFILL_MASTER_PREFIX)) continue;
+    if (count.get(m) > 1) { skip("duplicate_master_id"); continue; }
+    const l = byRef.get(m.slice(3).toLowerCase());
+    if (!l) { skip("lead_not_found"); continue; }
+    const f = idFields(l); let any = false;
+    for (const name of ID_COLUMNS) {
+      const c = head.index[name];
+      if (!f[name]) continue;
+      if (norm(r[c]) !== "") { skip("cell_not_empty"); continue; }
+      cells.push({ row: headerRow + i, col: c, name, value: f[name], ref: leadRef(l.id) }); rows.add(headerRow + i); any = true;
+    }
+    if (!any) skip("nothing_to_fill");
+  }
+  return { cells, rows: [...rows], skipped };
+}

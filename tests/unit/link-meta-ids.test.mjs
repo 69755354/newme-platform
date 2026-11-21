@@ -195,7 +195,12 @@ test("a row whose only change is the newly hashed sheet owner records the owner 
   // OS was edited after the last sync (next_action differs): the old-hash row must not re-apply the sheet value.
   const d = decide(reg, [lead({ next_action: "Edited in OS", drive_sync: baselined({ row_hash: oldHash }) })]);
   assert.equal(d.action, "rehash"); assert.equal(d.reason, "sheet_owner_recorded"); assert.equal(d.set, undefined); assert.equal(d.notes, undefined);
-  assert.deepEqual(d.raw_patch.drive_sync, { row_hash: rowHashOf(reg), sheet_owner: "Faizan" }); assert.equal(writeCost(d), 1);
+  assert.equal(d.raw_patch.drive_sync.row_hash, rowHashOf(reg)); assert.equal(d.raw_patch.drive_sync.sheet_owner, "Faizan"); assert.equal(writeCost(d), 1);
+  // the OS edit is recorded as OS-won, so a later unrelated sheet edit (new follow-up text) still does not overwrite it
+  assert.ok(d.raw_patch.drive_sync.os_won.next_action);
+  const after = baselined({ row_hash: rowHashOf(reg), sheet_owner: "Faizan", os_won: d.raw_patch.drive_sync.os_won, synced_at: "2026-11-21T12:00:00.000Z" });
+  const later = decide({ ...reg, followup_text: "Day 2: no answer" }, [lead({ next_action: "Edited in OS", updated_at: "2026-11-21T12:00:00.000Z", drive_sync: after })]);
+  assert.equal(later.action, "update"); assert.equal(later.set?.next_action, undefined);
   // once recorded, the same row is a plain no-op
   assert.equal(decide(reg, [lead({ drive_sync: baselined({ row_hash: rowHashOf(reg), sheet_owner: "Faizan" }) })]).action, "noop");
   // a real sheet change alongside the owner is still a normal update

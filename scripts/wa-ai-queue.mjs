@@ -32,8 +32,9 @@ export async function collectQueue({ url, key, fetchImpl = fetch, now = Date.now
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL; const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) { console.error("wa-ai-queue: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required"); process.exit(64); }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) { console.error("wa-ai-queue: database configuration unavailable"); process.exit(64); }
   try { for (const row of await collectQueue({ url, key })) process.stdout.write(`${JSON.stringify(row)}\n`); }
   catch (err) { console.error(`wa-ai-queue: ${err instanceof Error ? err.message : "failed"}`); process.exit(1); }
 }

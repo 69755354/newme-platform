@@ -18,13 +18,13 @@ import {
   maxIso, normalizeState, parseCsv, planCtwaColumnX, planMetaIdsUpsert, reconcileMetaIds, shouldAlert, sinceFromCursor,
 } from "../src/lib/os-drive-sync.mjs";
 import {
-  REGISTER, WRITE_COLUMNS, checkRegisterHeader, expectedCells, fingerprintForMaster, formatOpsFor, indexRegister, planRegisterAppend, selectRegisterCandidates, buildRegisterRow,
+  REGISTER, WRITE_COLUMNS, ID_COLUMNS, checkRegisterHeader, planIdBackfill, noteBackfilled, expectedCells, fingerprintForMaster, formatOpsFor, indexRegister, planRegisterAppend, selectRegisterCandidates, buildRegisterRow,
 } from "../src/lib/os-register-append.mjs";
 
 const LEAD_COLUMNS = "id, meta_leadgen_id, ctwa_clid, campaign_id, campaign_name, adset_id, ad_id, ad_name, created_at, stage, final_status, archived, updated_at, phone";
 const PAGE = 1000;
 const WIDTH = columnLetter(15 - 1);
-const REGISTER_LEAD_COLUMNS = "id, customer_name, phone, email, source, meta_leadgen_id, ctwa_clid, campaign_name, ad_name, created_at, archived, import_fingerprint, drive_sync:raw_import_data->drive_sync, register_append:raw_import_data->register_append";
+const REGISTER_LEAD_COLUMNS = "id, customer_name, phone, email, source, meta_leadgen_id, ctwa_clid, campaign_id, adset_id, ad_id, campaign_name, ad_name, created_at, archived, import_fingerprint, drive_sync:raw_import_data->drive_sync, register_append:raw_import_data->register_append";
 
 // ---------- OS reader (Supabase, service role, read-only) ----------
 export function createOsReader(db) {
@@ -49,6 +49,10 @@ export function createOsReader(db) {
     /** Leads created after the watermark (archived ones included: the planner skips them, but a half-finished append is still adopted). */
     async leadsForRegister(since) {
       return readAll(() => db.from("leads").select(REGISTER_LEAD_COLUMNS).gt("created_at", since).order("created_at", { ascending: true }).order("id", { ascending: true }), "lead_query_failed");
+    },
+    /** Read-only, for the one-off id backfill: every WhatsApp / click-id lead. */
+    async leadsForBackfill() {
+      return readAll(() => db.from("leads").select("id, source, meta_leadgen_id, ctwa_clid, campaign_id, adset_id, ad_id").or("ctwa_clid.not.is.null,source.eq.whatsapp").order("id", { ascending: true }), "lead_query_failed");
     },
     /** The only OS write of this program: remember which lead is on the register (raw_import_data.register_append; no migration). */
     async markRegisterAppended(id, info, fingerprint) {
@@ -447,6 +451,37 @@ export async function runSync({ osReader, sheets, nas, io, cfg = DEFAULTS, args 
   return { summary, exitCode: nasError || registerError ? 1 : 0 };
 }
 
+// ---------- one-off: fill empty AK..AN on WA-NM- rows of the Lead Register (dry-run unless args.execute) ----------
+export async function runRegisterIdBackfill({ osReader, sheets, io, cfg = DEFAULTS, args = {}, now = () => Date.now(), leadsOverride = null }) {
+  const id = cfg.registerSheetId; const tab = cfg.registerTab; const a1 = `${a1Tab(tab)}!A${cfg.registerHeaderRow}:${REGISTER.lastColumn}`;
+  const grid = await sheets.getValues(id, a1);
+  const head = checkRegisterHeader(grid);
+  const leads = leadsOverride ?? await osReader.leadsForBackfill();
+  const plan = planIdBackfill(grid, head, leads, cfg.registerHeaderRow);
+  const summary = { mode: args.execute ? "execute" : "dry_run", rows: plan.rows.length, cells: plan.cells.length, skipped: plan.skipped, written: 0 };
+  if (!args.execute || !plan.cells.length) return { summary, exitCode: 0 };
+  assertWithinCap(plan.cells.length, args.maxWrites ?? cfg.maxWrites);
+  const policy = buildWritePolicy({ ...cfg, metaTab: "-", registerSheetId: id, registerTab: tab, registerHeaderRow: cfg.registerHeaderRow });
+  const guarded = guardSheets(sheets, policy);
+  const rule = policy[id];
+  ID_COLUMNS.forEach((n) => rule.writeCols.add(columnLetter(head.index[n])));
+  plan.rows.forEach((r) => { rule.writeRows.add(r); rule.formatRows.add(r); });
+  // re-read right before writing: a cell somebody filled in meanwhile is never overwritten
+  const fresh = await guarded.getValues(id, a1);
+  const todo = plan.cells.filter((c) => String(fresh[c.row - cfg.registerHeaderRow]?.[c.col] ?? "").trim() === "");
+  if (!todo.length) return { summary, exitCode: 0 };
+  const data = todo.map((c) => ({ range: `${a1Tab(tab)}!${columnLetter(c.col)}${c.row}`, values: [[c.value]] }));
+  await guarded.batchUpdateValues(id, data);
+  const ts = new Date(now()).toISOString();
+  io.appendChanges(dubaiDay(now()), todo.map((c) => ({ ts, sheet: "lead_register", action: "backfill_ids", row: c.row, lead_ref: c.ref, column: c.name })));
+  const back = await guarded.getValues(id, a1);
+  const bad = todo.filter((c) => String(back[c.row - cfg.registerHeaderRow]?.[c.col] ?? "") !== c.value);
+  if (bad.length) throw new SyncError("readback_mismatch", `register read-back mismatch on ${bad.length} cell(s)`);
+  await applyOps(guarded, id, tab, todo.map((c) => ({ kind: "cell", row: c.row, col: c.col, bg: BLUE, note: noteBackfilled(now(), c.ref) })), () => {});
+  summary.written = todo.length;
+  return { summary, exitCode: 0 };
+}
+
 // ---------- nightly reconcile ----------
 export async function runReconcile({ osReader, sheets, io, cfg = DEFAULTS, now = () => Date.now(), leadsOverride = null }) {
   const day = dubaiDay(now());
@@ -477,7 +512,7 @@ export async function runReconcile({ osReader, sheets, io, cfg = DEFAULTS, now =
 
 // ---------- CLI ----------
 export function parseArgs(argv) {
-  const out = { dryRun: false, reconcile: false, full: false, maxWrites: DEFAULTS.maxWrites, leadsFile: null, registerSince: null };
+  const out = { dryRun: false, reconcile: false, full: false, maxWrites: DEFAULTS.maxWrites, leadsFile: null, registerSince: null, backfillRegisterIds: false, execute: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") out.dryRun = true;
@@ -485,17 +520,20 @@ export function parseArgs(argv) {
     else if (a === "--full") out.full = true;
     else if (a === "--max-writes") out.maxWrites = Number(argv[++i]);
     else if (a === "--leads-file") out.leadsFile = argv[++i];
+    else if (a === "--backfill-register-ids") out.backfillRegisterIds = true; // one-off: fill empty AK..AN on WA-NM- register rows (dry-run unless --execute)
+    else if (a === "--execute") out.execute = true;
     else if (a === "--register-since") out.registerSince = argv[++i]; // dry-run preview only: leads created after this ISO time
     else throw new SyncError("usage", `unknown argument ${a}`);
   }
   if (!Number.isInteger(out.maxWrites) || out.maxWrites < 0) throw new SyncError("usage", "--max-writes needs a non-negative integer");
+  if (out.execute && !out.backfillRegisterIds) throw new SyncError("usage", "--execute only goes with --backfill-register-ids");
   if (out.registerSince !== null && out.registerSince !== "now" && !Number.isFinite(Date.parse(out.registerSince))) throw new SyncError("usage", "--register-since needs an ISO time");
   return out;
 }
 
 async function main() {
   let args;
-  try { args = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`${e.message}\nUsage: os-drive-nas-sync.mjs [--dry-run] [--reconcile] [--full] [--max-writes N] [--leads-file F] [--register-since ISO|now]`); process.exit(2); }
+  try { args = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`${e.message}\nUsage: os-drive-nas-sync.mjs [--dry-run] [--reconcile] [--full] [--max-writes N] [--leads-file F] [--register-since ISO|now] [--backfill-register-ids [--execute]]`); process.exit(2); }
   const env = process.env;
   if (!args.dryRun && env.OS_DRIVE_SYNC_ENABLED !== "true") { console.log("OS_DRIVE_SYNC_ENABLED is not true: nothing to do"); return; }
   const dataDir = env.OS_DRIVE_SYNC_DATA_DIR || "/var/lib/newme-os-drive-sync";
@@ -518,7 +556,9 @@ async function main() {
       osReader = createOsReader(createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }));
     }
     const nas = createNas({ remoteDir: env.OS_DRIVE_NAS_CHANGES_DIR || "/newme-os-backup/exports/changes" });
-    const result = args.reconcile
+    const result = args.backfillRegisterIds
+      ? await runRegisterIdBackfill({ osReader, sheets, io, cfg, args, leadsOverride })
+      : args.reconcile
       ? await runReconcile({ osReader, sheets, io, cfg, leadsOverride })
       : await runSync({ osReader, sheets, nas, io, cfg, args, log, leadsOverride });
     console.log(JSON.stringify(result.summary));

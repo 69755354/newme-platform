@@ -21,7 +21,7 @@ const SENDER = process.env.NEWME_ALERT_SENDER || "/usr/local/libexec/newme/newme
 const stateDir = () => process.env.NEWME_BRIEF_STATE_DIR || "/var/lib/newme-daily-brief";
 const CHUNK = 150;
 const LEAD_COLUMNS = "id,customer_name,source,source_platform,utm_source,ctwa_clid,ad_id,fbclid,meta_click_id,archived,created_at,assigned_to,stage,final_status,hold_since,"
-  + "last_contact_date,first_touch_at,wa_first_reply_at,no_answer_flag,followup_count,quotation_value,quotation_sent_date,drive_sync:raw_import_data->drive_sync";
+  + "last_contact_date,first_touch_at,wa_first_reply_at,no_answer_flag,followup_count,quotation_value,quotation_sent_date,imported_at,drive_sync:raw_import_data->drive_sync";
 const isTrue = (v) => String(v ?? "").trim().toLowerCase() === "true";
 const must = (r) => { if (r.error) throw new Error(r.error.message ?? "query failed"); return r.data ?? []; };
 

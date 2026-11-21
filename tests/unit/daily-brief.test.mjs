@@ -255,3 +255,17 @@ test("runner: a failed reminder is retried next hour and reported as a failure",
   const retry = await runReminders(fakeDb(tables()), { execute: true, now: new Date("2026-11-21T09:00:00Z"), send: async () => true, env: on });
   assert.deepEqual([retry.sent, retry.failed], [1, 0]);
 });
+
+test("bulk-imported sheet history is neither a new lead nor an uncontacted reminder", () => {
+  const y = yesterdayBounds(NOW);
+  const at = new Date(y.start.getTime() + 3600e3).toISOString();
+  const old = new Date(NOW.getTime() - 3 * 24 * 3600e3).toISOString();
+  const leads = [
+    { id: "n1", source: "whatsapp", created_at: at, archived: false },
+    { id: "i1", source: "whatsapp", created_at: at, archived: false, imported_at: at },
+    { id: "u1", source: "whatsapp", created_at: old, archived: false, assigned_to: "s1", stage: "new" },
+    { id: "u2", source: "whatsapp", created_at: old, archived: false, assigned_to: "s1", stage: "new", imported_at: old },
+  ];
+  assert.equal(countNewLeads(leads, { now: NOW }).total, 1);
+  assert.deepEqual(selectUncontacted({ leads, now: NOW }).map((l) => l.lead_id), ["u1"]);
+});

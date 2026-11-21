@@ -48,6 +48,9 @@ export function isReportableLead(lead, excludedTestIds = new Set()) {
   return isCountedLead(lead) && !excludedTestIds.has(lead.id);
 }
 
+/** Rows bulk-loaded from the sales sheets (data import gate) are history, not new arrivals or open contact tasks. */
+export const isBulkImported = (lead) => Boolean(lead?.imported_at);
+
 /** [start, end) of the Dubai calendar day before `now`, plus its date key. */
 export function yesterdayBounds(now = new Date()) {
   const { start, end } = dubaiDayBounds(new Date(now.getTime() - DAY));
@@ -67,7 +70,7 @@ export function countNewLeads(leads, { now = new Date(), excludedTestIds = new S
   const prior = Object.fromEntries(CHANNELS.map((c) => [c, 0]));
   let total = 0, adLeads = 0;
   for (const lead of leads ?? []) {
-    if (!isReportableLead(lead, excludedTestIds)) continue;
+    if (!isReportableLead(lead, excludedTestIds) || isBulkImported(lead)) continue;
     const channel = channelOf(lead);
     if (inRange(lead.created_at, y.start, y.end)) {
       total += 1; byChannel[channel] += 1;
@@ -117,7 +120,7 @@ export function selectUncontacted({ leads, transfers = [], logLeadIds = new Set(
   afterHours = UNCONTACTED_AFTER_HOURS, maxAgeDays = DEFAULT_MAX_LEAD_AGE_DAYS } = {}) {
   const out = [];
   for (const lead of leads ?? []) {
-    if (!isReportableLead(lead, excludedTestIds) || !lead.assigned_to) continue;
+    if (!isReportableLead(lead, excludedTestIds) || !lead.assigned_to || isBulkImported(lead)) continue;
     const outcome = leadOutcome(lead);
     if (outcome === "won" || outcome === "lost" || lead.hold_since) continue;
     if (hasFirstContact(lead, logLeadIds)) continue;

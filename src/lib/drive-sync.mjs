@@ -165,10 +165,11 @@ export function matchLead(change, idx) {
 
 /**
  * Meta ids the sheet row carries and the OS lead still lacks. Pure. Never overwrites a non-empty OS value (a different value is a
- * conflict, winner "os"); never copies a leadgen id that another lead holds or that another row of the run already claimed.
+ * conflict, winner "os"); never copies a leadgen id that another lead holds or that another row of the run already claimed,
+ * and fills each empty column of a lead from one row of the run only (two rows matching the same lead must not both fill it).
  * Returns { set, conflicts } (set: only columns to fill).
  */
-export function planMetaIds(change, lead, idx, claimed) {
+export function planMetaIds(change, lead, idx, claimed, tag = claimTag(change.key)) {
   const want = change.meta_ids ?? {}; const set = {}; const conflicts = [];
   for (const f of META_ID_FIELDS) {
     const v = cleanMetaId(f, want[f] ?? (f === "meta_leadgen_id" ? change.identity?.leadgen : null));
@@ -178,8 +179,11 @@ export function planMetaIds(change, lead, idx, claimed) {
     if (f === "meta_leadgen_id") {
       const other = idx.byLeadgen.get(v); const ck = `leadgen:${v}`;
       if ((other && other.id !== lead.id) || (claimed.has(ck) && claimed.get(ck) !== String(lead.id))) { conflicts.push({ field: f, winner: "os", reason: "held_by_other_lead" }); continue; }
-      claimed.set(ck, String(lead.id));
     }
+    const fk = `fill:${lead.id}:${f}`;
+    if (claimed.has(fk) && claimed.get(fk) !== tag) { conflicts.push({ field: f, winner: "os", reason: "filled_by_other_row" }); continue; }
+    if (f === "meta_leadgen_id") claimed.set(`leadgen:${v}`, String(lead.id));
+    claimed.set(fk, tag);
     set[f] = v;
   }
   return { set, conflicts };
@@ -225,7 +229,7 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   }
   if (lead.archived && !cfg.allowUnarchive) return change.ids_only ? { action: "skip", reason: "marketing_no_drive_owned_content" } : { action: "hold", reason: "archived_frozen", lead_id: lead.id };
   const prev = lead.drive_sync ?? null;
-  const metaIds = planMetaIds(change, lead, idx, claimed);
+  const metaIds = planMetaIds(change, lead, idx, claimed, tag);
   const idsToFill = Object.keys(metaIds.set).length > 0;
   if (change.ids_only && !idsToFill) return metaIds.conflicts.length ? { action: "noop", reason: "meta_id_conflict", lead_id: lead.id, matched_by: m.by, conflicts: metaIds.conflicts } : { action: "skip", reason: "marketing_no_drive_owned_content" };
   if (prev?.row_hash === hash && prev?.quote_baseline && !idsToFill && !(lead.archived && cfg.allowUnarchive)) return { action: "noop", reason: "unchanged_since_last_sync", lead_id: lead.id, matched_by: m.by, ...(metaIds.conflicts.length ? { conflicts: metaIds.conflicts } : {}) };

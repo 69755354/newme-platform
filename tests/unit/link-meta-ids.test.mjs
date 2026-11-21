@@ -175,3 +175,15 @@ test("the ingest route reads the id columns, queues the late quote before any wr
   assert.match(route, /late_quote_enqueue_failed/); assert.match(route, /lateQuotes/);
   assert.ok(!/migration/i.test(readFileSync(new URL("../../src/lib/drive-sync.mjs", import.meta.url), "utf8").split("\n").filter((l) => /rpc\(|create table|alter table/i.test(l)).join("")));
 });
+
+test("two rows with different Meta ids matching the same lead: only the first fills each empty column, the second reports conflicts", () => {
+  const leads = [lead({})]; const idx = buildIndexes(leads); const claimed = new Map();
+  const a = decideChange(idsRow({ key: "A" }), idx, cfg, claimed);
+  const b = decideChange(idsRow({ key: "B", identity: { leadgen: LG2, phone_digits: "971501234567" }, meta_ids: { meta_leadgen_id: LG2, campaign_id: "444444", adset_id: "555555", ad_id: "666666" } }), idx, cfg, claimed);
+  assert.deepEqual(a.set, { meta_leadgen_id: LG, campaign_id: "111111", adset_id: "222222", ad_id: "333333" });
+  assert.equal(b.action, "noop"); assert.equal(b.set, undefined);
+  assert.deepEqual(b.conflicts.map((c) => c.reason), ["filled_by_other_row", "filled_by_other_row", "filled_by_other_row", "filled_by_other_row"]);
+  // the reservation survives into the next batch of the same run through the carried claims
+  const plan = planBatch([idsRow({ key: "C", identity: { leadgen: LG2, phone_digits: "971501234567" }, meta_ids: { ad_id: "666666" } })], leads, cfg, Object.fromEntries(claimed));
+  assert.equal(plan.decisions[0].d.set?.ad_id, undefined);
+});

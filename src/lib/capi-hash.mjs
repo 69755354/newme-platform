@@ -4,7 +4,11 @@ export const sha256 = (value) => createHash("sha256").update(value).digest("hex"
 
 /** UAE-aware phone digits, the single normalization used by every Meta path. */
 export function normalizedPhone(phone) {
-  const digits = String(phone).replace(/\D/g, "");
+  let digits = String(phone).replace(/\D/g, "");
+  // 00971... (international dialling prefix) is 971...
+  if (/^00\d{10,}$/.test(digits)) digits = digits.slice(2);
+  // +971 0501234567: people keep the local leading 0 after the country code; Meta wants it dropped.
+  if (/^9710\d{9}$/.test(digits)) return `971${digits.slice(4)}`;
   if (/^0\d{9}$/.test(digits)) return `971${digits.slice(1)}`;
   if (/^\d{9}$/.test(digits)) return `971${digits}`;
   return digits;

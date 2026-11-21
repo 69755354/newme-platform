@@ -1,0 +1,13 @@
+[Unit]
+Description=Mondays 09:10 Asia/Dubai: weekly ad review
+# STATUS: after-flag. The installer only installs this timer; it never enables it.
+# Switch on (two steps): echo WEEKLY_AD_REVIEW_ENABLED=true > /etc/newme/weekly-ad-review.env (mode 600), then
+# systemctl enable --now newme-weekly-ad-review.timer. Off: systemctl disable --now newme-weekly-ad-review.timer.
+
+[Timer]
+OnCalendar=Mon *-*-* 09:10:00 Asia/Dubai
+AccuracySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

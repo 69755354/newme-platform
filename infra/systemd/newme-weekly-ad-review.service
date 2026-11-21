@@ -1,0 +1,28 @@
+[Unit]
+Description=NewMe weekly ad review: read-only report of the last 7 days per ad, WhatsApp summary and NAS copy (suggestions only)
+After=network-online.target
+Wants=network-online.target
+OnFailure=newme-unit-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/newme/newme-runtime.env
+# The switch lives here: WEEKLY_AD_REVIEW_ENABLED=true. Absent or anything else = the run does nothing.
+EnvironmentFile=-/etc/newme/weekly-ad-review.env
+WorkingDirectory=/opt/newme/current
+ExecStart=/usr/bin/node scripts/weekly-ad-review.mjs --execute
+TimeoutStartSec=900
+Nice=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/newme-ad-review -/var/lib/newme-alerts
+StateDirectory=newme-ad-review
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+LockPersonality=true

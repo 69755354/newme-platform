@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Prepared operator tool. Default is read-only; no scheduler is installed here.
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { realpathSync as realpathOf } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { attemptCapiDelivery, kindOfOutboxRow, LEAD_DELIVERY, OUTBOX_KINDS, WA_QUOTE_DELIVERY } from "../src/lib/meta-capi-delivery.ts";
 import { sendWhatsAppCapiPayload } from "../src/lib/whatsapp-capi.mjs";
@@ -54,7 +55,10 @@ export async function retryCapiDeliveries(db, { execute = false, limit = 20, now
   return summary;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) {
   const args = process.argv.slice(2);
   if (args.some((arg) => arg !== "--execute")) {
     console.error("Usage: node scripts/meta-capi-retry.mjs [--execute] (default: read-only)");

@@ -4,7 +4,7 @@
 // POST /api/sync/drive-ingest   body: { run_id, dry_run, changes: [ ...normalized sheet rows... ] }
 // The reader script (scripts/drive-to-os-sync.mjs) reads the Drive sheets (read-only), normalises rows and sends them here;
 // this route is the only writer. It matches rows to leads, applies the field-ownership rules of src/lib/drive-sync.mjs
-// (Drive owns follow-up text, next action, lead quality + reason; OS owns ids, source, ad ids, assignment, stage, milestones,
+// (Drive owns follow-up text, next action, lead quality + reason; OS owns ids, source, ad ids, assignment, stage, milestones - the Meta ids are only FILLED from the sheet while empty, never overwritten -
 // contract; empty values never overwrite; won/lost stages untouched; archived leads stay archived), writes a note per applied
 // change into `activities` (metadata.source = drive_sync, no migration) and appends one JSONL line per decision to the sync log.
 // Idempotent: a row whose Drive-owned content did not change since the last sync is a no-op.
@@ -15,14 +15,14 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logger } from "@/lib/logger";
 import { clientIdentifier, consumeRateLimit } from "@/lib/rate-limit";
 import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
-import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueMetaCrmEventForLead, enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
 import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 import { SYNC_SOURCE, bearerToken, claimTag, maskId, mergeDriveSync, planBatch, resolveConfig, tokenMatches, validateChange, validateClaims, writeCost } from "@/lib/drive-sync.mjs";
 
 export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 2_000_000;
 const CALLS_PER_MINUTE = 30;
-const LEAD_COLUMNS = "id, import_fingerprint, meta_leadgen_id, phone, email, archived, stage, final_status, quality, quotation_value, next_action, next_followup_date, poor_reason, updated_at, drive_sync:raw_import_data->drive_sync";
+const LEAD_COLUMNS = "id, import_fingerprint, meta_leadgen_id, campaign_id, adset_id, ad_id, phone, email, archived, stage, final_status, quality, quotation_value, next_action, next_followup_date, poor_reason, updated_at, drive_sync:raw_import_data->drive_sync";
 const SIDE_EFFECT_TABLES = ["notifications", "tasks", "meta_crm_stage_events", "whatsapp_capi_events"] as const;
 // A fresh sheet quote is the one allowed side effect: at most one form-lead event and two WhatsApp queue rows per quote.
 const QUOTE_EVENT_ROWS: Record<string, number> = { meta_crm_stage_events: 1, whatsapp_capi_events: 2 };
@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
     const applied = { inserted: 0, updated: 0, notes: 0, failed: 0 };
     let quotesFired = 0;
     let stagesAdvanced = 0;
+    let lateQuotes = 0;
     for (const { change, d } of plan.decisions) {
       const k = maskId(change.key);
       try {
@@ -124,6 +125,15 @@ export async function POST(request: NextRequest) {
           applied.inserted += 1;
           log({ event: "insert", key: k, sheet: change.sheet, row: change.row, lead_id: data.id });
         } else if (d.action === "update") {
+          // The lead just gained its Meta lead id and already has a dated quote inside Meta's window: queue the form-lead quote
+          // event first (idempotent per lead and stage, stamped with the quote's own time). A failure stops the row before any
+          // write, so the next run retries the whole row; the event is never queued twice.
+          if (d.quote_late && typeof d.set?.meta_leadgen_id === "string") {
+            const queued = await enqueueMetaCrmStageEvent(supabaseAdmin, { id: d.lead_id, meta_leadgen_id: d.set.meta_leadgen_id }, "quotation_submitted", d.quote_late.eventTime);
+            if (queued !== "queued") throw new Error("late_quote_enqueue_failed");
+            lateQuotes += 1;
+            log({ event: "quote_after_link", key: k, lead_id: d.lead_id, event_time: d.quote_late.eventTime });
+          }
           const patch: Json = { ...d.set };
           if (d.unarchive) Object.assign(patch, { archived: false, archived_at: null, archive_batch_id: null, archive_reason: null });
           if (Object.keys(patch).length) {
@@ -169,7 +179,7 @@ export async function POST(request: NextRequest) {
       }
     }
     const after = await sideEffectCounts();
-    const sideEffectsChanged = SIDE_EFFECT_TABLES.filter((t) => { const grown = after[t] - before[t]; return grown < 0 || grown > (QUOTE_EVENT_ROWS[t] ?? 0) * quotesFired; });
+    const sideEffectsChanged = SIDE_EFFECT_TABLES.filter((t) => { const grown = after[t] - before[t]; return grown < 0 || grown > (QUOTE_EVENT_ROWS[t] ?? 0) * quotesFired + (t === "meta_crm_stage_events" ? lateQuotes : 0); });
     log({ event: "batch_end", applied, stages_advanced: stagesAdvanced, side_effects_changed: sideEffectsChanged });
     return reply({ ok: applied.failed === 0 && sideEffectsChanged.length === 0, dry_run: false, counts: plan.counts, applied, stages_advanced: stagesAdvanced, side_effects: { before, after, changed: sideEffectsChanged }, decisions: summary, claims: plan.claims }, applied.failed ? 207 : 200);
   } catch (err) {

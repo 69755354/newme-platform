@@ -119,7 +119,7 @@ export async function runSync({ argv = [], env = process.env, deps = {} } = {}) 
     } else if (!args.offline) {
       if (!token) { anomalies.push("DRIVE_SYNC_INGEST_TOKEN not set: cannot ask the OS for a plan"); }
       else {
-        const all = []; let cnt = { read: 0, matched: 0, inserted: 0, would_insert: 0, updated: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0 };
+        const all = []; let cnt = { read: 0, matched: 0, inserted: 0, would_insert: 0, updated: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0, ids_leadgen: 0, ids_ads: 0, id_conflicts: 0, quotes_after_link: 0, quotes_not_sendable: 0 };
         let failed = false; let claims = {}; // claimed leads / reserved new people carried from batch to batch
         for (let i = 0; i < changes.length; i += args.batch) {
           const { status, json } = await call({ run_id: runId, dry_run: true, changes: changes.slice(i, i + args.batch), claims });
@@ -155,6 +155,7 @@ export async function runSync({ argv = [], env = process.env, deps = {} } = {}) 
       const lines = [];
       lines.push(`NEWME Drive -> OS sync report`, `run ${runId}  at ${stamp}  mode ${args.mode}  os-state ${osState}`);
       lines.push("", "Counts", `  read      ${counts.read}`, `  matched   ${counts.matched}`, `  inserted  ${counts.inserted}${args.mode === "apply" ? "" : " (planned)"}`, `  updated   ${counts.updated}${args.mode === "apply" ? "" : " (planned)"}`, `  unchanged ${counts.noop}`, `  skipped   ${counts.skipped}`, `  held      ${counts.held}${counts.would_insert ? ` (of which ${counts.would_insert} would be inserts; inserts are disabled)` : ""}`, `  conflicts ${counts.conflicts}`, `  writes    ${counts.writes} (cap ${args.maxWrites})`);
+      lines.push("", "Meta ids from the sheets (only empty OS columns are filled; counts are leads)", `  would gain Meta lead id        ${counts.ids_leadgen ?? 0}`, `  would gain campaign/adset/ad   ${counts.ids_ads ?? 0}`, `  id conflicts (OS value kept)   ${counts.id_conflicts ?? 0}`, `  quote events after linking     ${counts.quotes_after_link ?? 0}`, `  quotes recorded not sendable   ${counts.quotes_not_sendable ?? 0}`);
       if (applied) lines.push(`  applied   inserted ${applied.inserted}, updated ${applied.updated}, notes ${applied.notes}, failed ${applied.failed}`);
       lines.push("", "Rows read per tab"); for (const [k, v] of Object.entries(perSheet)) lines.push(`  ${k}: ${v.read}${v.failed ? " (read failed)" : v.skipped_tab ? " (columns missing)" : ""}`);
       const quiet = (d) => d.reason === "marketing_no_drive_owned_content";

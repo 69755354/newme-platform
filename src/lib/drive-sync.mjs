@@ -80,6 +80,15 @@ export const moneyNumber = (raw) => {
 };
 export const isQuoteReported = (change) => QUOTE_STAGES.includes(key(change?.opp_stage)) && moneyNumber(change?.quote_value) !== null;
 export const OS_OWNED = Object.freeze(["id", "source", "ad_id", "campaign_id", "meta_leadgen_id", "assigned_to", "stage", "final_status", "milestones", "contract"]);
+// Narrow exception to OS ownership of the Meta ids (link-meta-ids): a sheet row that carries the Meta lead id (AJ META-... / AK l:...)
+// or the campaign / adset / ad ids fills them on the OS lead ONLY while the OS value is empty. A non-empty OS value is never
+// overwritten (a different one is reported as a conflict), and a leadgen id already held by another lead is never copied (unique index).
+// The columns exist (no migration) and no trigger guards them for the service-role writer (only ctwa_clid / wa_* are guarded).
+export const META_ID_FIELDS = Object.freeze(["meta_leadgen_id", "campaign_id", "adset_id", "ad_id"]);
+export const META_ID_AD_FIELDS = Object.freeze(["campaign_id", "adset_id", "ad_id"]);
+const META_ID_RE = { meta_leadgen_id: /^[1-9]\d{7,31}$/, campaign_id: /^\d{5,32}$/, adset_id: /^\d{5,32}$/, ad_id: /^\d{5,32}$/ };
+/** "l:123" / "c:123" / "as:123" / "ag:123" / "123" -> "123"; anything that is not a plain numeric Meta id -> null. */
+export const cleanMetaId = (field, raw) => { const t = norm(raw).replace(/^(l|c|as|ag):/i, ""); return META_ID_RE[field]?.test(t) ? t : null; };
 
 export function tokenMatches(provided, expected) {
   if (typeof expected !== "string" || expected.length < MIN_TOKEN_LENGTH) return false;
@@ -124,6 +133,8 @@ export function validateChange(c) {
   if (c.sheet_owner != null && (typeof c.sheet_owner !== "string" || c.sheet_owner.length > 60)) return "bad_sheet_owner";
   for (const f of ["followup_text", "contact_note"]) if (c[f] != null && (typeof c[f] !== "string" || c[f].length > 8000)) return `bad_${f}`;
   if (c.identity != null && typeof c.identity !== "object") return "bad_identity";
+  if (c.meta_ids != null) { if (typeof c.meta_ids !== "object" || Array.isArray(c.meta_ids)) return "bad_meta_ids"; for (const v of Object.values(c.meta_ids)) if (v != null && (typeof v !== "string" || v.length > 64)) return "bad_meta_ids"; }
+  if (c.quote_at != null && (typeof c.quote_at !== "string" || !Number.isFinite(Date.parse(c.quote_at)))) return "bad_quote_at";
   return null;
 }
 
@@ -153,6 +164,28 @@ export function matchLead(change, idx) {
 }
 
 /**
+ * Meta ids the sheet row carries and the OS lead still lacks. Pure. Never overwrites a non-empty OS value (a different value is a
+ * conflict, winner "os"); never copies a leadgen id that another lead holds or that another row of the run already claimed.
+ * Returns { set, conflicts } (set: only columns to fill).
+ */
+export function planMetaIds(change, lead, idx, claimed) {
+  const want = change.meta_ids ?? {}; const set = {}; const conflicts = [];
+  for (const f of META_ID_FIELDS) {
+    const v = cleanMetaId(f, want[f] ?? (f === "meta_leadgen_id" ? change.identity?.leadgen : null));
+    if (!v) continue;
+    const cur = norm(lead[f]);
+    if (cur) { if (cur !== v) conflicts.push({ field: f, winner: "os" }); continue; }
+    if (f === "meta_leadgen_id") {
+      const other = idx.byLeadgen.get(v); const ck = `leadgen:${v}`;
+      if ((other && other.id !== lead.id) || (claimed.has(ck) && claimed.get(ck) !== String(lead.id))) { conflicts.push({ field: f, winner: "os", reason: "held_by_other_lead" }); continue; }
+      claimed.set(ck, String(lead.id));
+    }
+    set[f] = v;
+  }
+  return { set, conflicts };
+}
+
+/**
  * Decide what to do with one change. Pure. `claimed` (Map leadId / identity tag -> claimTag(key)) stops two sheet rows from
  * writing the same lead, and two rows of the same new person from both being inserted.
  * Returns { action: insert|update|noop|skip|hold, reason?, set?, raw_patch?, notes?, conflicts?, fields?, lead_id?, unarchive? }.
@@ -161,7 +194,8 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
   if (change.skip_reason) return { action: "skip", reason: change.skip_reason };
   if (change.hold_reason) return { action: "hold", reason: change.hold_reason };
   const m = matchLead(change, idx);
-  if (m.ambiguous) return { action: "hold", reason: `ambiguous_match_${m.ambiguous}` };
+  if (change.ids_only && !m.lead) return { action: "skip", reason: "marketing_no_drive_owned_content" }; // form row with only ids: nothing to insert or hold
+  if (m.ambiguous) return change.ids_only ? { action: "skip", reason: "marketing_no_drive_owned_content" } : { action: "hold", reason: `ambiguous_match_${m.ambiguous}` };
   const hash = rowHashOf(change);
   const owned = change.owned ?? {};
   const tag = claimTag(change.key);
@@ -183,11 +217,18 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
     return { action: "insert", row_hash: hash, set, notes: notesOf(change), raw_patch: rawPatchOf(change, hash, null, {}, quoted ? { state: "baseline_skipped", value: set.quotation_value } : { baseline: true }), claim_tag: tag };
   }
   const lead = m.lead;
-  if (claimed.has(lead.id) && claimed.get(lead.id) !== tag) return { action: "hold", reason: "ambiguous_two_rows_same_lead", lead_id: lead.id };
-  claimed.set(lead.id, tag);
-  if (lead.archived && !cfg.allowUnarchive) return { action: "hold", reason: "archived_frozen", lead_id: lead.id };
+  // A row that only carries Meta ids (market sheet form row without Drive-owned text) never takes the lead's claim: the
+  // lead's own register / sales row stays free to write its fields in the same run.
+  if (!change.ids_only) {
+    if (claimed.has(lead.id) && claimed.get(lead.id) !== tag) return { action: "hold", reason: "ambiguous_two_rows_same_lead", lead_id: lead.id };
+    claimed.set(lead.id, tag);
+  }
+  if (lead.archived && !cfg.allowUnarchive) return change.ids_only ? { action: "skip", reason: "marketing_no_drive_owned_content" } : { action: "hold", reason: "archived_frozen", lead_id: lead.id };
   const prev = lead.drive_sync ?? null;
-  if (prev?.row_hash === hash && prev?.quote_baseline && !(lead.archived && cfg.allowUnarchive)) return { action: "noop", reason: "unchanged_since_last_sync", lead_id: lead.id, matched_by: m.by };
+  const metaIds = planMetaIds(change, lead, idx, claimed);
+  const idsToFill = Object.keys(metaIds.set).length > 0;
+  if (change.ids_only && !idsToFill) return metaIds.conflicts.length ? { action: "noop", reason: "meta_id_conflict", lead_id: lead.id, matched_by: m.by, conflicts: metaIds.conflicts } : { action: "skip", reason: "marketing_no_drive_owned_content" };
+  if (prev?.row_hash === hash && prev?.quote_baseline && !idsToFill && !(lead.archived && cfg.allowUnarchive)) return { action: "noop", reason: "unchanged_since_last_sync", lead_id: lead.id, matched_by: m.by, ...(metaIds.conflicts.length ? { conflicts: metaIds.conflicts } : {}) };
 
   const sheetAt = change.source_modified_at ? Date.parse(change.source_modified_at) : null;
   const osAt = lead.updated_at ? Date.parse(lead.updated_at) : null;
@@ -235,18 +276,36 @@ export function decideChange(change, idx, cfg, claimed = new Map()) {
       else quotePatch = { state: `skipped_${verdict.reason}`, value: amount };
     } else quotePatch = { value: amount };
   }
-  const raw_patch = rawPatchOf(change, hash, prev, osWon, quotePatch);
+  // Meta ids (only ever filling empty OS columns), then the late quote event: a lead that has just gained its leadgen id AND
+  // already carries a quote value enqueues the form-lead quote event once, stamped with the quote's own time, and only while
+  // that time is inside Meta's 7-day window; an older (or undated) quote is recorded as not sendable, never sent stale.
+  Object.assign(set, metaIds.set); fields.push(...Object.keys(metaIds.set)); conflicts.push(...metaIds.conflicts);
+  let quoteLate = null; let quoteMeta = null;
+  if (metaIds.set.meta_leadgen_id && !prev?.quote_meta && !isFrozenFinal(lead) && !lead.archived) {
+    const amount = moneyNumber(change.quote_value) ?? (Number(lead.quotation_value) > 0 ? Number(lead.quotation_value) : null);
+    if (amount && quote) quoteMeta = { state: "sent_with_quote", value: amount }; // the ordinary quote path sends it right after this write
+    else if (amount) {
+      const at = change.quote_at ?? prev?.quote_at ?? null;
+      if (!at) quoteMeta = { state: "not_sendable_no_quote_date", value: amount };
+      else {
+        const verdict = planSheetQuote({ lead, sheet: { amount, quotedAtIso: at }, firstSeenIso: at, nowMs: cfg.nowMs ?? Date.now() });
+        if (verdict.action === "queue") { quoteLate = { value: verdict.value, currency: verdict.currency, eventTime: verdict.eventTime }; quoteMeta = { state: "sent_after_link", value: amount, at: new Date(verdict.eventTime * 1000).toISOString() }; }
+        else quoteMeta = { state: `not_sendable_${verdict.reason}`, value: amount };
+      }
+    }
+  }
+  const raw_patch = rawPatchOf(change, hash, prev, osWon, quotePatch, { ids_filled: Object.keys(metaIds.set), quote_meta: quoteMeta?.state, quote_meta_value: quoteMeta?.value, quote_meta_at: quoteMeta?.at });
   const unarchive = !!(lead.archived && cfg.allowUnarchive);
   // A write happens whenever the row changed since the last sync: at least the sync state and the note go in.
-  return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash, ...(quote ? { quote } : {}), ...(stageAdvance ? { stage_advance: true } : {}) };
+  return { action: "update", lead_id: lead.id, matched_by: m.by, set, fields, conflicts, notes, raw_patch, unarchive, row_hash: hash, ...(quote ? { quote } : {}), ...(stageAdvance ? { stage_advance: true } : {}), ...(idsToFill ? { ids_gained: Object.keys(metaIds.set) } : {}), ...(quoteLate ? { quote_late: quoteLate } : {}), ...(quoteMeta ? { quote_meta_state: quoteMeta.state } : {}) };
 }
 
 function notesOf(change) {
   return nonEmpty(change.followup_text) ? [{ import_key: `${change.key}/daily-feedback`, type: "note", content: `[Sheet sales feedback] ${norm(change.followup_text)}`.slice(0, 4000) }] : [];
 }
-function rawPatchOf(change, hash, prev, osWon, q = {}) {
+function rawPatchOf(change, hash, prev, osWon, q = {}, x = {}) {
   const owned = change.owned ?? {};
-  return { drive_sync: mergeDriveSync(prev, { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason, next_followup_date: owned.next_followup_date, contact_days_filled: change.contact_days_filled, first_contact_at: change.first_contact_at, contact_rule: change.contact_rule, sheet_owner: change.sheet_owner, source_modified_at: change.source_modified_at, os_won: osWon, quote_baseline: q.baseline === true || q.state !== undefined ? true : undefined, quote_state: q.state, quote_value: q.value, quote_at: q.at }) };
+  return { drive_sync: mergeDriveSync(prev, { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason, next_followup_date: owned.next_followup_date, contact_days_filled: change.contact_days_filled, first_contact_at: change.first_contact_at, contact_rule: change.contact_rule, sheet_owner: change.sheet_owner, source_modified_at: change.source_modified_at, os_won: osWon, quote_baseline: q.baseline === true || q.state !== undefined ? true : undefined, quote_state: q.state, quote_value: q.value, quote_at: q.at ?? change.quote_at, ids_filled: x.ids_filled?.length ? x.ids_filled : undefined, quote_meta: x.quote_meta, quote_meta_value: x.quote_meta_value, quote_meta_at: x.quote_meta_at }) };
 }
 /** Merge new drive_sync metadata over the stored one: a blank sheet cell keeps the stored value instead of erasing it. */
 export function mergeDriveSync(prev, patch) {
@@ -291,8 +350,13 @@ export function writeCost(d) {
 export function planBatch(changes, leads, cfg, claims = null) {
   const idx = buildIndexes(leads); const claimed = new Map(Object.entries(claims ?? {}));
   const decisions = changes.map((c) => ({ change: c, d: decideChange(c, idx, cfg, claimed) }));
-  const counts = { read: changes.length, matched: 0, inserted: 0, would_insert: 0, updated: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0 };
+  const counts = { read: changes.length, matched: 0, inserted: 0, would_insert: 0, updated: 0, noop: 0, skipped: 0, held: 0, conflicts: 0, writes: 0, ids_leadgen: 0, ids_ads: 0, id_conflicts: 0, quotes_after_link: 0, quotes_not_sendable: 0 };
   for (const { d } of decisions) {
+    if (d.ids_gained?.includes("meta_leadgen_id")) counts.ids_leadgen += 1;
+    if (d.ids_gained?.some((f) => META_ID_AD_FIELDS.includes(f))) counts.ids_ads += 1;
+    counts.id_conflicts += (d.conflicts ?? []).filter((c) => META_ID_FIELDS.includes(c.field)).length;
+    if (d.quote_late) counts.quotes_after_link += 1;
+    if (String(d.quote_meta_state ?? "").startsWith("not_sendable")) counts.quotes_not_sendable += 1;
     if (d.lead_id) counts.matched += 1;
     if (d.action === "insert") counts.inserted += 1; else if (d.action === "update") counts.updated += 1; else if (d.action === "noop") counts.noop += 1; else if (d.action === "skip") counts.skipped += 1; else if (d.action === "hold") { counts.held += 1; if (d.would === "insert") counts.would_insert += 1; }
     counts.conflicts += d.conflicts?.length ?? 0; counts.writes += writeCost(d);

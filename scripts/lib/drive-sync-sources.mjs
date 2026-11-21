@@ -1,6 +1,6 @@
 // Drive sheets -> OS sync (S29): which tabs are read and how a sheet row becomes a normalized change.
 // READ ONLY. The sheet 'Lead Quality Feedback' of the market file is a script-generated report: it is never read (FORBIDDEN_TABS).
-import { CHANNEL_SOURCE, OS_SOURCES, QUALITY_MAP, fingerprintOf, maskId, norm, normalizePhone, parseSheetTime, phoneDigits, emailKey, sha } from "../../src/lib/drive-sync.mjs";
+import { cleanMetaId, CHANNEL_SOURCE, OS_SOURCES, QUALITY_MAP, fingerprintOf, maskId, norm, normalizePhone, parseSheetTime, phoneDigits, emailKey, sha } from "../../src/lib/drive-sync.mjs";
 
 export const FORBIDDEN_TABS = [/lead quality feedback/i];
 const SALES_ID = { faizan: "1GUP1mpCAm74XHi4m6WEJdQxKQZ--3OSoVIbmunJG4_w", allocation: "1t8ZbfF8hmv51KcNfWuwLPPII1IGMc6AWJgfxlCAew7w", assem: "1LTcddlbx_63rQ1zPVLsfdRqxhDPlmwpXvNCrJsNILyc", mohammed: "15b7Og5w6I55lZfOdFISC7pb12zPibfiLNVo1_B5D9ss", market: "118T8lf6RUemAz9YQezJ-sez4DaOtv1P6sxInpucDH8g" };
@@ -42,6 +42,8 @@ const PREFIX_CHANNEL = { META: "meta_lead_form", WA: "whatsapp", OS: "os_registe
 const strip = (raw, pfx) => { const s = norm(raw); return s.startsWith(pfx) ? s.slice(pfx.length) : (s || null); };
 const lc = (v) => norm(v).toLowerCase();
 const dubaiDate = (iso) => (iso ? new Date(Date.parse(iso) + 4 * 3_600_000).toISOString().slice(0, 10) : null);
+// Only plain numeric Meta ids travel with a change; the planner repeats the check and only ever fills empty OS columns.
+const metaIdsOf = (o) => { const out = {}; for (const [f, v] of Object.entries(o)) { const c = cleanMetaId(f, v); if (c) out[f] = c; } return Object.keys(out).length ? out : undefined; };
 const DAYS = ["Day 1 feedback", "Day 2 feedback", "Day 3 feedback", "Day 4 feedback", "Day 5 feedback"];
 const FEEDBACK_EXTRA = ["Later follow-ups / previous records", "Later follow-ups / B2B notes", "Follow-up notes", "Previous records", "Sales feedback"];
 const DISPATCH = { delivered: "import", unassigned: "import", "review phone": "import", "missing intake data": "import", "": "import", "duplicate review": "hold", "duplicate - not dispatched": "skip_duplicate", "excluded - test": "skip_test" };
@@ -97,6 +99,8 @@ export function buildLeadChanges(tabs, modified) {
       // Optional columns (not in `required`): the register's sales-reported stage and quote amount (AED).
       opp_stage: norm(r?.["Opportunity stage"]) || undefined,
       quote_value: norm(r?.["Quote value AED"]) || norm(s?.["Quote value AED"]) || norm(s?.["Quote amount AED"]) || undefined,
+      quote_at: parseSheetTime(norm(r?.["Quote date"]) || norm(r?.["Quoted at"]) || norm(s?.["Quote date"]) || norm(s?.["Quoted at"])).iso || undefined, // optional: when the quote was made
+      meta_ids: metaIdsOf({ meta_leadgen_id: leadgenCand, campaign_id: strip(r?.["Campaign ID"], "c:"), adset_id: strip(r?.["Adset ID"], "as:"), ad_id: strip(r?.["Ad ID"], "ag:") }),
       insertable,
       insert_fields: { customer_name: norm(r?.Client) || norm(s?.Client) || undefined, phone: phoneN?.e164 || phoneRaw || undefined, email: email || undefined, source: OS_SOURCES.has(channel) ? channel : "unknown", source_channel: master ? PREFIX_CHANNEL[master[1]] : "legacy_sheet", meta_leadgen_id: leadgenCand || undefined, campaign_id: strip(r?.["Campaign ID"], "c:") || undefined, adset_id: strip(r?.["Adset ID"], "as:") || undefined, ad_id: strip(r?.["Ad ID"], "ag:") || undefined, campaign_name: norm(r?.Campaign) || undefined, ad_name: norm(r?.Ad) || undefined, location: norm(r?.Location) || norm(s?.Area) || undefined, notes: pick("Requirement / Context") || undefined, created_at: received.iso || undefined },
       owner_alias: lc(r?.["Assigned to"]) || undefined,
@@ -146,7 +150,11 @@ export function buildMarketingChanges(tabs, modified) {
       const base = { sheet: k, row: r.__row, refs: [{ sheet: k, row: r.__row }], source_modified_at: modified[k] ?? null };
       if (!key) { out.push({ ...base, key: `${k}#${r.__row}`, skip_reason: "marketing_row_without_id_or_phone", identity: {}, owned: {} }); continue; }
       const c = { ...base, key, identity: { fingerprint: hasId ? fingerprintOf(key) : undefined, leadgen: hasId ? id : null, phone_digits: pDigits ?? null, email: emailKey(r.email) }, owned: {}, followup_text: text, insertable: !hasId };
-      if (!text) c.skip_reason = "marketing_no_drive_owned_content";
+      // A form row with a Meta id also carries the ad ids: it can fill them (and the leadgen id) on a lead matched by phone / e-mail.
+      const metaIds = hasId ? metaIdsOf({ meta_leadgen_id: id, campaign_id: r.campaign_id, adset_id: r.adset_id, ad_id: r.ad_id }) : undefined;
+      if (metaIds) c.meta_ids = metaIds;
+      if (!text && metaIds) c.ids_only = true; // not skipped up front: the planner skips it unless a matched lead lacks one of the ids
+      else if (!text) c.skip_reason = "marketing_no_drive_owned_content";
       else if (!hasId) c.insert_fields = { customer_name: norm(r.full_name) || undefined, phone: phoneN?.e164 || phoneRaw || undefined, email: emailKey(r.email) || undefined, source: "whatsapp", source_channel: "marketing_sheet" };
       out.push(c);
     }

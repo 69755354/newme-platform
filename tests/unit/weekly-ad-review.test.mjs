@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
-  buildWeeklyAdReview, reviewCsv, reviewMessage, reviewText, reviewWindow, MESSAGE_MAX_CHARS, quoteAmounts,
+  buildWeeklyAdReview, parseSpendFile, reviewCsv, reviewMessage, reviewText, reviewWindow, MESSAGE_MAX_CHARS, quoteAmounts,
 } from "../../src/lib/weekly-ad-review.mjs";
 import { normalizedPhone } from "../../src/lib/capi-hash.mjs";
 import { buildMetaCapiLeadPayload } from "../../src/lib/meta-capi.ts";
@@ -108,4 +110,95 @@ test("runner: switched off does nothing; dry run touches nothing", async () => {
   const { main } = await import("../../scripts/weekly-ad-review.mjs");
   assert.equal(await main(["--execute"], {}), 0);
   assert.equal(await main(["--bogus"], {}), 2);
+});
+
+// ---- spend file (Meta connector) ----
+const spendFile = JSON.parse(readFileSync(new URL("../fixtures/weekly-ad-review-spend-file.json", import.meta.url), "utf8"));
+const metaRows = parseSpendFile(spendFile).rows;
+const { spendRows: _unusedSpendRows, ...leadData } = fixture;
+
+test("spend file: matches by ad_id even when the Meta name differs; spend table is not used", () => {
+  const r = buildWeeklyAdReview({ window, ...leadData, spendRows: [{ ad_name: "Promo B", amount: 99999 }], metaRows });
+  const a = r.rows.find((x) => x.ad_id === "111");
+  assert.deepEqual([a.spend, a.leads, a.cpl, a.good_leads, a.quotes], [600, 4, 150, 3, 2]);
+  assert.equal(a.cost_per_good, 200); assert.equal(a.cost_per_quote, 300);
+  assert.deepEqual([a.meta_leads, a.meta_conversations, a.clicks, a.impressions], [1, 7, 900, 40000]);
+  assert.equal(r.rows.find((x) => x.ad_id === "222").spend, 900);
+  const old = r.rows.find((x) => x.ad_id === "999");
+  assert.deepEqual([old.leads, old.spend], [0, 120]);
+  assert.equal(r.totals.spend, 1620);
+  assert.equal(r.totals.cost_per_good, 540); assert.equal(r.totals.cost_per_quote, 810);
+  assert.equal(r.spend_source, "meta_file");
+});
+
+test("spend file: falls back to ad name when a lead has no ad_id", () => {
+  const leads = [{ id: "n1", ad_name: "Promo B", quality: "good", created_at: "2026-11-18T08:00:00Z", source: "fb", archived: false }];
+  const r = buildWeeklyAdReview({ window, leads, quotations: [], metaRows });
+  const row = r.rows.find((x) => x.leads === 1);
+  assert.equal(row.spend, 900); assert.equal(row.meta_conversations, 3);
+});
+
+test("spend file: gap line shows Meta reports versus OS leads", () => {
+  const r = buildWeeklyAdReview({ window, ...leadData, metaRows });
+  assert.deepEqual(r.meta, { leads: 1, conversations: 10, os_leads: 7, gap: 4 });
+  const msg = reviewMessage(r);
+  assert.match(msg, /Meta报告线索1条、WhatsApp对话10条，OS记录7条，有4条没进OS/);
+  assert.ok(msg.length <= MESSAGE_MAX_CHARS && !msg.includes("\n"));
+  assert.match(reviewText(r), /有4条没进OS/);
+  const none = buildWeeklyAdReview({ window, ...leadData, metaRows: metaRows.map((m) => ({ ...m, meta_leads: 0, messaging_conversations: 0 })) });
+  assert.match(reviewMessage(none), /没有缺口/);
+});
+
+test("spend file: suggestions use cost per good lead and cost per quote, suggestions only", () => {
+  const r = buildWeeklyAdReview({ window, ...leadData, metaRows });
+  const all = r.suggestions.join("\n");
+  assert.match(all, /可以加预算：「Villa tour A.*每条好线索200.*每个报价300/);
+  assert.match(all, /建议暂停或减量：「Promo B.*花了900/);
+  assert.match(reviewText(r), /每条好线索 540.*每个报价 810/);
+  assert.match(reviewText(r), /不会自动改任何投放/);
+  assert.ok(r.suggestions.length >= 3 && r.suggestions.length <= 5);
+});
+
+test("spend file: CSV carries the new columns", () => {
+  const csv = reviewCsv(buildWeeklyAdReview({ window, ...leadData, metaRows }));
+  assert.match(csv.split("\r\n")[0], /每条好线索成本\(AED\),每个报价成本\(AED\),Meta报告线索,Meta报告WhatsApp对话,点击,展示$/);
+  assert.match(csv, /Villa tour A \(111\),111,Villas,600,4,150,3,0,2,70000,,200,300,1,7,900,40000/);
+});
+
+test("spend file validation: strict, rejects with a reason and no row contents", () => {
+  const ok = { ad_id: "1", ad_name: "A", campaign_name: "C", adset_name: "S", spend: 1, currency: "AED", impressions: 1, clicks: 1, meta_leads: 0, messaging_conversations: 0 };
+  assert.equal(parseSpendFile([ok]).rows.length, 1);
+  assert.ok(parseSpendFile([]).rows);
+  const bad = [
+    ["not array", { a: 1 }], ["row not object", [1]], ["no ad_id", [{ ...ok, ad_id: "" }]], ["odd ad_id", [{ ...ok, ad_id: "1; drop" }]],
+    ["negative spend", [{ ...ok, spend: -1 }]], ["string spend", [{ ...ok, spend: "5" }]], ["NaN spend", [{ ...ok, spend: NaN }]],
+    ["missing spend", [{ ...ok, spend: undefined }]], ["negative clicks", [{ ...ok, clicks: -3 }]], ["currency USD", [{ ...ok, currency: "USD" }]],
+    ["no currency", [{ ...ok, currency: undefined }]], ["duplicate", [ok, ok]], ["long name", [{ ...ok, ad_name: "x".repeat(301) }]],
+    ["501 rows", Array.from({ length: 501 }, (_, i) => ({ ...ok, ad_id: String(i) }))],
+  ];
+  for (const [label, data] of bad) assert.ok(parseSpendFile(data).error, label);
+  assert.ok(parseSpendFile(Array.from({ length: 500 }, (_, i) => ({ ...ok, ad_id: String(i) }))).rows);
+  assert.ok(!/secret-name/.test(parseSpendFile([{ ...ok, ad_name: "secret-name", spend: -1 }]).error));
+});
+
+test("runner: --spend-file validation exits 2 before touching the database; arguments checked", async () => {
+  const { main, parseArgs } = await import("../../scripts/weekly-ad-review.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "adr-"));
+  const badFile = join(dir, "bad.json");
+  writeFileSync(badFile, JSON.stringify([{ ad_id: "1", ad_name: "A", spend: -5, currency: "AED" }]));
+  const usdFile = join(dir, "usd.json");
+  writeFileSync(usdFile, JSON.stringify([{ ad_id: "1", ad_name: "A", spend: 5, currency: "USD" }]));
+  const notJson = join(dir, "x.json");
+  writeFileSync(notJson, "{nope");
+  for (const f of [badFile, usdFile, notJson, join(dir, "missing.json")]) assert.equal(await main(["--spend-file", f], {}), 2, f);
+  assert.equal(await main(["--spend-file"], {}), 2);
+  assert.equal(await main(["--print", "--execute"], {}), 2);
+  assert.deepEqual(parseArgs(["--spend-file=/x.json", "--print"]), { execute: false, print: true, spendFile: "/x.json" });
+  assert.deepEqual(parseArgs(["--spend-file", "/x.json"]), { execute: false, print: false, spendFile: "/x.json" });
+  assert.equal(parseArgs(["--spend-file", "/a", "--spend-file", "/b"]), null);
+  // a valid file passes validation and then stops at the missing database configuration (exit 1), still sending nothing
+  const good = join(dir, "good.json");
+  writeFileSync(good, JSON.stringify(spendFile));
+  assert.equal(await main(["--spend-file", good, "--print"], {}), 1);
+  rmSync(dir, { recursive: true, force: true });
 });

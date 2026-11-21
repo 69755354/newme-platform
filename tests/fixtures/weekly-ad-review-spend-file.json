@@ -1,0 +1,5 @@
+[
+  {"ad_id": "111", "ad_name": "Villa tour A (renamed in Meta)", "campaign_name": "Villas", "adset_name": "Dubai 30-55", "spend": 600, "currency": "AED", "impressions": 40000, "clicks": 900, "meta_leads": 1, "messaging_conversations": 7},
+  {"ad_id": "222", "ad_name": "Promo B", "campaign_name": "Villas", "adset_name": "Dubai 30-55", "spend": 900, "currency": "AED", "impressions": 52000, "clicks": 700, "meta_leads": 0, "messaging_conversations": 3},
+  {"ad_id": "999", "ad_name": "Old reel", "campaign_name": "Brand", "adset_name": "Wide", "spend": 120, "currency": "AED", "impressions": 9000, "clicks": 50, "meta_leads": 0, "messaging_conversations": 0}
+]

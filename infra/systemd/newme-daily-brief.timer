@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily 08:05 Dubai (04:05 UTC): WhatsApp brief to Sam and Tanya
+
+[Timer]
+# The host runs in another time zone, so the schedule is written in UTC. Dubai is UTC+4 all year.
+OnCalendar=*-*-* 04:05:00 UTC
+RandomizedDelaySec=30
+Persistent=false
+
+[Install]
+WantedBy=timers.target

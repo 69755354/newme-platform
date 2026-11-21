@@ -25,6 +25,10 @@ const ASSETS = {
   "/etc/systemd/system/newme-wa-capi-send.timer": "infra/systemd/newme-wa-capi-send.timer",
   "/etc/systemd/system/newme-meta-crm-send.service": "infra/systemd/newme-meta-crm-send.service",
   "/etc/systemd/system/newme-meta-crm-send.timer": "infra/systemd/newme-meta-crm-send.timer",
+  "/etc/systemd/system/newme-daily-brief.service": "infra/systemd/newme-daily-brief.service",
+  "/etc/systemd/system/newme-daily-brief.timer": "infra/systemd/newme-daily-brief.timer",
+  "/etc/systemd/system/newme-lead-reminder.service": "infra/systemd/newme-lead-reminder.service",
+  "/etc/systemd/system/newme-lead-reminder.timer": "infra/systemd/newme-lead-reminder.timer",
 };
 
 test("every ops asset is in the remembered (rollback) set and its source exists in the repository", () => {
@@ -75,6 +79,20 @@ test("both Meta senders run every 10 minutes the same way, alert on failure and 
     assert.match(timer, /^WantedBy=timers\.target$/m, name);
     assert.ok(existsSync(join(root, script)), script);
   }
+});
+
+test("the daily brief and lead reminder units alert on failure, run the switch-guarded script and are scheduled in UTC", () => {
+  for (const [name, mode, schedule] of [["newme-daily-brief", "brief", "*-*-* 04:05:00 UTC"], ["newme-lead-reminder", "reminders", "*-*-* 05..17:00:00 UTC"]]) {
+    const service = read(`infra/systemd/${name}.service`);
+    const timer = read(`infra/systemd/${name}.timer`);
+    assert.match(service, /^OnFailure=newme-unit-alert@%n\.service$/m, name);
+    assert.match(service, new RegExp(`^ExecStart=/usr/bin/node scripts/daily-brief\\.mjs --mode ${mode} --execute$`, "m"), name);
+    assert.match(service, /^EnvironmentFile=-\/etc\/newme\/daily-brief\.env$/m, `${name}: the switch file is optional, so the default is off`);
+    assert.ok(!/ENABLED=true/.test(service.replace(/^#.*$/gm, "")), `${name} must not switch itself on`);
+    assert.ok(installer.includes(`infra/systemd/${name}.service`) && installer.includes(`infra/systemd/${name}.timer`), name);
+    assert.ok(timer.includes(`OnCalendar=${schedule}`), name);
+  }
+  assert.ok(existsSync(join(root, "scripts/daily-brief.mjs")));
 });
 
 test("optional timers are enabled only after every installer check, and a rollback disables a timer it removes", () => {

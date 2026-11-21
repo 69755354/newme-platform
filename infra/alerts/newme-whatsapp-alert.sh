@@ -42,6 +42,11 @@ EVENT="${2:-}"
 SUMMARY="${3:-}"
 
 ENV_FILE="${ALERT_ENV_FILE:-/etc/newme/alerts.env}"
+# WhatsApp-only mode (ALERT_WHATSAPP_ONLY=1): taken from the caller's environment before the file is read and never
+# importable from it. The message goes to WhatsApp or nowhere: ALERT_CHANNEL=telegram in the file is ignored and a failed
+# WhatsApp delivery is reported as a failure instead of going to the Telegram fallback (a personal reminder for one
+# salesperson must never land in the ops chat and be counted as delivered).
+WA_ONLY=0; [ "${ALERT_WHATSAPP_ONLY:-0}" = 1 ] && WA_ONLY=1
 if [ -e "$ENV_FILE" ]; then
   if command -v stat >/dev/null 2>&1; then
     mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo "")"
@@ -68,6 +73,7 @@ if [ -e "$ENV_FILE" ]; then
 fi
 
 CHANNEL="${ALERT_CHANNEL:-whatsapp}"
+[ "$WA_ONLY" = 1 ] && CHANNEL=whatsapp
 STATE_DIR="${ALERT_STATE_DIR:-/var/lib/newme-alerts}"
 REPEAT_HOURS="${ALERT_REPEAT_HOURS:-6}"
 API_VERSION="${ALERT_WHATSAPP_API_VERSION:-v26.0}"
@@ -184,6 +190,9 @@ telegram_config() {
 
 if [ "$CHANNEL" = whatsapp ]; then
   if whatsapp_config; then WA_READY=1; fi
+fi
+if [ "$WA_READY" = 0 ] && [ "$WA_ONLY" = 1 ]; then
+  fail_usage "$WA_PROBLEM; WhatsApp-only mode (ALERT_WHATSAPP_ONLY=1): no Telegram fallback"
 fi
 if [ "$CHANNEL" = telegram ] || [ "$WA_READY" = 0 ]; then
   telegram_config || true
@@ -325,7 +334,9 @@ else
   else
     report_failure "whatsapp not configured: $WA_PROBLEM"
   fi
-  if [ "$DELIVERED" = 0 ]; then
+  if [ "$DELIVERED" = 0 ] && [ "$WA_ONLY" = 1 ]; then
+    report_failure "WhatsApp-only mode (ALERT_WHATSAPP_ONLY=1): not delivered, no Telegram fallback"
+  elif [ "$DELIVERED" = 0 ]; then
     [ "$TG_LOADED" = 1 ] || telegram_config || true
     if [ "$TG_READY" = 1 ]; then
       send_telegram fallback

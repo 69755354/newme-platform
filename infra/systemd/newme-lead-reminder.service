@@ -1,0 +1,29 @@
+[Unit]
+Description=NewMe WhatsApp reminder to each salesperson about leads assigned over 24h ago without a first contact; off until its switch is set
+After=network-online.target
+Wants=network-online.target
+OnFailure=newme-unit-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/newme/newme-runtime.env
+# Switch file, optional: NEWME_LEAD_REMINDER_ENABLED=true turns the job on (default OFF, the run then does nothing). Read at every start.
+EnvironmentFile=-/etc/newme/daily-brief.env
+WorkingDirectory=/opt/newme/current
+ExecStart=/usr/bin/node scripts/daily-brief.mjs --mode reminders --execute
+TimeoutStartSec=300
+Nice=10
+UMask=0077
+StateDirectory=newme-daily-brief
+StateDirectoryMode=0700
+ReadWritePaths=-/var/lib/newme-alerts
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+LockPersonality=true

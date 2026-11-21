@@ -980,6 +980,8 @@ MANAGED=(
   /etc/systemd/system/newme-wa-capi-send.timer
   /etc/systemd/system/newme-meta-crm-send.service
   /etc/systemd/system/newme-meta-crm-send.timer
+  /etc/systemd/system/newme-weekly-ad-review.service
+  /etc/systemd/system/newme-weekly-ad-review.timer
 )
 # The control plane itself. Round-3 P1-10: these were installed before the backup
 # existed and were not in the backup set, so a deployment that replaced the deploy
@@ -1241,7 +1243,8 @@ for ops_script in newme-backup-onfailure.sh newme-backup-freshness.sh newme-rest
 done
 for ops_unit in infra/backup/newme-restore-drill.service infra/backup/newme-restore-drill.timer \
   infra/systemd/newme-wa-capi-send.service infra/systemd/newme-wa-capi-send.timer \
-  infra/systemd/newme-meta-crm-send.service infra/systemd/newme-meta-crm-send.timer; do
+  infra/systemd/newme-meta-crm-send.service infra/systemd/newme-meta-crm-send.timer \
+  infra/systemd/newme-weekly-ad-review.service infra/systemd/newme-weekly-ad-review.timer; do
   install -D -o root -g root -m 0644 "$ROOT/$ops_unit" "/etc/systemd/system/${ops_unit##*/}"
 done
 

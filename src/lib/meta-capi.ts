@@ -38,14 +38,22 @@ export function buildMetaCapiLeadPayload({ leadId, input, clientIp, clientUserAg
     external_id: [hash(leadId)],
   };
   if (input.email) userData.em = [hash(input.email.trim().toLowerCase())];
-  if (input.phone) userData.ph = [hash(normalizedPhone(input.phone))];
+  const phone = input.phone ? normalizedPhone(input.phone) : "";
+  // Only a plausible E.164 number (country code included, digits only, no "+") is sent; garbage would only lower match quality.
+  if (/^\d{8,15}$/.test(phone)) userData.ph = [hash(phone)];
+  // The business serves the UAE: a UAE number or no number at all means country "ae" (hashed lower case, as Meta requires).
+  if (!phone || phone.startsWith("971")) userData.country = [hash("ae")];
   const firstName = normalizedName(input.customerName.split(/\s+/)[0] || "");
   const lastName = normalizedName(input.customerName.split(/\s+/).slice(1).join(""));
   if (firstName) userData.fn = [hash(firstName)];
   if (lastName) userData.ln = [hash(lastName)];
   if (clientIp !== "unknown") userData.client_ip_address = clientIp;
   if (clientUserAgent) userData.client_user_agent = clientUserAgent;
-  if (input.attribution.fbc) userData.fbc = input.attribution.fbc;
+  // The browser's _fbc cookie when the website sends it; otherwise the documented format rebuilt from the fbclid
+  // (fb.1.<click time in ms>.<fbclid>), so an ad click is still matched when the cookie was blocked.
+  const fbc = input.attribution.fbc
+    || (input.attribution.fbclid ? `fb.1.${(eventTime ?? Math.floor(Date.now() / 1_000)) * 1_000}.${input.attribution.fbclid}` : null);
+  if (fbc) userData.fbc = fbc;
   if (input.attribution.fbp) userData.fbp = input.attribution.fbp;
 
   return {

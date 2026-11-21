@@ -1,0 +1,114 @@
+{
+ "spendRows": [
+  {
+   "ad_name": "Villa tour A",
+   "amount": 600,
+   "spend_date": "2026-11-17"
+  },
+  {
+   "ad_name": "Promo B",
+   "amount": 900,
+   "spend_date": "2026-11-17"
+  },
+  {
+   "ad_name": "Old reel",
+   "amount": 120,
+   "spend_date": "2026-11-18"
+  }
+ ],
+ "leads": [
+  {
+   "id": "a1",
+   "ad_id": "111",
+   "ad_name": "Villa tour A",
+   "quality": "good",
+   "quotation_value": null,
+   "created_at": "2026-11-18T08:00:00Z",
+   "campaign_name": "Villas",
+   "source": "fb",
+   "archived": false
+  },
+  {
+   "id": "a2",
+   "ad_id": "111",
+   "ad_name": "Villa tour A",
+   "quality": "good",
+   "quotation_value": null,
+   "created_at": "2026-11-18T08:00:00Z",
+   "campaign_name": "Villas",
+   "source": "fb",
+   "archived": false
+  },
+  {
+   "id": "a3",
+   "ad_id": "111",
+   "ad_name": "Villa tour A",
+   "quality": "good",
+   "quotation_value": null,
+   "created_at": "2026-11-18T08:00:00Z",
+   "campaign_name": "Villas",
+   "source": "fb",
+   "archived": false
+  },
+  {
+   "id": "a4",
+   "ad_id": "111",
+   "ad_name": "Villa tour A",
+   "quality": "poor",
+   "quotation_value": null,
+   "created_at": "2026-11-18T08:00:00Z",
+   "campaign_name": "Villas",
+   "source": "fb",
+   "archived": false
+  },
+  {
+   "id": "b1",
+   "ad_id": "222",
+   "ad_name": "Promo B",
+   "quality": "poor",
+   "quotation_value": null,
+   "created_at": "2026-11-18T08:00:00Z",
+   "campaign_name": "Villas",
+   "source": "fb",
+   "archived": false
+  },
+  {
+   "id": "b2",
+   "ad_id": "222",
+   "ad_name": "Promo B",
+   "quality": "bad",
+   "quotation_value": null,
+   "created_at": "2026-11-18T08:00:00Z",
+   "campaign_name": "Villas",
+   "source": "fb",
+   "archived": false
+  },
+  {
+   "id": "b3",
+   "ad_id": "222",
+   "ad_name": "Promo B",
+   "quality": "pending",
+   "quotation_value": null,
+   "created_at": "2026-11-18T08:00:00Z",
+   "campaign_name": "Villas",
+   "source": "fb",
+   "archived": false
+  }
+ ],
+ "quotations": [
+  {
+   "lead_id": "a1",
+   "total_amount": 50000,
+   "currency": "AED",
+   "status": "sent",
+   "created_at": "2026-11-19"
+  },
+  {
+   "lead_id": "a2",
+   "total_amount": 20000,
+   "currency": "AED",
+   "status": "sent",
+   "created_at": "2026-11-19"
+  }
+ ]
+}

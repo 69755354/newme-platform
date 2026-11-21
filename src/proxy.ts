@@ -55,6 +55,8 @@ const EXTERNAL_AUTHORIZED_API_PATHS = new Set([
   "/api/export/meta-ids",
   // Drive -> OS sync ingest (S29): machine token (DRIVE_SYNC_INGEST_TOKEN) checked by the handler, off unless DRIVE_SYNC_INGEST_ENABLED=true; exact path only.
   "/api/sync/drive-ingest",
+  // AI needs summary for WhatsApp leads: machine token (AI_NOTES_TOKEN) checked by the handler, off unless AI_NOTES_ENABLED=true; exact path only.
+  "/api/leads/ai-notes",
 ]);
 const EXTERNAL_AUTHORIZED_API_PREFIXES = ["/api/cron/"];
 const AUTH_TIMEOUT_MS = 3_000;

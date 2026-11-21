@@ -322,3 +322,41 @@ test("CRM Quoted carries the quoted amount from the newest live quotation", asyn
   assert.equal(sent[0].data[0].event_name, "Quoted");
   assert.equal(sent[0].data[0].custom_data.value, 77000);
 });
+
+import { serializeMetaCrmPayload } from "../../src/lib/meta-crm-events.ts";
+import { buildTestRequest } from "../../scripts/meta-capi-hash-test.mjs";
+
+test("hashed keys: email-only, trimmed/lowercased, +971 0 prefix, 00971 prefix, only SHA-256 hex, nothing else", () => {
+  assert.deepEqual(hashedContactKeys({ email: "  Sam@NewMe.AE " }), { em: [sha("sam@newme.ae")] });
+  assert.deepEqual(hashedContactKeys({ phone: "+971 (0)50 123 4567" }), { ph: [sha("971501234567")] });
+  assert.deepEqual(hashedContactKeys({ phone: "00971501234567" }), { ph: [sha("971501234567")] });
+  const all = hashedContactKeys({ phone: "0501234567", email: "a@b.co", name: "x", id: "y" });
+  assert.deepEqual(Object.keys(all).sort(), ["em", "ph"]);
+  for (const h of [...all.ph, ...all.em]) assert.match(h, /^[0-9a-f]{64}$/);
+});
+
+test("CRM payload with hashed keys keeps exact lead_id and event shape", () => {
+  const match = hashedContactKeys({ phone: "0501234567", email: "a@b.co" });
+  const p = buildMetaCrmPayload({ leadgenId: "123456789012345678", eventName: "Quoted", eventTime: 5, eventId: "x", value: 10, currency: "AED", match });
+  const e = p.data[0];
+  assert.equal(e.action_source, "system_generated"); assert.equal(e.custom_data.lead_event_source, "crm");
+  assert.deepEqual(Object.keys(e.user_data).sort(), ["em", "lead_id", "ph"]);
+  assert.match(serializeMetaCrmPayload(p), /"lead_id":123456789012345678/);
+});
+
+test("WhatsApp payload keeps ctwa_clid and waba id next to the hashed phone, no other identifiers", () => {
+  const e = buildWhatsAppCapiPayload({ eventId: "e", wabaId: "123456", ctwaClid: "AfcT3sTcLiCkId_abc-123XYZ", eventName: "InitiateCheckout", eventTime: 5,
+    value: 1, currency: "AED", hashedPhone: [sha("971501234567")] }).data[0];
+  assert.deepEqual(Object.keys(e.user_data).sort(), ["ctwa_clid", "ph", "whatsapp_business_account_id"]);
+  assert.equal(e.action_source, "business_messaging");
+});
+
+test("hash test tool: test_event_code is top level, requires a valid code, never needs the database", () => {
+  const env = { META_TEST_EVENT_CODE: "TEST123", META_PIXEL_ID: "1", META_WA_DATASET_ID: "2", TEST_LEAD_ID: "123456789012345678",
+    TEST_PHONE: "0501234567", TEST_EMAIL: "a@b.co", TEST_WABA_ID: "123456", TEST_CTWA_CLID: "AfcT3sTcLiCkId_abc-123XYZ" };
+  const crm = JSON.parse(buildTestRequest("crm", env, 5).body.replace(/"lead_id":(\d+)/, '"lead_id":"$1"'));
+  assert.equal(crm.test_event_code, "TEST123"); assert.equal(crm.data[0].user_data.ph[0], sha("971501234567"));
+  const wa = JSON.parse(buildTestRequest("wa", env, 5).body);
+  assert.equal(wa.test_event_code, "TEST123"); assert.equal(wa.data[0].user_data.ph[0], sha("971501234567"));
+  assert.throws(() => buildTestRequest("crm", { ...env, META_TEST_EVENT_CODE: "" }, 5));
+});

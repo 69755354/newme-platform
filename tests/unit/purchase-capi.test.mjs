@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { buildMetaCrmPayload, hashedContactKeys } from "../../src/lib/meta-crm-events.ts";
 import { sendMetaCrmEvents } from "../../scripts/meta-crm-events-send.mjs";
@@ -132,7 +133,7 @@ test("WhatsApp sender adds hashed phone only when WA_CAPI_SEND_HASHED_PHONE=true
   assert.deepEqual(sent[1].data[0].user_data.ph, [sha("971501234567")]);
 });
 
-import { planSheetQuote } from "../../src/lib/sheet-quote.mjs";
+import { planSheetQuote, shouldAdvanceStageForQuote } from "../../src/lib/sheet-quote.mjs";
 import { enqueueWebsiteQuoteForProgress } from "../../src/lib/website-capi-valued.mjs";
 import { enqueueWhatsAppCapiForProgress } from "../../src/lib/whatsapp-capi.mjs";
 import { latestQuotationAmount } from "../../src/lib/quote-amount.mjs";
@@ -251,15 +252,45 @@ test("drive sync: a quote already in the sheet at the first sync is stored but n
   assert.equal(ins.action, "hold"); // insertable false by default: no insert without the flag/shape
 });
 
-test("drive sync: a quote that appears after the baseline fires once and never moves the stage", () => {
+test("drive sync: a quote that appears after the baseline fires once; the stage is moved by the database routine, never by a direct write", () => {
   const base = dsDecide(dsChange({ opp_stage: "", quote_value: "" }), dsLead());
   assert.equal(base.raw_patch.drive_sync.quote_baseline, true); assert.equal(base.set.stage, undefined);
   const prev = { ...base.raw_patch.drive_sync, row_hash: base.row_hash, synced_at: "2026-11-02T00:00:00.000Z" };
   const d = dsDecide(dsChange(), dsLead({ drive_sync: prev }));
   assert.equal(d.quote.value, 120000); assert.equal(d.quote.currency, "AED"); assert.equal(d.set.quotation_value, 120000);
   assert.ok(!("stage" in d.set) && !("final_status" in d.set));
+  assert.equal(d.stage_advance, true); // asks the route to call sync_advance_lead_stage_from_sheet
   const again = dsDecide(dsChange({ quote_value: "130000" }), dsLead({ drive_sync: { ...d.raw_patch.drive_sync, row_hash: "old" }, quotation_value: 120000 }));
   assert.equal(again.quote, undefined); assert.equal(again.set.quotation_value, 130000);
+});
+
+test("drive sync: stage_advance is asked for only on a live lead before quotation_submitted that the sheet says was quoted", () => {
+  const prev = { quote_baseline: true, row_hash: "old" };
+  // history quote at the first sync: stored and not sent, but the stage still follows the sheet
+  assert.equal(dsDecide(dsChange(), dsLead()).stage_advance, true);
+  for (const stage of ["new", "contacted", "requirement_confirmed", "solution_submitted"]) assert.equal(dsDecide(dsChange(), dsLead({ stage, drive_sync: prev })).stage_advance, true, stage);
+  // never backwards or sideways, never terminal, never archived, never without a reported quote
+  for (const stage of ["quotation_submitted", "negotiation", "pending_decision", "won", "lost", "no_answered"]) assert.equal(dsDecide(dsChange(), dsLead({ stage, drive_sync: prev })).stage_advance, undefined, stage);
+  assert.equal(dsDecide(dsChange(), dsLead({ final_status: "won", drive_sync: prev })).stage_advance, undefined);
+  assert.equal(dsDecide(dsChange(), dsLead({ archived: true, drive_sync: prev })).stage_advance, undefined);
+  assert.equal(dsDecide(dsChange({ opp_stage: "Negotiation" }), dsLead({ drive_sync: prev })).stage_advance, undefined);
+  assert.equal(dsDecide(dsChange({ quote_value: "" }), dsLead({ drive_sync: prev })).stage_advance, undefined);
+  assert.equal(shouldAdvanceStageForQuote({ stage: "contacted" }), true);
+  assert.equal(shouldAdvanceStageForQuote({ stage: "contacted", archived: true }), false);
+  assert.equal(shouldAdvanceStageForQuote({ stage: "contacted", final_status: "lost" }), false);
+  assert.equal(shouldAdvanceStageForQuote(null), false);
+});
+
+test("drive-ingest route calls the service-role stage routine, never writes the stage itself, and never fails the sync on it", () => {
+  const route = readFileSync(new URL("../../src/app/api/sync/drive-ingest/route.ts", import.meta.url), "utf8");
+  assert.match(route, /if \(d\.stage_advance\) \{[\s\S]*?supabaseAdmin\.rpc\("sync_advance_lead_stage_from_sheet", \{ p_lead_id: d\.lead_id, p_target_stage: "quotation_submitted", p_run_id: runId \}\)/);
+  assert.match(route, /stage_advance_unavailable/);
+  // the block is before the row hash commit and does not throw
+  const block = route.slice(route.indexOf("if (d.stage_advance)"), route.indexOf("// Fresh quote in the sheet"));
+  assert.doesNotMatch(block, /throw/);
+  assert.ok(route.indexOf("if (d.stage_advance)") < route.indexOf("// Last step: commit the row hash"));
+  // no direct write of leads.stage anywhere in the route
+  assert.doesNotMatch(route, /update\(\{[^}]*\bstage\b\s*:/);
 });
 
 test("drive sync: OS-final, archived and OS-edited values are left alone", () => {

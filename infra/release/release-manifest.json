@@ -276,6 +276,12 @@
       "version": "20261120200000",
       "file": "20261120200000_tasks_future_only_not_valid.sql",
       "sha256": "a7598950b422dbb8c18e4e19e3b5e9247e5d1f0cfddafb5888a486c892ae6a91"
+    },
+    {
+      "$comment": "S33 (OS fix S33): new service-role routine public.sync_advance_lead_stage_from_sheet(uuid,text,text) so the Drive sync can move a lead forward, one audited stage_change step at a time (system actor), up to quotation_submitted when the sales sheet reports a quotation. Forward only, never won/lost, never archived. No table, column, policy, trigger or client grant changes.",
+      "version": "20261121100000",
+      "file": "20261121100000_sync_advance_lead_stage_from_sheet.sql",
+      "sha256": "4e19cf64d411cfcbe4e77e8da16c3475ca36244f9947f8ece17f220d754a25b2"
     }
   ],
   "companions": [
@@ -646,6 +652,11 @@
           "name": "s32-tasks-future-only-not-valid",
           "expect": true,
           "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(NOT c.convalidated) AND bool_and(pg_catalog.pg_get_constraintdef(c.oid)='CHECK ((due_at > (now() - ''30 days''::interval))) NOT VALID') FROM pg_catalog.pg_constraint c WHERE c.conrelid=to_regclass('public.tasks') AND c.conname='tasks_future_only' AND c.contype='c'),false)"
+        },
+        {
+          "name": "s33-sync-advance-lead-stage-from-sheet-present",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%system:drive_sync%') AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_advance_lead_stage_from_sheet(uuid,text,text)')),false)"
         }
       ]
     }

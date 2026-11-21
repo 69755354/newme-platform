@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
     const before = await sideEffectCounts();
     const applied = { inserted: 0, updated: 0, notes: 0, failed: 0 };
     let quotesFired = 0;
+    let stagesAdvanced = 0;
     for (const { change, d } of plan.decisions) {
       const k = maskId(change.key);
       try {
@@ -133,6 +134,15 @@ export async function POST(request: NextRequest) {
           const changed = [...(d.fields ?? [])].join(", ") || "sync state";
           const conflictText = d.conflicts?.length ? ` (conflicts: ${d.conflicts.map((c: Json) => `${c.field}->${c.winner}`).join(", ")})` : "";
           if (!(await insertNote(d.lead_id, { import_key: `${change.key}/drive-sync/${String(d.row_hash).slice(0, 16)}`, type: "note", content: `Drive sync: ${changed}${conflictText}` }, runId, { fields: d.fields, conflicts: d.conflicts }))) throw new Error("sync_note_failed");
+          // Sheet says "quotation reported": move the OS stage forward through the service-role routine (S33). Forward only, one
+          // audited step at a time, never past quotation_submitted; it answers a reason instead of failing when a rule says "not yet"
+          // (first contact incomplete, no next follow-up). Never fatal: a missing routine (not provisioned yet) or a refusal is logged
+          // and the sync carries on exactly as before.
+          if (d.stage_advance) {
+            const { data: adv, error: advErr } = await supabaseAdmin.rpc("sync_advance_lead_stage_from_sheet", { p_lead_id: d.lead_id, p_target_stage: "quotation_submitted", p_run_id: runId });
+            if (advErr) log({ event: "stage_advance_unavailable", key: k, lead_id: d.lead_id, code: advErr.code ?? null });
+            else { const r = (adv ?? {}) as Json; if (r.advanced === true) stagesAdvanced += 1; log({ event: "stage_advance", key: k, lead_id: d.lead_id, advanced: r.advanced === true, from: r.from ?? null, to: r.to ?? null, reason: r.reason ?? null }); }
+          }
           // Fresh quote in the sheet: send the same Meta feedback as a quotation made in OS (all helpers are idempotent per lead).
           if (d.quote) {
             await enqueueMetaCrmEventForLead(supabaseAdmin, d.lead_id, "quotation_submitted");
@@ -160,8 +170,8 @@ export async function POST(request: NextRequest) {
     }
     const after = await sideEffectCounts();
     const sideEffectsChanged = SIDE_EFFECT_TABLES.filter((t) => { const grown = after[t] - before[t]; return grown < 0 || grown > (QUOTE_EVENT_ROWS[t] ?? 0) * quotesFired; });
-    log({ event: "batch_end", applied, side_effects_changed: sideEffectsChanged });
-    return reply({ ok: applied.failed === 0 && sideEffectsChanged.length === 0, dry_run: false, counts: plan.counts, applied, side_effects: { before, after, changed: sideEffectsChanged }, decisions: summary, claims: plan.claims }, applied.failed ? 207 : 200);
+    log({ event: "batch_end", applied, stages_advanced: stagesAdvanced, side_effects_changed: sideEffectsChanged });
+    return reply({ ok: applied.failed === 0 && sideEffectsChanged.length === 0, dry_run: false, counts: plan.counts, applied, stages_advanced: stagesAdvanced, side_effects: { before, after, changed: sideEffectsChanged }, decisions: summary, claims: plan.claims }, applied.failed ? 207 : 200);
   } catch (err) {
     logger.error({ error: err instanceof Error ? err.message : "unknown" }, "drive-sync ingest failed");
     return reply({ error: "Ingest failed" }, 500);

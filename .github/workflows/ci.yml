@@ -740,6 +740,12 @@ jobs:
           createdb --template history newme_s32_tasks_test
           PGDATABASE=newme_s32_tasks_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s32-tasks-future-only.sql
 
+      # S33: the Drive sync's service-role stage advance (forward only to quotation_submitted, audited, system actor). Rolled back.
+      - name: Drive sync stage advance (S33)
+        run: |
+          createdb --template history newme_s33_stage_test
+          PGDATABASE=newme_s33_stage_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s33-sync-advance-stage.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

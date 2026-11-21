@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
-  assignedAtMs, buildBrief, buildReminder, channelOf, countNewLeads, hasFirstContact, inReminderWindow, planReminders,
+  assignedAtMs, buildBrief, buildReminder, channelOf, countNewLeads, groupUncontactedForBrief, hasFirstContact, inReminderWindow, planReminders,
   selectUncontacted, summarizeQuotes, summarizeSpend, yesterdayBounds,
 } from "../../src/lib/daily-brief.mjs";
 
@@ -87,10 +87,11 @@ test("uncontacted: only leads assigned over 24 hours ago, no contact, open, repo
   ];
   const transfers = [{ lead_id: "reassigned", to_user_id: "u1", created_at: at("2026-11-20T23:00:00Z") }];
   const r = selectUncontacted({ leads, transfers, logLeadIds: new Set(["logged"]), excludedTestIds: new Set(["test"]), now: NOW });
-  assert.deepEqual(r.map((x) => x.lead_id), ["old"]);
-  assert.equal(r[0].age_hours, 46);
-  assert.equal(r[0].first_name, "Omar");
-  assert.equal(r[0].channel, "fb_form");
+  assert.deepEqual(r.map((x) => x.lead_id), ["none", "old"]); // "none" has no OS owner: still counted, as unassigned
+  assert.equal(r[0].assigned_to, null);
+  assert.equal(r[1].age_hours, 46);
+  assert.equal(r[1].first_name, "Omar");
+  assert.equal(r[1].channel, "fb_form");
 });
 
 test("plan: grouped per salesperson, phones normalised, missing phone and system accounts reported or skipped", () => {
@@ -267,5 +268,59 @@ test("bulk-imported sheet history is neither a new lead nor an uncontacted remin
     { id: "u2", source: "whatsapp", created_at: old, archived: false, assigned_to: "s1", stage: "new", imported_at: old },
   ];
   assert.equal(countNewLeads(leads, { now: NOW }).total, 1);
-  assert.deepEqual(selectUncontacted({ leads, now: NOW }).map((l) => l.lead_id), ["u1"]);
+  assert.deepEqual(selectUncontacted({ leads, now: NOW }).map((l) => l.lead_id), ["u1", "n1"]); // n1 has no OS owner but is over 24h old: counted
+});
+
+// --- leads nobody owns in OS (sales work in the Google sheets) -----------------------------------------------------
+const quietLeads = { byChannel: { fb_form: 3, instagram: 0, whatsapp: 0, website: 0, other: 0 }, prior: { fb_form: 0, instagram: 0, whatsapp: 0, website: 0, other: 0 } };
+
+test("all leads unassigned in OS: the brief shows them, not 0", () => {
+  const leads = Array.from({ length: 3 }, (_, i) => lead({ id: `n${i}`, assigned_to: null, created_at: at("2026-11-18T06:00:00Z") }));
+  const un = selectUncontacted({ leads, now: NOW });
+  assert.equal(un.length, 3);
+  const groups = groupUncontactedForBrief(un, []);
+  assert.deepEqual(groups.map((g) => [g.name, g.items.length, g.unassigned]), [["未分配", 3, true]]);
+  const text = buildBrief({ dateKey: "2026-11-20", leads: { total: 3, adLeads: 3, ...quietLeads }, groups, quotes: { count: 0, total: 0 } });
+  assert.match(text, /24小时未联系：未分配3条/);
+  assert.match(text, /需要注意：未分配3条无人认领/);
+  assert.ok(!/未联系：无/.test(text));
+});
+
+test("sheet owner from the S29 sync groups unassigned leads by name; OS profile name wins and merges", () => {
+  const leads = [
+    lead({ id: "a", assigned_to: null, drive_sync: { sheet_owner: "Faizan" }, created_at: at("2026-11-18T06:00:00Z") }),
+    lead({ id: "b", assigned_to: null, drive_sync: { sheet_owner: "Faizan" }, created_at: at("2026-11-17T06:00:00Z") }),
+    lead({ id: "c", assigned_to: null, created_at: at("2026-11-18T06:00:00Z") }),
+    lead({ id: "d", assigned_to: "u1", created_at: at("2026-11-18T06:00:00Z") }),
+  ];
+  const profiles = [{ id: "u1", full_name: "Faizan", phone: "0501234567", is_active: true }];
+  const un = selectUncontacted({ leads, now: NOW });
+  const groups = groupUncontactedForBrief(un, profiles);
+  assert.deepEqual(groups.map((g) => [g.name, g.items.length]), [["Faizan", 3], ["未分配", 1]]);
+  const text = buildBrief({ dateKey: "2026-11-20", leads: { total: 4, adLeads: 0, ...quietLeads }, groups, quotes: { count: 0, total: 0 } });
+  assert.match(text, /Faizan3条.*未分配1条/);
+  assert.match(text, /需要注意：未分配1条无人认领/);
+});
+
+test("reminders still need a resolvable OS profile: unowned leads are in the brief but never reminded", () => {
+  const leads = [lead({ id: "a", assigned_to: null, drive_sync: { sheet_owner: "Faizan" }, created_at: at("2026-11-18T06:00:00Z") })];
+  const un = selectUncontacted({ leads, now: NOW });
+  const plan = planReminders(un, [{ id: "u1", full_name: "Faizan", phone: "0501234567", is_active: true }]);
+  assert.deepEqual([plan.people.length, plan.sendable.length], [0, 0]);
+});
+
+test("runner: every new lead unassigned in OS, brief counts them (not a false all-clear) and reminders send nothing", async () => {
+  process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/brief-`);
+  const { runBrief, runReminders } = await import("../../scripts/daily-brief.mjs");
+  const t = () => ({ ...tables(), leads: [
+    lead({ id: "x1", assigned_to: null, created_at: at("2026-11-19T06:00:00Z") }),
+    lead({ id: "x2", assigned_to: null, created_at: at("2026-11-20T10:00:00Z"), drive_sync: { sheet_owner: "Assem" } }),
+  ] });
+  const sent = [];
+  const b = await runBrief(fakeDb(t()), { execute: true, now: NOW, send: async (m) => { sent.push(m); return true; }, env: { NEWME_DAILY_BRIEF_ENABLED: "true" } });
+  assert.equal(b.uncontacted, 1); // x2 is under 24h; x1 is 46h old
+  assert.equal(b.unassigned, 1);
+  assert.match(sent[0].text, /24小时未联系：未分配1条/);
+  const r = await runReminders(fakeDb(t()), { now: NOW, env: { NEWME_LEAD_REMINDER_ENABLED: "true" } });
+  assert.deepEqual([r.uncontacted, r.due], [0, 0]);
 });

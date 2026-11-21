@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 import { dubaiDateKey } from "../src/lib/dubai-time.mjs";
 import { fetchAllRows } from "../src/lib/fetch-all-rows.mjs";
 import {
-  buildBrief, buildReminder, countNewLeads, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
+  buildBrief, buildReminder, countNewLeads, groupUncontactedForBrief, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
   summarizeSpend, yesterdayBounds, DEFAULT_MAX_LEAD_AGE_DAYS,
 } from "../src/lib/daily-brief.mjs";
 
@@ -42,7 +42,8 @@ export async function loadData(db, now) {
     .eq("archived", false).or("source.is.null,source.neq.synthetic_qa").gte("created_at", since).order("id").range(from, to));
   if (all.error) throw new Error("leads unavailable");
   const leads = all.data;
-  const candidates = leads.filter((l) => l.assigned_to && (l.stage === "new" || l.stage === null));
+  // Leads with no OS owner stay in: the sales team works in the sheets, and the brief must show them (reminders skip them later).
+  const candidates = leads.filter((l) => l.stage === "new" || l.stage === null);
   const ids = candidates.map((l) => l.id);
   const logs = await inChunks(ids, (part) => db.from("follow_up_logs").select("lead_id").in("lead_id", part));
   const transfers = await inChunks(ids, (part) => db.from("transfer_history").select("lead_id,to_user_id,created_at").in("lead_id", part));
@@ -53,7 +54,7 @@ export async function loadData(db, now) {
 export function planFrom(data, now) {
   const uncontacted = selectUncontacted({ leads: data.candidates, transfers: data.transfers, logLeadIds: data.logLeadIds,
     excludedTestIds: data.excludedTestIds, now });
-  return planReminders(uncontacted, data.profiles);
+  return { ...planReminders(uncontacted, data.profiles), groups: groupUncontactedForBrief(uncontacted, data.profiles) };
 }
 
 async function loadBriefExtras(db, data, now) {
@@ -107,8 +108,8 @@ export async function runBrief(db, { execute = false, now = new Date(), send = s
   const plan = planFrom(data, now);
   const quotes = summarizeQuotes({ quotations: extras.quotations, sheetLeads: extras.sheetLeads, leadsById: extras.leadsById, now, excludedTestIds: data.excludedTestIds });
   const spend = summarizeSpend(extras.spendRows, counts.adLeads, { now });
-  const text = buildBrief({ dateKey: data.y.key, leads: counts, people: plan.people, missingPhone: plan.missingPhone, quotes, spend });
-  const summary = { job: "brief", mode: execute ? "execute" : "dry_run", date: data.y.key, new_leads: counts.total, uncontacted: plan.people.reduce((s, p) => s + p.items.length, 0),
+  const text = buildBrief({ dateKey: data.y.key, leads: counts, people: plan.people, groups: plan.groups, missingPhone: plan.missingPhone, quotes, spend });
+  const summary = { job: "brief", mode: execute ? "execute" : "dry_run", date: data.y.key, new_leads: counts.total, uncontacted: plan.groups.reduce((s, g) => s + g.items.length, 0), unassigned: plan.groups.filter((g) => g.unassigned).reduce((s, g) => s + g.items.length, 0),
     salespeople_with_uncontacted: plan.people.length, missing_phone: plan.missingPhone.length, quotes: quotes.count, spend_line: Boolean(spend), chars: [...text].length, sent: false };
   if (!execute) return summary;
   if (!isTrue(env.NEWME_DAILY_BRIEF_ENABLED)) return { ...summary, mode: "disabled" };

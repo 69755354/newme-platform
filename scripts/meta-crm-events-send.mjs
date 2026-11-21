@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 // Operator tool, default read-only. Scheduled with --execute by infra/systemd/newme-meta-crm-send.timer.
 // Sends queued Meta CRM stage events. Credentials come only from the server environment.
+//
+// status review_required ("manual" in the Meta IDs export) means the sender parked the event and nothing sends it again:
+//   * too old: the event is more than 7 days old when picked up (Meta's window; a Lead event's time is the lead's
+//     creation time), or its Meta lead id is not valid. Never sendable: Meta cannot take it any more.
+//   * exhausted: 5 send attempts failed (Meta / network / credentials down for a while). Sendable again if still in window.
+// Operator command (default read-only; --execute applies):  node scripts/meta-crm-events-send.mjs --requeue-review [--execute]
+// puts the still-sendable parked rows back in the queue (status failed, attempts 0) and the same run sends them.
 import { randomUUID } from "node:crypto";
 import { realpathSync as realpathOf } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { activeContractAmount } from "../src/lib/whatsapp-capi.mjs";
 import { latestQuotationAmount } from "../src/lib/quote-amount.mjs";
-import { buildMetaCrmPayload, hashedContactKeys, sendMetaCrmPayload } from "../src/lib/meta-crm-events.ts";
+import { buildMetaCrmPayload, hashedContactKeys, normalizeLeadgenId, sendMetaCrmPayload } from "../src/lib/meta-crm-events.ts";
 import { META_CRM_EVENT_MAX_AGE_SECONDS } from "../src/lib/meta-lead-ads.mjs";
 
 // Meta accepts CRM events well inside its 28-day window; intake shares this limit.
@@ -31,9 +38,37 @@ async function enrichment(db, row, env) {
   return extra;
 }
 
+/** Parked rows split into "expired" (can never be sent: out of Meta's window or invalid id) and "recoverable". */
+export async function requeueReviewRows(db, { execute = false, clock = () => Date.now() } = {}) {
+  const out = { review_total: 0, review_expired: 0, review_recoverable: 0, requeued: 0, truncated: false };
+  const read = await db.from("meta_crm_stage_events").select("id, meta_leadgen_id, event_time")
+    .eq("status", "review_required").is("delivered_at", null).order("created_at", { ascending: true }).limit(1000);
+  if (read.error) throw new Error("Meta CRM queue unavailable");
+  const rows = read.data || [];
+  out.review_total = rows.length; out.truncated = rows.length >= 1000;
+  const nowSeconds = Math.floor(clock() / 1000);
+  const ids = [];
+  for (const r of rows) {
+    const age = nowSeconds - Number(r.event_time);
+    if (!Number.isFinite(age) || age > MAX_AGE_SECONDS || !normalizeLeadgenId(r.meta_leadgen_id)) out.review_expired++;
+    else { out.review_recoverable++; ids.push(r.id); }
+  }
+  if (execute && ids.length) {
+    for (let i = 0; i < ids.length; i += 100) {
+      const part = ids.slice(i, i + 100);
+      const done = await db.from("meta_crm_stage_events").update({ status: "failed", attempts: 0, lease_id: null, lease_until: null })
+        .in("id", part).eq("status", "review_required").select("id");
+      if (done.error) throw new Error("Meta CRM requeue failed");
+      out.requeued += (done.data || []).length;
+    }
+  }
+  return out;
+}
+
 export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock = () => Date.now(),
-  send = sendMetaCrmPayload, env = process.env } = {}) {
+  send = sendMetaCrmPayload, env = process.env, requeueReview = false } = {}) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid send limit");
+  const requeue = requeueReview ? await requeueReviewRows(db, { execute, clock }) : null;
   const queue = await db.from("meta_crm_stage_events")
     .select("id, lead_id, meta_leadgen_id, event_name, event_time, status, attempts, lease_id, lease_until")
     .in("status", ["pending", "failed", "sending"]).lt("attempts", MAX_ATTEMPTS)
@@ -96,7 +131,7 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock
     } catch { summary.errors++; }
   }
   // Only aggregate counts leave this tool; no lead ids, payloads or credentials.
-  return summary;
+  return requeue ? { ...summary, requeue } : summary;
 }
 
 // Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
@@ -104,8 +139,8 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock
 const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
 if (isMainModule()) {
   const args = process.argv.slice(2);
-  if (args.some((arg) => arg !== "--execute")) {
-    console.error("Usage: node scripts/meta-crm-events-send.mjs [--execute] (default: read-only)");
+  if (args.some((arg) => arg !== "--execute" && arg !== "--requeue-review")) {
+    console.error("Usage: node scripts/meta-crm-events-send.mjs [--requeue-review] [--execute] (default: read-only)");
     process.exitCode = 2;
   } else {
     try {
@@ -116,7 +151,7 @@ if (isMainModule()) {
         throw new Error("sender configuration unavailable");
       }
       const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-      const summary = await sendMetaCrmEvents(db, { execute: args.includes("--execute") });
+      const summary = await sendMetaCrmEvents(db, { execute: args.includes("--execute"), requeueReview: args.includes("--requeue-review") });
       console.log(JSON.stringify(summary));
       if (summary.errors || summary.failed || summary.review_required || summary.exhausted) process.exitCode = 1;
     } catch {

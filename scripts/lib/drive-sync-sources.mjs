@@ -55,6 +55,14 @@ function feedbackOf(...rows) {
   return { text: parts.join(" | "), days: DAYS.filter((h) => rows.some((r) => norm(r?.[h]))).length };
 }
 
+const SOURCE_OWNER = Object.fromEntries(SOURCES.filter((x) => x.owner).map((x) => [x.key, x.owner]));
+/** Display name of the sheet-side owner (never an e-mail or phone: kept to a short plain name). */
+export function sheetOwnerOf(register, sales) {
+  const name = norm(register?.["Assigned to"]) || norm(sales?.["Assigned to"]) || SOURCE_OWNER[sales?.__tab] || "";
+  if (!name || /[@\d]{3,}/.test(name)) return "";
+  return name.replace(/\s+/g, " ").slice(0, 40);
+}
+
 /** Rows of the register and the four sales tabs -> one change per Master Lead ID / Lead key. */
 export function buildLeadChanges(tabs, modified) {
   const changes = new Map();
@@ -92,6 +100,8 @@ export function buildLeadChanges(tabs, modified) {
       insertable,
       insert_fields: { customer_name: norm(r?.Client) || norm(s?.Client) || undefined, phone: phoneN?.e164 || phoneRaw || undefined, email: email || undefined, source: OS_SOURCES.has(channel) ? channel : "unknown", source_channel: master ? PREFIX_CHANNEL[master[1]] : "legacy_sheet", meta_leadgen_id: leadgenCand || undefined, campaign_id: strip(r?.["Campaign ID"], "c:") || undefined, adset_id: strip(r?.["Adset ID"], "as:") || undefined, ad_id: strip(r?.["Ad ID"], "ag:") || undefined, campaign_name: norm(r?.Campaign) || undefined, ad_name: norm(r?.Ad) || undefined, location: norm(r?.Location) || norm(s?.Area) || undefined, notes: pick("Requirement / Context") || undefined, created_at: received.iso || undefined },
       owner_alias: lc(r?.["Assigned to"]) || undefined,
+      // Who works the lead in the sheets: register "Assigned to", else the owner of the sales tab the row sits in. Stored only (no OS owner change).
+      sheet_owner: sheetOwnerOf(r, s) || undefined,
     };
     if (!master) { c.hold_reason = "no_master_lead_id"; }
     return c;

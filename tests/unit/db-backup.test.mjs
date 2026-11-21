@@ -251,7 +251,8 @@ test("systemd: both services have OnFailure alerting, the alert unit runs the on
     const s3 = sandbox();
     const r3 = spawnSync("bash", [infra("newme-backup-onfailure.sh"), unit], { encoding: "utf8", env: s3.env() });
     assert.equal(r3.status, 0, unit);
-    assert.match(s3.log(), new RegExp(`alert ${key} failure ${name.replace(/\./g, "\\.")}（systemd 单元 ${unit.replace(/\./g, "\\.")}）运行失败`), unit);
+    const rx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // every regex metacharacter, not only the dot
+    assert.match(s3.log(), new RegExp(`alert ${rx(key)} failure ${rx(name)}（systemd 单元 ${rx(unit)}）运行失败`), unit);
     assert.ok(!/alert db-backup /.test(s3.log()), `${unit} must not use the db-backup key`);
   }
 });

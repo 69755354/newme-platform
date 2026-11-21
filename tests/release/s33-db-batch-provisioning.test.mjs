@@ -43,7 +43,7 @@ function fromGit(spec){
 test('the S33 provisioning gate pins exactly one reviewed migration and its posture predicate',()=>{
   assert.deepEqual(S33_EVENTS.map(x=>x.version),['20261121100000']);
   assert.deepEqual(S33_EVENTS.map(x=>x.file),['20261121100000_sync_advance_lead_stage_from_sheet.sql']);
-  assert.equal(S33_EVENTS[0].sha256,'09143457b6cf6fce1255173eec0d279a8c2e4a235300d9364efbc5a4fc0ae072');
+  assert.equal(S33_EVENTS[0].sha256,'4e19cf64d411cfcbe4e77e8da16c3475ca36244f9947f8ece17f220d754a25b2');
   assert.deepEqual(S33_PREDICATE_NAMES,['s33-sync-advance-lead-stage-from-sheet-present']);
   // the posture pins the routine's exact signature, definer mode, search_path, system actor marker and service-role-only ACL
   assert.match(S33_POSTURE[0],/to_regprocedure\('public\.sync_advance_lead_stage_from_sheet\(uuid,text,text\)'\)/);

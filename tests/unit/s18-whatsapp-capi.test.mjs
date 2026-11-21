@@ -135,3 +135,11 @@ test("ingest counts new leads, duplicates and failures and never throws", async 
   const thrown = await recordWhatsAppAdEvents({ rpc: () => { throw new Error("boom"); } }, [{ message_id: "z" }]);
   assert.equal(thrown.failed, 1);
 });
+
+test("sender prefers the WhatsApp dataset's own key over the shared pixel key name", async () => {
+  const payload = buildWhatsAppCapiPayload({ wabaId: "987654321", ctwaClid: CLID, eventName: "QualifiedLead", eventTime: 1795000000 });
+  const calls = [];
+  const fetchImpl = async (url, init) => { calls.push(init); return { ok: true, json: async () => ({ events_received: 1 }) }; };
+  await sendWhatsAppCapiPayload(payload, { env: { META_WA_DATASET_ID: "5550001", META_WA_CAPI_ACCESS_TOKEN: "wa-tok", META_CAPI_ACCESS_TOKEN: "pixel-tok" }, fetchImpl });
+  assert.equal(calls[0].headers.Authorization, "Bearer wa-tok");
+});

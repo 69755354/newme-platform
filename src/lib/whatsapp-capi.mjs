@@ -57,7 +57,9 @@ export function buildWhatsAppCapiPayload({ eventId, wabaId, ctwaClid, eventName,
 /** Sends one payload with the server-side token. The token is never logged. */
 export async function sendWhatsAppCapiPayload(payload, { env = process.env, fetchImpl = fetch } = {}) {
   const datasetId = env.META_WA_DATASET_ID;
-  const accessToken = env.META_CAPI_ACCESS_TOKEN;
+  // Own key for the WhatsApp dataset: the shared name also holds the website pixel key, and whichever env file loads last
+  // would otherwise win (2026-11-21: the WhatsApp key overrode the pixel key for the CRM sender).
+  const accessToken = env.META_WA_CAPI_ACCESS_TOKEN || env.META_CAPI_ACCESS_TOKEN;
   if (!datasetId || !accessToken) throw new Error("WhatsApp CAPI configuration is unavailable");
   const graphVersion = env.META_GRAPH_API_VERSION || "v25.0";
   const endpoint = new URL(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(datasetId)}/events`);

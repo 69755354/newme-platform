@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { extractWhatsAppEvents, isWhatsAppEventFresh, verifyWhatsAppSignature, type PilotChannel } from "@/lib/whatsapp-pilot.mjs";
 import { extractWhatsAppAdEvents } from "@/lib/whatsapp-ctwa.mjs";
 import { extractWhatsAppHistory, hasHistorySyncFields, historySyncEnabled, recordWhatsAppHistory, MAX_HISTORY_WEBHOOK_BYTES } from "@/lib/whatsapp-history.mjs";
+import { logger } from "@/lib/logger";
+import { markIntakeDegraded } from "@/lib/intake-degraded.mjs";
 import { adLeadsEnabled, organicLeadsEnabled, recordWhatsAppAdEvents } from "@/lib/whatsapp-ctwa-ingest.mjs";
 
 export const runtime = "nodejs";
@@ -74,11 +76,19 @@ export async function POST(request: Request) {
         onConflict: "channel_id,message_id", ignoreDuplicates: true,
       });
       pilotFailed = Boolean(writeError);
+      if (writeError) {
+        // Error level on purpose (S35 B5): this is how a stale privacy-maintenance heartbeat shows up in Sentry. Code only.
+        logger.error({ operation: "whatsapp_webhook", code: `pilot_write_refused_${String(writeError.code ?? "unknown").slice(0, 20)}` },
+          "whatsapp pilot write refused (privacy gate closed or stale): leads are still taken without message text");
+        markIntakeDegraded("whatsapp");
+      }
     }
-    // The database privacy admission (stale maintenance, expiry, deletion cutoff) guards the pilot
-    // table only. When that write fails, collection is paused: answer 503 without touching the ad
-    // path, so no lead or feedback is created. Meta retries the whole delivery, nothing is lost.
-    if (pilotFailed) return reply({ error: "event_write_failed" }, 503);
+    // S35 B5: the database privacy admission (stale maintenance, expiry, deletion cutoff) guards the pilot table only. It
+    // used to answer 503 here BEFORE the ad path, so a stalled maintenance job silently rejected every new ad lead. The lead
+    // path no longer depends on the pilot table: it runs either way. While the gate is closed message TEXT is not stored
+    // (body removed, only the kind marker stays), so privacy rules hold and the lead is still created with its minimal
+    // fields. The delivery then still answers 503 so Meta re-sends it once the gate reopens and the pilot rows are not lost;
+    // the lead path is idempotent per message id and customer phone, so the re-send creates nothing twice.
     // Click-to-WhatsApp attribution: match or create the lead and keep the ad click id. It runs
     // for the same verified body, is idempotent per message id and customer phone, and a failure
     // makes Meta retry the whole delivery, so no ad lead is lost. Ids, times and the text of text messages are
@@ -87,7 +97,8 @@ export async function POST(request: Request) {
     if (adLeadsEnabled()) {
       try {
         const adEvents = extractWhatsAppAdEvents(payload, (channels ?? []) as PilotChannel[], writeTime)
-          .filter(event => isWhatsAppEventFresh(Date.parse(event.occurred_at), writeTime));
+          .filter(event => isWhatsAppEventFresh(Date.parse(event.occurred_at), writeTime))
+          .map(event => (pilotFailed ? { ...event, body: null } : event));
         if (adEvents.length) {
           const summary = await recordWhatsAppAdEvents(supabaseAdmin, adEvents, { createOrganic: organicLeadsEnabled() });
           adFailed = summary.failed > 0;
@@ -95,6 +106,7 @@ export async function POST(request: Request) {
       } catch { adFailed = true; }
     }
     if (adFailed) return reply({ error: "ad_event_write_failed" }, 503);
+    if (pilotFailed) return reply({ error: "event_write_failed" }, 503);
     // One-time coexistence sync (S25): chat history and phone contacts are stored as backfilled rows only.
     // They never reach the lead writer, the follow-up monitor or Meta. A failed write answers 503 so Meta
     // retries the delivery; rows already stored are skipped by the database.

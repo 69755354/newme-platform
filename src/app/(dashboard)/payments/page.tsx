@@ -74,6 +74,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/actions/payments";
 import { fmtAED } from "@/shared/utils/format";
 import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 // ─── Types ───────────────────────────────────────────────────────────
 //
@@ -134,7 +135,7 @@ export default function PaymentsPage() {
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
   const [recContractId, setRecContractId] = useState("");
   const [recAmount, setRecAmount] = useState("");
-  const [recDate, setRecDate] = useState(new Date().toISOString().slice(0, 10));
+  const [recDate, setRecDate] = useState(dubaiDateKey() ?? new Date().toISOString().slice(0, 10));
   const [recMethod, setRecMethod] = useState("bank_transfer");
   const [recRefNo, setRecRefNo] = useState("");
   const [recNotes, setRecNotes] = useState("");
@@ -250,7 +251,7 @@ export default function PaymentsPage() {
   function openRecordDialog() {
     setRecContractId(contracts[0]?.id || "");
     setRecAmount("");
-    setRecDate(new Date().toISOString().slice(0, 10));
+    setRecDate(dubaiDateKey() ?? new Date().toISOString().slice(0, 10));
     setRecMethod("bank_transfer");
     setRecRefNo("");
     setRecNotes("");

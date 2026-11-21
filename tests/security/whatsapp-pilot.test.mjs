@@ -71,11 +71,19 @@ test("formatted display numbers match, while same-second sends do not prove a re
 });
 
 const require = createRequire(import.meta.url);
+// S35: the webhook now logs a refused pilot write (logger) and flags degraded intake (health). Defaults for every route load;
+// tests/unit/s35-whatsapp-intake-gate.test.mjs asserts on them.
+const loggedErrors = [];
+const degradedMarks = [];
+const DEFAULT_MOCKS = {
+  "@/lib/logger": { logger: { info() {}, warn() {}, error: (ctx, msg) => loggedErrors.push([ctx, msg]) } },
+  "@/lib/intake-degraded.mjs": { markIntakeDegraded: (channel) => degradedMarks.push(channel) },
+};
 function loadRoute(file, mocks) {
   const ts = require("typescript");
   const output = ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports = {};
-  new Function("require", "exports", output)((name) => mocks[name] ?? require(name), exports);
+  new Function("require", "exports", output)((name) => mocks[name] ?? DEFAULT_MOCKS[name] ?? require(name), exports);
   return exports;
 }
 const nextMock = { NextResponse: { json: (body, init) => Response.json(body, init) } };
@@ -239,8 +247,11 @@ test("alias route shares the handler; META_APP_SECRET signs; history and sync fi
   } finally { process.env = saved; Date.now = savedClock; }
 });
 
-// ── S18 review: the ad path must never run when the pilot write is refused ──
-test("pilot write failure answers 503 and the ad path is not touched, on both paths; success still records", async () => {
+// ── S35 B5 (was: "the ad path must never run when the pilot write is refused") ──
+// A stale privacy-maintenance heartbeat used to make the webhook answer 503 before the lead path, so every new ad lead was
+// silently refused. Now the lead path always runs (without message text while the gate is closed), the failure is logged at
+// error level, and the delivery still answers 503 so Meta re-sends the pilot rows once the gate reopens.
+test("pilot write failure still creates the ad lead (without message text), logs an error and answers 503 so Meta re-sends; success still records", async () => {
   const saved = { ...process.env }; const savedClock = Date.now;
   let failPilot = false; const rpcs = [];
   const admin = { from: () => ({ select: () => ({ eq: async () => ({ data: [channel], error: null }) }),
@@ -254,12 +265,23 @@ test("pilot write failure answers 503 and the ad path is not touched, on both pa
     Date.now = () => now;
     Object.assign(process.env, { WHATSAPP_PILOT_ENABLED: "true", WHATSAPP_APP_SECRET: "secret", WHATSAPP_PILOT_CONTACT_SALT: "salt" });
     const referral = { source_type: "ad", source_id: "120210000000001", source_url: "https://fb.me/x", media_type: "image", ctwa_clid: "AfcT3sTcLiCkId_abc-123XYZ" };
-    const raw = JSON.stringify(payload("messages", [message("ad-x", "2026-10-19T01:00:00Z", { referral })]));
+    const raw = JSON.stringify(payload("messages", [message("ad-x", "2026-10-19T01:00:00Z", { referral, text: { body: "PRIVATE TEXT" }, type: "text" })]));
     const post = (route) => route.POST(new Request("https://example.test", { method: "POST", body: raw,
       headers: { "content-type": "application/json", "x-hub-signature-256": `sha256=${createHmac("sha256", "secret").update(raw).digest("hex")}` } }));
     failPilot = true;
-    for (const route of [real, alias]) { assert.equal((await post(route)).status, 503); assert.equal(rpcs.length, 0); }
-    failPilot = false;
+    for (const route of [real, alias]) {
+      const before = rpcs.length;
+      assert.equal((await post(route)).status, 503, "Meta must re-send once the privacy gate reopens");
+      assert.equal(rpcs.length, before + 1, "the lead path ran anyway");
+      assert.equal(rpcs.at(-1)[1].p_event.referral.ctwa_clid, "AfcT3sTcLiCkId_abc-123XYZ");
+      assert.equal(rpcs.at(-1)[1].p_event.body, null, "no message text while the privacy gate is closed");
+    }
+    assert.equal(JSON.stringify(rpcs).includes("PRIVATE TEXT"), false);
+    assert.equal(loggedErrors.filter(([ctx]) => ctx.code === "pilot_write_refused_55000").length, 2, "one error-level signal per refused delivery, for the alerting");
+    assert.equal(JSON.stringify(loggedErrors).includes("PRIVATE"), false);
+    assert.deepEqual(degradedMarks.slice(-2), ["whatsapp", "whatsapp"], "/api/health shows the degraded intake");
+    rpcs.length = 0;
+failPilot = false;
     assert.equal((await post(real)).status, 200); assert.equal(rpcs.length, 1);
   } finally { process.env = saved; Date.now = savedClock; }
 });

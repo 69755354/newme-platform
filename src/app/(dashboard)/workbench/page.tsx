@@ -18,6 +18,8 @@ interface InboxItem {
   next_followup_date?: string
   next_action?: string
   updated_at?: string
+  /** S35: new (never contacted) -> due_today -> overdue -> later; "later" has no tag. */
+  inbox_group?: "new" | "due_today" | "overdue" | "later"
 }
 
 interface TaskItem {
@@ -267,6 +269,20 @@ export default function WorkbenchPage() {
                           <span className="truncate text-sm font-medium">
                             {item.customer_name}
                           </span>
+                          {item.inbox_group && item.inbox_group !== "later" && (
+                            <span
+                              data-testid={`inbox-group-${item.inbox_group}`}
+                              className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                item.inbox_group === "overdue"
+                                  ? "bg-red-100 text-red-700"
+                                  : item.inbox_group === "new"
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-amber-100 text-amber-700"
+                              }`}
+                            >
+                              {t(`workbench.group.${item.inbox_group}`)}
+                            </span>
+                          )}
                           {item.current_milestone && (
                             <span
                               className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium capitalize text-white ${

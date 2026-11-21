@@ -6,10 +6,14 @@
 // The interface labels Show room, FB and ins are not touched here.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ATTENTION_STATUSES, DISPATCH_STATUSES, DUPLICATE_DECISIONS } from "@/lib/lead-dispatch.mjs";
+import { ATTENTION_STATUSES, DISPATCH_STATUSES, DUPLICATE_DECISIONS, buildQueueAssignRequest, canAssignFromQueue } from "@/lib/lead-dispatch.mjs";
+import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs";
+import { reassignFailureKey } from "@/lib/lead-reassign-feedback.mjs";
+import { createClient } from "@/lib/supabase";
 import { buttonClass, callApi, errorText, inputClass, STATUS_TONE, textareaClass, type Translate } from "./shared";
 
-interface LeadFacts { id: string; customer_name: string | null; phone: string | null; email: string | null; source: string | null; source_channel: string | null; assigned_to: string | null; created_at: string | null }
+interface LeadFacts { id: string; customer_name: string | null; phone: string | null; email: string | null; source: string | null; source_channel: string | null; assigned_to: string | null; created_at: string | null; updated_at?: string | null }
+interface Rep { id: string; name: string }
 interface DuplicateInfo { review_id: string; decision: string; notes: string | null; matched_on: string[]; candidates: number; original: LeadFacts | null }
 interface Row {
   lead_id: string; status: string; missing_fields: string[]; phone_flag: string; routing_note: string | null; admin_note: string | null;
@@ -48,6 +52,19 @@ export default function DispatchWorkbench({ t }: { t: Translate }) {
   const [hasMore, setHasMore] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((n) => n + 1), []);
+  // S35: salespeople a lead can be handed to (the same list the lead page uses: sales, operator, boss; no QA accounts).
+  const [reps, setReps] = useState<Rep[]>([]);
+  const [pick, setPick] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const query = createClient().from("profiles").select("id,full_name,email,role,is_active");
+    const filtered = filterLeadTransferCandidateQuery(query as never, { hideSystemAccounts: true }) as typeof query;
+    filtered.then(({ data }) => {
+      if (cancelled || !data) return;
+      setReps(data.map((p) => ({ id: p.id, name: p.full_name || p.email || p.id })).sort((a, b) => a.name.localeCompare(b.name)));
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +96,23 @@ export default function DispatchWorkbench({ t }: { t: Translate }) {
     callApi(`/api/duplicates/${reviewId}/resolve`, { method: "POST", body: JSON.stringify({ decision, notes }) }));
   const reopen = (reviewId: string, reason: string) => finish(() =>
     callApi(`/api/duplicates/${reviewId}/reopen`, { method: "POST", body: JSON.stringify({ reason }) }));
+  // S35: hand an unassigned lead to a salesperson with the ordinary assignment API, then re-check the lead so it leaves "Unassigned".
+  const assign = async (row: Row) => {
+    const request = buildQueueAssignRequest(row, pick[row.lead_id] ?? "", crypto.randomUUID());
+    if (!request) return;
+    setBusy(true); setMessage("");
+    const result = await callApi<{ code?: string }>(request.url, { method: "POST", body: JSON.stringify(request.body) });
+    if (result.ok) await callApi(`/api/dispatch/${row.lead_id}/decide`, { method: "POST", body: JSON.stringify({ action: "reevaluate", reason: null }) });
+    setBusy(false);
+    if (!result.ok) {
+      setMessage(t(reassignFailureKey(result.status, result.body.code ?? result.body.error)));
+      if (result.status === 409) reload();
+      return;
+    }
+    setPick((current) => { const next = { ...current }; delete next[row.lead_id]; return next; });
+    setMessage(t("dispatch.assign.done"));
+    reload();
+  };
   const refresh = async () => {
     setBusy(true); setMessage("");
     const result = await callApi<{ evaluated?: number }>("/api/dispatch/refresh", { method: "POST", body: "{}" });
@@ -156,6 +190,16 @@ export default function DispatchWorkbench({ t }: { t: Translate }) {
                   {t(`dispatch.action.${action}`)}
                 </button>
               ))}
+              {canAssignFromQueue(row) ? (
+                <span className="inline-flex items-center gap-1" data-testid="dispatch-assign">
+                  <select className="h-7 rounded-md border border-border bg-background px-1 text-xs" aria-label={t("dispatch.assign.label")} value={pick[row.lead_id] ?? ""}
+                    onChange={(e) => setPick((current) => ({ ...current, [row.lead_id]: e.target.value }))} disabled={busy}>
+                    <option value="">{t("dispatch.assign.pick")}</option>
+                    {reps.map((rep) => <option key={rep.id} value={rep.id}>{rep.name}</option>)}
+                  </select>
+                  <button type="button" className={buttonClass} disabled={busy || !pick[row.lead_id]} onClick={() => assign(row)}>{t("dispatch.assign.button")}</button>
+                </span>
+              ) : null}
               <Link href={`/leads/${row.lead_id}`} className={buttonClass}>{t("dispatch.openLead")}</Link>
             </div>
             {form(row)}

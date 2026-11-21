@@ -20,6 +20,7 @@ import { normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import { fmtAED } from "@/shared/utils/format";
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 /* ─── Types ─── */
 interface Quotation {
@@ -270,7 +271,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
         {
           seq: current.length + 1,
           amount: Math.max(round2(scheduleRemainder), 0),
-          due_date: new Date().toISOString().slice(0, 10),
+          due_date: dubaiDateKey() ?? new Date().toISOString().slice(0, 10),
           description: "",
         },
       ];

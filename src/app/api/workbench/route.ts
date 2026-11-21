@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
 import { getCached, setCache } from "@/lib/api-cache.mjs"
+import { INBOX_LIMIT, inboxDayKeys, mergeInbox } from "@/lib/workbench-inbox.mjs"
 
 // Dubai GST = UTC+4. All "day"/"week" math below is done in GST, then
 // converted back to UTC ISO strings for DB queries.
@@ -65,6 +66,8 @@ export async function GET(request: Request) {
   const isSales = profile.role === "sales"
   const nowIso = new Date().toISOString()
   const taskCols = "id,lead_id,title,due_at,status,source,created_at,assignee_id"
+  const INBOX_COLUMNS = "id,customer_name,phone,current_milestone,next_followup_date,next_action,updated_at"
+  const days = inboxDayKeys()
 
   // ── Phase 3: all data queries in parallel ──
   const [
@@ -75,19 +78,31 @@ export async function GET(request: Request) {
     progressResult,
     featuresResult,
   ] = await Promise.all([
-    // inbox
-    (() => {
+    // inbox (S35 B7): four small queries, merged new -> due today -> overdue -> later, so old overdue leads
+    // can never push a freshly assigned, never-contacted lead out of the 20.
+    Promise.all((["new", "due_today", "overdue", "later"] as const).map((group) => {
       let q = supabase
         .from("leads")
-        .select("id,customer_name,phone,current_milestone,next_followup_date,next_action,updated_at")
+        .select(INBOX_COLUMNS)
         .eq("archived", false)
         .is("final_status", null)
       if (isSales) q = q.eq("assigned_to", user.id)
-      return q
+      if (group === "new") {
+        return q.eq("stage", "new").is("last_contact_date", null)
+          .order("updated_at", { ascending: false }).limit(INBOX_LIMIT)
+      }
+      if (group === "due_today") {
+        return q.gte("next_followup_date", days.today).lt("next_followup_date", days.tomorrow)
+          .order("updated_at", { ascending: false }).limit(INBOX_LIMIT)
+      }
+      if (group === "overdue") {
+        return q.lt("next_followup_date", days.today)
+          .order("next_followup_date", { ascending: true }).limit(INBOX_LIMIT)
+      }
+      return q.or(`next_followup_date.is.null,next_followup_date.gte.${days.tomorrow}`)
         .order("next_followup_date", { ascending: true, nullsFirst: false })
-        .order("updated_at", { ascending: false })
-        .limit(20)
-    })(),
+        .order("updated_at", { ascending: false }).limit(INBOX_LIMIT)
+    })),
 
     // tasks
     supabase
@@ -134,7 +149,14 @@ export async function GET(request: Request) {
   ])
 
   // ── Process inbox ──
-  const inboxItems = ((inboxResult.data ?? []) as any[]).map((lead: any) => ({
+  const [newRows, dueTodayRows, overdueRows, laterRows] = inboxResult as Array<{ data: any[] | null }>
+  const inboxItems = mergeInbox({
+    new: newRows.data ?? [],
+    due_today: dueTodayRows.data ?? [],
+    overdue: overdueRows.data ?? [],
+    later: laterRows.data ?? [],
+  }, INBOX_LIMIT).map((lead: any) => ({
+    inbox_group: lead.inbox_group as string,
     id: lead.id,
     customer_name: lead.customer_name,
     phone: lead.phone,

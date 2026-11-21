@@ -10,6 +10,7 @@ import {
 } from "@/lib/public-lead";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createFollowUpTask } from "@/lib/tasks";
+import { notifyNewLeadSafe } from "@/lib/lead-intake-notify.mjs";
 import { buildMetaCapiLeadPayload, sendMetaCapiPayload, type MetaCapiPayload } from "@/lib/meta-capi";
 import { websiteEventUuid, websiteLeadFingerprint } from "@/lib/website-lead-identity";
 import { attemptCapiDelivery, type CapiDelivery } from "@/lib/meta-capi-delivery";
@@ -213,6 +214,12 @@ export async function POST(request: Request) {
     }, "website_lead_insert_failed");
     return response(origin, { error: "temporarily_unavailable" }, 503);
   }
+
+  // S35: the website form is an ad / SEO intake with nobody assigned: tell the dispatchers now. The event key
+  // makes a retried submission (23505 branch above) a no-op instead of a second notification.
+  await notifyNewLeadSafe(supabaseAdmin, { id: leadId, customer_name: parsed.value.customerName, assigned_to: null, created_at: intakeAt }, {
+    onError: (code) => logger.error({ route: "/api/public/leads", operation: "notify_new_website_lead", request_id: requestId, lead_id: leadId, code }, "website_lead_notification_failed"),
+  });
 
   const { error: taskError } = await createFollowUpTask(supabaseAdmin, {
     leadId,

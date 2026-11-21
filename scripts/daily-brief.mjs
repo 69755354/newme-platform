@@ -3,7 +3,10 @@
 // sends nothing and writes nothing. Scheduled with --execute by infra/systemd/newme-daily-brief.timer and
 // newme-lead-reminder.timer; with --execute each job still does nothing unless its switch is "true":
 //   NEWME_DAILY_BRIEF_ENABLED=true     08:05 Dubai brief to the alert recipients (Sam + Tanya)
-//   NEWME_LEAD_REMINDER_ENABLED=true   hourly 09:00-21:00 Dubai reminder to each salesperson (profiles.phone)
+//   NEWME_LEAD_REMINDER_ENABLED=true   hourly 09:00-21:00 Dubai reminders (profiles.phone): (1) each salesperson with leads assigned
+//                                      over 24h ago and not contacted; (2) S35 ad leads (Meta form, WhatsApp click-to-chat, website)
+//                                      not contacted within 1 hour (outside 09:00-20:00 arrival: by 10:00), to the owner, or when
+//                                      nobody owns the lead to every active admin and boss. Once per lead and person.
 // Messages use the existing alert sender and its approved template; credentials stay in /etc/newme/alerts.env.
 // Usage: node scripts/daily-brief.mjs --mode brief|reminders [--execute]
 import { execFile } from "node:child_process";
@@ -13,14 +16,14 @@ import { pathToFileURL } from "node:url";
 import { dubaiDateKey } from "../src/lib/dubai-time.mjs";
 import { fetchAllRows } from "../src/lib/fetch-all-rows.mjs";
 import {
-  buildBrief, buildReminder, countNewLeads, groupUncontactedForBrief, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
+  adReminderNotificationRows, buildAdReminder, buildBrief, buildReminder, countNewLeads, planAdReminders, selectAdUncontacted, groupUncontactedForBrief, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
   summarizeSpend, yesterdayBounds, DEFAULT_MAX_LEAD_AGE_DAYS,
 } from "../src/lib/daily-brief.mjs";
 
 const SENDER = process.env.NEWME_ALERT_SENDER || "/usr/local/libexec/newme/newme-whatsapp-alert.sh";
 const stateDir = () => process.env.NEWME_BRIEF_STATE_DIR || "/var/lib/newme-daily-brief";
 const CHUNK = 150;
-const LEAD_COLUMNS = "id,customer_name,source,source_platform,utm_source,ctwa_clid,ad_id,fbclid,meta_click_id,archived,created_at,assigned_to,stage,final_status,hold_since,"
+const LEAD_COLUMNS = "id,customer_name,source,source_platform,source_channel,utm_source,ctwa_clid,ad_id,fbclid,meta_click_id,archived,created_at,assigned_to,stage,final_status,hold_since,"
   + "last_contact_date,first_touch_at,wa_first_reply_at,no_answer_flag,followup_count,quotation_value,quotation_sent_date,imported_at,drive_sync:raw_import_data->drive_sync";
 const isTrue = (v) => String(v ?? "").trim().toLowerCase() === "true";
 const must = (r) => { if (r.error) throw new Error(r.error.message ?? "query failed"); return r.data ?? []; };
@@ -120,6 +123,15 @@ export async function runBrief(db, { execute = false, now = new Date(), send = s
   return { ...summary, sent: true };
 }
 
+const AD_LEDGER_DAYS = 4; // ad leads older than AD_REMINDER_MAX_AGE_DAYS are never selected, so 4 daily files cover every key
+const adLedgerKeys = (now) => {
+  const keys = new Set();
+  for (let k = 0; k < AD_LEDGER_DAYS; k += 1) {
+    for (const key of readLedger("ad-reminders", dubaiDateKey(new Date(now.getTime() - k * 86_400_000))).sent ?? []) keys.add(key);
+  }
+  return keys;
+};
+
 export async function runReminders(db, { execute = false, now = new Date(), send = sendWhatsapp, env = process.env } = {}) {
   // Switch and window first: a switched-off (or out-of-hours) hourly run does nothing at all, not even a read.
   if (execute && !isTrue(env.NEWME_LEAD_REMINDER_ENABLED)) return { job: "reminders", mode: "disabled", sent: 0, failed: 0 };
@@ -129,8 +141,14 @@ export async function runReminders(db, { execute = false, now = new Date(), send
   const today = dubaiDateKey(now);
   const done = new Set(readLedger("reminders", today).sent ?? []);
   const due = plan.sendable.filter((p) => !done.has(p.id));
+  // S35: ad leads past their one-hour deadline, owned or not (the 24 hour plan above skips unowned leads on purpose).
+  const adItems = selectAdUncontacted({ leads: data.candidates, logLeadIds: data.logLeadIds, excludedTestIds: data.excludedTestIds, now });
+  const adDone = adLedgerKeys(now);
+  const adPlan = planAdReminders(adItems, data.profiles, adDone);
   const summary = { job: "reminders", mode: execute ? "execute" : "dry_run", date: today, salespeople_with_uncontacted: plan.people.length,
-    uncontacted: plan.people.reduce((s, p) => s + p.items.length, 0), missing_phone: plan.missingPhone.length, already_reminded_today: plan.sendable.length - due.length, due: due.length, sent: 0, failed: 0 };
+    uncontacted: plan.people.reduce((s, p) => s + p.items.length, 0), missing_phone: plan.missingPhone.length, already_reminded_today: plan.sendable.length - due.length, due: due.length, sent: 0, failed: 0,
+    ad_overdue: adItems.length, ad_unassigned: adItems.filter((i) => !i.assigned_to).length, ad_people: adPlan.people.length,
+    ad_missing_phone: adPlan.missingPhone.length, ad_sent: 0, ad_failed: 0, ad_bell_failed: 0 };
   if (!execute) return summary;
   if (!isTrue(env.NEWME_LEAD_REMINDER_ENABLED)) return { ...summary, mode: "disabled" };
   if (!inReminderWindow(now)) return { ...summary, mode: "outside_window" };
@@ -140,6 +158,22 @@ export async function runReminders(db, { execute = false, now = new Date(), send
       writeLedger("reminders", today, { sent: [...done] }); // after each delivery: a crash never double-sends
     } else summary.failed += 1;
   }
+  // Ad-lead reminders: the bell first (idempotent by event key, also reaches people without a phone number), then WhatsApp.
+  for (const person of adPlan.people) {
+    try {
+      const { error } = await db.rpc("insert_notifications_atomic", { p_notifications: adReminderNotificationRows(person) });
+      if (error) throw new Error("bell_failed");
+    } catch { summary.ad_bell_failed += 1; }
+  }
+  const adSent = readLedger("ad-reminders", today).sent ?? [];
+  for (const person of adPlan.sendable) {
+    if (await send({ key: "newme-lead-reminder", text: buildAdReminder(person), number: person.number })) {
+      summary.ad_sent += 1;
+      for (const item of person.items) adSent.push(`${person.id}:${item.lead_id}`);
+      writeLedger("ad-reminders", today, { sent: [...new Set(adSent)] }); // after each delivery: a crash never double-sends
+    } else summary.ad_failed += 1;
+  }
+  summary.failed += summary.ad_failed;
   return summary;
 }
 

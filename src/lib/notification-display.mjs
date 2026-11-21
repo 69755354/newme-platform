@@ -14,6 +14,8 @@ const LEAD_PATTERNS = [
   { field: "body", re: /^(.+) was assigned to you\.$/s, key: "leadFlow.notification.assignedToYouBody" },
   { field: "body", re: /^Lead "(.+)" is waiting for assignment$/s, key: "leadFlow.notification.waitingBody" },
   { field: "body", re: /^.+ created lead "(.+)"$/s, key: "leadFlow.notification.createdBody" },
+  { field: "title", re: /^Lead not contacted yet: (.+)$/s, key: "leadFlow.notification.uncontactedTitle" },
+  { field: "body", re: /^Lead "(.+)" has had no first contact for over 1 hour$/s, key: "leadFlow.notification.uncontactedBody" },
 ];
 
 function render(template, name) {

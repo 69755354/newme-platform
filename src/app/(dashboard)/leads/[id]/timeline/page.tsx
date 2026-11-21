@@ -15,6 +15,7 @@ import { ArrowLeft, Plus, Phone, MoreHorizontal, Clock, MessageSquare } from "lu
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
+import { dubaiInputToIso } from "@/lib/dubai-time.mjs";
 
 interface FollowUpLogRow {
   id: string;
@@ -91,14 +92,16 @@ export default function LeadTimelinePage() {
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const contactTime = new Date(formContactTime);
+      // S35 F05: the field is Dubai time, whatever zone the browser is in.
+      const contactTimeIso = dubaiInputToIso(formContactTime);
+      if (!contactTimeIso) { setTimeError(lang === "zh" ? "请填写实际动作发生时间" : "Please enter action time"); return; }
       const insertPayload = {
         lead_id: id,
         contact_type: formType,
         summary: formContent.trim(),
         next_action: formNextAction.trim() || null,
         created_by: user?.id ?? null,
-        contact_time: contactTime.toISOString(),
+        contact_time: contactTimeIso,
         result: "contacted",
       };
       const { error } = await supabase.from("follow_up_logs").insert(insertPayload);

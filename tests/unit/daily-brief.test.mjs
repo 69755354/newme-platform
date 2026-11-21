@@ -194,7 +194,9 @@ class Query {
 const fakeDb = (tables) => ({ from: (name) => new Query(tables[name] ?? []) });
 const tables = () => ({
   lead_dispatch_state: [],
-  leads: [lead({ id: "x1", created_at: at("2026-11-19T06:00:00Z") }), lead({ id: "x2", created_at: at("2026-11-20T10:00:00Z"), source: "ins" })],
+  // Showroom leads: the 24 hour reminder applies to every channel; the 1 hour ad-lead reminder (S35) does not, so these
+  // runner tests keep covering the 24 hour job on its own. The ad-lead reminder has its own runner tests below.
+  leads: [lead({ id: "x1", created_at: at("2026-11-19T06:00:00Z"), source: "show_room" }), lead({ id: "x2", created_at: at("2026-11-20T10:00:00Z"), source: "show_room" })],
   profiles: [{ id: "u1", full_name: "Sales One", phone: "0501234567", is_active: true }],
   follow_up_logs: [], transfer_history: [], quotations: [], ad_spend: [{ spend_date: "2026-11-20", amount: 90 }],
 });

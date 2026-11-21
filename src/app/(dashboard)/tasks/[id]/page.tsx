@@ -26,6 +26,7 @@ import {
 } from "@/lib/task-followup-conflict";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { dubaiInputToIso, dubaiInputValue } from "@/lib/dubai-time.mjs";
 
 /* ─── Types ─── */
 interface Task {
@@ -71,10 +72,10 @@ function formatDateTime(d: string | null, locale: string): string {
   return fmtDubai(new Date(d), { locale, month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+// S35 F05: due dates are Dubai wall-clock time in the form (never the UTC clock, never the browser zone).
 function formatDateForInput(d: string | null): string {
   if (!d) return "";
-  const date = new Date(d);
-  return date.toISOString().slice(0, 16);
+  return dubaiInputValue(d);
 }
 
 interface TaskMutationPayload {
@@ -88,9 +89,7 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function futureDateTimeLocal(): string {
-  const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const local = new Date(future.getTime() - future.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  return dubaiInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
 }
 
 function isTaskStatus(value: string): value is CanonicalTaskStatus {
@@ -201,7 +200,7 @@ export default function TaskDetailPage() {
         description: editDescription.trim() || null,
         priority: editPriority || null,
         assignee_id: editAssignedTo || null,
-        due_at: new Date(editDueAt).toISOString(),
+        due_at: dubaiInputToIso(editDueAt) ?? new Date(editDueAt).toISOString(),
       } satisfies TaskMutationExpectation;
       const { response, payload } = await patchTask(task.id, mutation);
       if (!response.ok) {
@@ -287,7 +286,7 @@ export default function TaskDetailPage() {
           id: taskId,
           lead_id: task.lead_id,
           title: successorTitle.trim(),
-          due_at: new Date(successorDueAt).toISOString(),
+          due_at: dubaiInputToIso(successorDueAt) ?? new Date(successorDueAt).toISOString(),
         }),
       });
       const created = await createResponse.json().catch(() => ({})) as TaskMutationPayload;

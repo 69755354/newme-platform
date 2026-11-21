@@ -89,3 +89,10 @@ sudo BACKUP_LIB=/usr/local/libexec/newme/newme-backup-lib.sh /usr/local/libexec/
 - `newme-wa-capi-send.timer`（点击 WhatsApp 广告的回传）原来只在主机上手工装过，现在收进仓库 `infra/systemd/`，内容与主机一致；安装器只更新文件，不改它是否启用。
 - `newme-meta-crm-send.timer`（表单线索阶段回传，队列 `meta_crm_stage_events`）新增，写法与上面相同：每 10 分钟，`node scripts/meta-crm-events-send.mjs --execute`，失败走 `newme-unit-alert@`。安装器只在 `/etc/newme/newme-runtime.env` 或 `capi-wa.env` 里有 `META_PIXEL_ID` 和 `META_CAPI_ACCESS_TOKEN`（只看变量名有没有值，不读出值）时才启用，否则只装不启用并打印提示。
 - 两个发送脚本的汇总都有 `exhausted`（重试 5 次仍没发出去、不会再被拾取的行），非零时以 1 退出，从而触发告警。
+
+## 每日简报与未联系提醒（默认关闭）
+
+- `newme-daily-brief.timer`：迪拜 08:05（UTC 04:05）发简报给 Sam 和 Tanya；`newme-lead-reminder.timer`：迪拜 09:00 到 21:00 每小时，给分配超过 24 小时仍无首次联系的销售发一条提醒（每人每天最多一条）。两者都走现有告警发送器和已批准模板，失败走 `newme-unit-alert@`。
+- 开关在 `/etc/newme/daily-brief.env`（可选文件，不存在即关闭）：`NEWME_DAILY_BRIEF_ENABLED=true`、`NEWME_LEAD_REMINDER_ENABLED=true`。每次运行都重新读取，改完不用重启。
+- 试运行（只读，只打印数量）：`node scripts/daily-brief.mjs --mode brief` 或 `--mode reminders`。
+- 销售手机号取自 `profiles.phone`；没有手机号的人不发提醒，并在简报的“需要注意”里列出。

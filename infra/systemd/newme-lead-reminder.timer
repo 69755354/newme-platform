@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly 09:00-21:00 Dubai (05:00-17:00 UTC): uncontacted-lead reminder to each salesperson
+
+[Timer]
+OnCalendar=*-*-* 05..17:00:00 UTC
+RandomizedDelaySec=30
+Persistent=false
+
+[Install]
+WantedBy=timers.target

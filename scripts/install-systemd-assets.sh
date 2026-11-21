@@ -980,6 +980,10 @@ MANAGED=(
   /etc/systemd/system/newme-wa-capi-send.timer
   /etc/systemd/system/newme-meta-crm-send.service
   /etc/systemd/system/newme-meta-crm-send.timer
+  /etc/systemd/system/newme-daily-brief.service
+  /etc/systemd/system/newme-daily-brief.timer
+  /etc/systemd/system/newme-lead-reminder.service
+  /etc/systemd/system/newme-lead-reminder.timer
 )
 # The control plane itself. Round-3 P1-10: these were installed before the backup
 # existed and were not in the backup set, so a deployment that replaced the deploy
@@ -1241,7 +1245,9 @@ for ops_script in newme-backup-onfailure.sh newme-backup-freshness.sh newme-rest
 done
 for ops_unit in infra/backup/newme-restore-drill.service infra/backup/newme-restore-drill.timer \
   infra/systemd/newme-wa-capi-send.service infra/systemd/newme-wa-capi-send.timer \
-  infra/systemd/newme-meta-crm-send.service infra/systemd/newme-meta-crm-send.timer; do
+  infra/systemd/newme-meta-crm-send.service infra/systemd/newme-meta-crm-send.timer \
+  infra/systemd/newme-daily-brief.service infra/systemd/newme-daily-brief.timer \
+  infra/systemd/newme-lead-reminder.service infra/systemd/newme-lead-reminder.timer; do
   install -D -o root -g root -m 0644 "$ROOT/$ops_unit" "/etc/systemd/system/${ops_unit##*/}"
 done
 
@@ -1304,6 +1310,11 @@ if grep -Eqs '^(export )?META_PIXEL_ID=[^[:space:]]' /etc/newme/newme-runtime.en
 else
   echo "notice: newme-meta-crm-send.timer installed but not enabled: META_PIXEL_ID / META_CAPI_ACCESS_TOKEN not configured" >&2
 fi
+# Daily brief and lead reminders: the timers run, but each job does nothing unless its own switch
+# (NEWME_DAILY_BRIEF_ENABLED / NEWME_LEAD_REMINDER_ENABLED = true in /etc/newme/daily-brief.env) is set.
+for brief_timer in newme-daily-brief.timer newme-lead-reminder.timer; do
+  systemctl enable --now "$brief_timer" || echo "WARNING: $brief_timer could not be enabled" >&2
+done
 echo "backup=$BACKUP rollback=sudo bash $ROOT/scripts/rollback-systemd-assets.sh $BACKUP"
 INSTALL_COMMITTED=1
 trap - EXIT HUP INT TERM

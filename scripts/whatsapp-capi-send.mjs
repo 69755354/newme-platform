@@ -4,7 +4,8 @@
 // Conversions API for Business Messaging. Credentials come only from the server environment.
 // Without META_WA_DATASET_ID the tool never sends: the queue just keeps filling.
 import { randomUUID } from "node:crypto";
-import { pathToFileURL } from "node:url";
+import { realpathSync as realpathOf } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { hashedContactKeys } from "../src/lib/meta-crm-events.ts";
 import { buildWhatsAppCapiPayload, sendWhatsAppCapiPayload, WA_CAPI_EVENT_MAX_AGE_SECONDS } from "../src/lib/whatsapp-capi.mjs";
@@ -77,7 +78,10 @@ export async function sendWhatsAppCapiEvents(db, { execute = false, limit = 50, 
   return summary;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) {
   const args = process.argv.slice(2);
   if (args.some((arg) => arg !== "--execute")) {
     console.error("Usage: node scripts/whatsapp-capi-send.mjs [--execute] (default: read-only)");

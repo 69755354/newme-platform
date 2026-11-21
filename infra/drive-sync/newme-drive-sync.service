@@ -4,6 +4,8 @@ Description=NewMe Drive sheets -> OS sync (read-only toward Drive; plan or apply
 # install only together with DRIVE_SYNC_INGEST_ENABLED=true on the app, the token in /etc/newme/drive-sync.env and Sam's approval; see docs/s29-drive-to-os-sync.md
 After=network-online.target newme-platform.service
 Wants=network-online.target
+# The run fails only on a hard error (usage, anomaly, write cap); the alert then names this unit (表格回读), never the database backup.
+OnFailure=newme-backup-alert@%n.service
 
 [Service]
 Type=oneshot

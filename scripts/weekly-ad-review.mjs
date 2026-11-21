@@ -46,9 +46,11 @@ export async function main(argv, env = process.env) {
   const execute = argv.includes("--execute");
   if (argv.some((a) => a !== "--execute")) { console.error("Usage: node scripts/weekly-ad-review.mjs [--execute]"); return 2; }
   if (execute && env.WEEKLY_AD_REVIEW_ENABLED !== "true") { console.log("weekly ad review is switched off (WEEKLY_AD_REVIEW_ENABLED is not true); nothing done"); return 0; }
-  if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) { console.error("database configuration unavailable"); return 1; }
+  const dbUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const dbKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!dbUrl || !dbKey) { console.error("database configuration unavailable"); return 1; }
   const { createClient } = await import("@supabase/supabase-js");
-  const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = createClient(dbUrl, dbKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const review = await collectReview(db);
   const text = reviewText(review);
   if (!execute) { console.log(text); console.log(reviewMessage(review)); return 0; }

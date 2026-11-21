@@ -23,8 +23,9 @@
 // marker source and be assigned to one of the two QA users; the assignee the lead
 // had before is restored in `finally`, and a failed restore is reported as CRITICAL.
 import { randomUUID } from "node:crypto";
+import { realpathSync as realpathOf } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 export class SyntheticAbort extends Error {}
 
@@ -314,7 +315,10 @@ export async function sendAlert(env, text, ok) {
   return delivered;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) {
   let config;
   try { config = loadConfig(process.env); } catch (error) { console.error(error.message); process.exit(2); }
   const dryRun = process.argv.includes("--dry-run");

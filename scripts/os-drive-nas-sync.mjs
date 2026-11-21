@@ -5,10 +5,11 @@
 // the planned writes. See docs/s28-drive-nas-sync.md. Never prints keys, phone numbers or click ids.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { realpathSync as realpathOf } from "node:fs";
 import { appendFileSync, chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { buildMetaIdRows, leadRef } from "../src/lib/meta-ids-export.mjs";
 import { createSheetsClient, loadServiceAccount } from "../src/lib/google-sheets-client.mjs";
 import {
@@ -535,4 +536,7 @@ async function main() {
   process.exitCode = exitCode;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) await main();

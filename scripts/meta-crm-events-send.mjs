@@ -2,7 +2,8 @@
 // Operator tool, default read-only. Scheduled with --execute by infra/systemd/newme-meta-crm-send.timer.
 // Sends queued Meta CRM stage events. Credentials come only from the server environment.
 import { randomUUID } from "node:crypto";
-import { pathToFileURL } from "node:url";
+import { realpathSync as realpathOf } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import { activeContractAmount } from "../src/lib/whatsapp-capi.mjs";
 import { latestQuotationAmount } from "../src/lib/quote-amount.mjs";
@@ -98,7 +99,10 @@ export async function sendMetaCrmEvents(db, { execute = false, limit = 50, clock
   return summary;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) {
   const args = process.argv.slice(2);
   if (args.some((arg) => arg !== "--execute")) {
     console.error("Usage: node scripts/meta-crm-events-send.mjs [--execute] (default: read-only)");

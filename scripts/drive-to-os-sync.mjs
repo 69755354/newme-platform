@@ -8,6 +8,7 @@
 // Default mode is --dry-run (DRIVE_SYNC_MODE=apply or --apply switches it). Exit codes: 0 ok, 2 anomaly, 3 write cap exceeded, 64 usage.
 // Reports hold counts, masked ids and sheet/row numbers only: never names, phone numbers or e-mails.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { realpathSync as realpathOf } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -174,7 +175,10 @@ export async function runSync({ argv = [], env = process.env, deps = {} } = {}) 
   } finally { try { unlinkSync(lock); } catch { /* gone */ } }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) {
   runSync({ argv: process.argv.slice(2) }).then((r) => { console.log(r.report); if (r.reportFile) console.log(`\nreport file: ${r.reportFile}`); process.exit(r.code); })
     .catch((err) => { console.error(`drive-to-os-sync failed: ${err.message}`); process.exit(EXIT.anomaly); });
 }

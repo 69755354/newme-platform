@@ -5,7 +5,8 @@
 // --execute stores the missing ones (idempotent) and queues their "Lead" event.
 // Only aggregate counts are printed: no names, contacts, answers or tokens.
 import fs from "node:fs";
-import { pathToFileURL } from "node:url";
+import { realpathSync as realpathOf } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import {
   LEAD_FIELDS, graphGet, isCrmEventDeliverable, graphUrl, mapMetaLeadToRow, normalizeMetaId, resolvePageAccessToken, storeMetaLead,
@@ -135,7 +136,10 @@ function parseArgs(argv) {
   return args;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) {
   const { execute, sinceDays } = parseArgs(process.argv.slice(2));
   const env = process.env;
   const pageIds = (env.META_LEADGEN_PAGE_IDS ?? "").split(",").map((v) => v.trim()).filter(Boolean);

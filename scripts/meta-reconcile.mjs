@@ -7,7 +7,8 @@
 // form answers or tokens).
 //
 // Exit codes: 0 consistent, 1 discrepancy or check failure, 2 configuration.
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { realpathSync as realpathOf } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { pullMetaLeads } from "./meta-leads-pull.mjs";
 
@@ -40,7 +41,10 @@ export async function reconcile({ db, fetchImpl = fetch, env, nowMs = Date.now()
   return { summary, verdict: evaluateReconciliation(summary) };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// Main-module test by real path: systemd, cron and the Hermes scripts start this by the /opt/newme/current symlink, and Node
+// reports import.meta.url as the resolved release directory, so comparing the unresolved argv[1] never matched there.
+const isMainModule = () => { try { return Boolean(process.argv[1]) && realpathOf(process.argv[1]) === realpathOf(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainModule()) {
   const env = process.env;
   const url = env.NEXT_PUBLIC_SUPABASE_URL;
   const key = env.SUPABASE_SERVICE_ROLE_KEY;

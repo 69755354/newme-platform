@@ -1829,7 +1829,7 @@ ROLLBACK_SHA=""
 if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
   DB_TRANSITION_OPERATION=${3:-}
   if [ "$#" -ne 3 ] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision|whatsapp-privacy-plan|whatsapp-privacy-provision|meta-ads-plan|meta-ads-provision|meta-capi-plan|meta-capi-provision|meta-crm-plan|meta-crm-provision|s2-roles-plan|s2-roles-provision|s16-db-plan|s16-db-provision|s18-db-plan|s18-db-provision|data-import-plan|data-import-apply|data-import-rollback|s21-db-plan|s21-db-provision|s23-db-plan|s23-db-provision|s24-db-plan|s24-db-provision|s25-db-plan|s25-db-provision|s31-db-plan|s31-db-provision|s32-db-plan|s32-db-provision>" >&2
+    echo "usage: newme-deploy db-transition <main-sha> <successful-run-id> <expand-plan|expand-apply|contract-apply|contract-verify|contract-rollback|contract-reenter|whatsapp-plan|whatsapp-provision|whatsapp-privacy-plan|whatsapp-privacy-provision|meta-ads-plan|meta-ads-provision|meta-capi-plan|meta-capi-provision|meta-crm-plan|meta-crm-provision|s2-roles-plan|s2-roles-provision|s16-db-plan|s16-db-provision|s18-db-plan|s18-db-provision|data-import-plan|data-import-apply|data-import-rollback|s21-db-plan|s21-db-provision|s23-db-plan|s23-db-provision|s24-db-plan|s24-db-provision|s25-db-plan|s25-db-provision|s31-db-plan|s31-db-provision|s32-db-plan|s32-db-provision|s33-db-plan|s33-db-provision>" >&2
     exit 64
   fi
   case "$DB_TRANSITION_OPERATION" in
@@ -1849,6 +1849,7 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     s25-db-plan|s25-db-provision) ;;
     s31-db-plan|s31-db-provision) ;;
     s32-db-plan|s32-db-provision) ;;
+    s33-db-plan|s33-db-provision) ;;
     *) exit 64 ;;
   esac
 elif [ "$LITE_LANE" -eq 1 ]; then
@@ -2517,6 +2518,20 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
     require_canonical_main_sha "$SHA" || exit 65
     require_ci_gate_still_fresh || exit 65
   fi
+  # S33 (OS fix S33): public.sync_advance_lead_stage_from_sheet (service role only) so the Drive sync can move a lead to
+  # quotation_submitted; one reviewed file, applied only after the complete live prefix with an exact SQL hash and an exact
+  # before-state (the routine does not exist).
+  if [ "$DB_TRANSITION_OPERATION" = s33-db-plan ] || [ "$DB_TRANSITION_OPERATION" = s33-db-provision ]; then
+    git --git-dir="$MIRROR" merge-base --is-ancestor "$ROLLBACK_SHA" "$SHA" || exit 65
+    "$NODE_BIN" "$LIVE_RELEASE/scripts/db-phase-push.mjs" \
+      --phase deferred_contract --verify-only \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    "$NODE_BIN" "$WORKTREE/scripts/check-s33-db-batch-provisioning.mjs" \
+      --live-release "$LIVE_RELEASE" --candidate-release "$WORKTREE" \
+      --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+    require_canonical_main_sha "$SHA" || exit 65
+    require_ci_gate_still_fresh || exit 65
+  fi
   case "$DB_TRANSITION_OPERATION" in
     expand-plan)
       "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
@@ -2641,6 +2656,13 @@ if [ "$DB_TRANSITION_ONLY" -eq 1 ]; then
       [ "$DB_TRANSITION_OPERATION" != s32-db-provision ] || s32_db_mode=--apply
       "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
         --phase deferred_contract "$s32_db_mode" \
+        --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
+      ;;
+    s33-db-plan|s33-db-provision)
+      s33_db_mode=--plan
+      [ "$DB_TRANSITION_OPERATION" != s33-db-provision ] || s33_db_mode=--apply
+      "$NODE_BIN" "$WORKTREE/scripts/db-phase-push.mjs" \
+        --phase deferred_contract "$s33_db_mode" \
         --url-file "$MIGRATION_DB_URL_FILE" --modules-dir "$LIVE_RELEASE/node_modules"
       ;;
     contract-verify)

@@ -242,10 +242,18 @@ test("systemd: both services have OnFailure alerting, the alert unit runs the on
   const s = sandbox();
   const r = spawnSync("bash", [infra("newme-backup-onfailure.sh"), "newme-db-backup.service"], { encoding: "utf8", env: s.env() });
   assert.equal(r.status, 0);
-  assert.match(s.log(), /alert db-backup failure systemd unit newme-db-backup\.service ended in failure/);
+  assert.match(s.log(), /alert db-backup failure 数据库备份（systemd 单元 newme-db-backup\.service）运行失败/);
   const r2 = spawnSync("bash", [infra("newme-backup-onfailure.sh"), "newme-restore-drill.service"], { encoding: "utf8", env: s.env() });
   assert.equal(r2.status, 0);
-  assert.match(s.log(), /alert db-restore-drill failure systemd unit newme-restore-drill\.service/);
+  assert.match(s.log(), /alert db-restore-drill failure 备份恢复演练（systemd 单元 newme-restore-drill\.service）/);
+  // other units that use the same OnFailure template are named in plain words and get their own alert key, never db-backup
+  for (const [unit, key, name] of [["newme-os-drive-sync.service", "newme-os-drive-sync", "表格同步"], ["newme-os-drive-reconcile.service", "newme-os-drive-reconcile", "表格对账"], ["newme-drive-sync.service", "newme-drive-sync", "表格回读"], ["newme-meta-ids-export.service", "newme-meta-ids-export", "广告编号导出"], ["newme-something-new.service", "newme-something-new", "newme-something-new.service"]]) {
+    const s3 = sandbox();
+    const r3 = spawnSync("bash", [infra("newme-backup-onfailure.sh"), unit], { encoding: "utf8", env: s3.env() });
+    assert.equal(r3.status, 0, unit);
+    assert.match(s3.log(), new RegExp(`alert ${key} failure ${name.replace(/\./g, "\\.")}（systemd 单元 ${unit.replace(/\./g, "\\.")}）运行失败`), unit);
+    assert.ok(!/alert db-backup /.test(s3.log()), `${unit} must not use the db-backup key`);
+  }
 });
 
 

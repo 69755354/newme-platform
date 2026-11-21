@@ -1,23 +1,29 @@
 #!/usr/bin/env node
 // Weekly ad review (Mondays 09:10 Dubai). READ-ONLY on OS data and on Meta: it never changes a campaign, ad or budget.
 //   node scripts/weekly-ad-review.mjs             dry run: prints the report, sends and uploads nothing
+//   node scripts/weekly-ad-review.mjs --spend-file <path.json>
+//                                                 per-ad spend from the Meta connector (7-day window) used INSTEAD of
+//                                                 the ad_spend table; matched by ad_id first, then ad name
+//   node scripts/weekly-ad-review.mjs --print     like the dry run, and also writes the CSV (to WEEKLY_AD_REVIEW_OUT_DIR
+//                                                 or the system temp folder) and prints its path; sends/uploads nothing
 //   node scripts/weekly-ad-review.mjs --execute   needs WEEKLY_AD_REVIEW_ENABLED=true (switch default OFF); saves the
 //                                                 CSV + text, uploads them to the NAS exports folder, sends the WhatsApp summary
 // Credentials come only from the server environment (same files as the other senders).
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fetchAllRows } from "../src/lib/fetch-all-rows.mjs";
 import { EXCLUDE_SYNTHETIC_QA_FILTER } from "../src/lib/lead-metrics.mjs";
-import { buildWeeklyAdReview, reviewCsv, reviewMessage, reviewText, reviewWindow } from "../src/lib/weekly-ad-review.mjs";
+import { buildWeeklyAdReview, parseSpendFile, reviewCsv, reviewMessage, reviewText, reviewWindow } from "../src/lib/weekly-ad-review.mjs";
 
 const LEAD_COLUMNS = "id, campaign_name, ad_id, ad_name, ctwa_clid, created_at, source, source_platform, utm_source, utm_campaign, meta_campaign, fbclid, meta_click_id, quality, ai_quality, quotation_value, archived";
 const AD_LEAD_FILTER = "source.in.(ins,fb),source_platform.in.(meta,facebook,instagram,fb,ins),utm_source.in.(meta,facebook,instagram,fb,ins),fbclid.not.is.null,meta_click_id.not.is.null,ctwa_clid.not.is.null,ad_id.not.is.null";
 
-export async function collectReview(db, now = new Date()) {
+export async function collectReview(db, now = new Date(), { metaRows = null } = {}) {
   const window = reviewWindow(now);
-  const spend = await fetchAllRows((from, to, withCount) => db.from("ad_spend")
+  const spend = metaRows ? { data: [] } : await fetchAllRows((from, to, withCount) => db.from("ad_spend")
     .select("id, spend_date, ad_name, amount", withCount ? { count: "exact" } : undefined)
     .gte("spend_date", window.since).lte("spend_date", window.until).order("id", { ascending: true }).range(from, to));
   if (spend.error || spend.truncated) throw new Error("ad_spend unreadable");
@@ -35,24 +41,65 @@ export async function collectReview(db, now = new Date()) {
     if (q.error || q.truncated) throw new Error("quotations unreadable");
     quotations.push(...(q.data ?? []));
   }
-  return buildWeeklyAdReview({ window, spendRows: spend.data ?? [], leads: leads.data ?? [], quotations });
+  return buildWeeklyAdReview({ window, spendRows: spend.data ?? [], metaRows, leads: leads.data ?? [], quotations });
 }
 
 function run(cmd, args) {
   execFileSync(cmd, args, { stdio: ["ignore", "inherit", "inherit"], timeout: 650_000 });
 }
 
+const USAGE = "Usage: node scripts/weekly-ad-review.mjs [--spend-file <path.json>] [--print | --execute]";
+const SPEND_FILE_MAX_BYTES = 2_000_000;
+
+/** Returns { execute, print, spendFile } or null when the arguments are not understood. */
+export function parseArgs(argv) {
+  const out = { execute: false, print: false, spendFile: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--execute") out.execute = true;
+    else if (a === "--print") out.print = true;
+    else if (a === "--spend-file") { if (out.spendFile !== null || !argv[i + 1] || argv[i + 1].startsWith("--")) return null; out.spendFile = argv[++i]; }
+    else if (a.startsWith("--spend-file=")) { if (out.spendFile !== null || a.length === 13) return null; out.spendFile = a.slice(13); }
+    else return null;
+  }
+  return out.execute && out.print ? null : out;
+}
+
+export function loadSpendFile(path) {
+  let data;
+  try {
+    if (statSync(path).size > SPEND_FILE_MAX_BYTES) return { error: "spend file too large" };
+    data = JSON.parse(readFileSync(path, "utf8"));
+  } catch { return { error: "spend file unreadable or not valid JSON" }; }
+  return parseSpendFile(data);
+}
+
 export async function main(argv, env = process.env) {
-  const execute = argv.includes("--execute");
-  if (argv.some((a) => a !== "--execute")) { console.error("Usage: node scripts/weekly-ad-review.mjs [--execute]"); return 2; }
+  const args = parseArgs(argv);
+  if (!args) { console.error(USAGE); return 2; }
+  const { execute, print } = args;
+  let metaRows = null;
+  if (args.spendFile !== null) {
+    const loaded = loadSpendFile(args.spendFile);
+    if (loaded.error) { console.error(`spend file rejected: ${loaded.error}`); return 2; }
+    metaRows = loaded.rows;
+  }
   if (execute && env.WEEKLY_AD_REVIEW_ENABLED !== "true") { console.log("weekly ad review is switched off (WEEKLY_AD_REVIEW_ENABLED is not true); nothing done"); return 0; }
   const dbUrl = env.NEXT_PUBLIC_SUPABASE_URL;
   const dbKey = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!dbUrl || !dbKey) { console.error("database configuration unavailable"); return 1; }
   const { createClient } = await import("@supabase/supabase-js");
   const db = createClient(dbUrl, dbKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const review = await collectReview(db);
+  const review = await collectReview(db, new Date(), { metaRows });
   const text = reviewText(review);
+  if (print) {
+    const dir = env.WEEKLY_AD_REVIEW_OUT_DIR || join(tmpdir(), "newme-ad-review-print");
+    mkdirSync(dir, { recursive: true });
+    const csvPath = join(dir, `ad-review-${review.window.until.replaceAll("-", "")}.csv`);
+    writeFileSync(csvPath, reviewCsv(review), { mode: 0o600 });
+    console.log(`WhatsApp text (not sent):\n${reviewMessage(review, { nasNote: "详表在NAS的exports文件夹" })}\n\nCSV: ${csvPath}\n\nFull text:\n${text}`);
+    return 0;
+  }
   if (!execute) { console.log(text); console.log(reviewMessage(review)); return 0; }
   const outDir = env.WEEKLY_AD_REVIEW_OUT_DIR || "/var/lib/newme-ad-review";
   const nasDir = env.WEEKLY_AD_REVIEW_NAS_DIR || "/newme-os-backup/exports";

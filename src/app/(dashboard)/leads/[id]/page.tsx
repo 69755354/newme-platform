@@ -25,6 +25,7 @@ import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
+import LeadAiNoteCard from "./LeadAiNoteCard";
 import LeadFollowupCard from "./LeadFollowupCard";
 
 import LeadOpportunitiesCard from "./LeadOpportunitiesCard";
@@ -590,6 +591,7 @@ export default function LeadDetailPage() {
             transferHistory={transferHistory}
           />
           <LeadWhatsAppAdPanel lead={lead} t={t} />
+          <LeadAiNoteCard activities={activities} />
           <LeadFollowupCard lead={lead} t={t} />
 
           <LeadOpportunitiesCard lead={lead} t={t} lang={lang} role={salesRole} />

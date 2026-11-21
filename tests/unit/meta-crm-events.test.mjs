@@ -170,3 +170,26 @@ test("send tool: the queue row id travels as event_id so Meta can deduplicate a 
   assert.equal(buildMetaCrmPayload({ leadgenId: "123456789012345", eventName: "Lead", eventTime: 1 }).data[0].event_id, undefined);
   assert.match(serializeMetaCrmPayload(seen), /"event_id":"row-42"/);
 });
+
+test("review_required: operator requeue splits expired from recoverable, dry run writes nothing, execute requeues only recoverable", async () => {
+  const { requeueReviewRows } = await import("../../scripts/meta-crm-events-send.mjs");
+  const now = 1_800_000_000_000;
+  const rows = [
+    { id: "old", meta_leadgen_id: "123456789012345", event_time: 1_800_000_000 - 8 * 86_400 }, // past Meta's 7-day window
+    { id: "badid", meta_leadgen_id: "abc", event_time: 1_800_000_000 - 3600 },
+    { id: "ok1", meta_leadgen_id: "123456789012345", event_time: 1_800_000_000 - 2 * 86_400 },
+    { id: "ok2", meta_leadgen_id: "l:223456789012345", event_time: 1_800_000_000 - 86_400 },
+  ];
+  const writes = [];
+  const db = { from: () => {
+    const q = { select() { return q; }, eq() { return q; }, is() { return q; }, order() { return q; }, limit() { return Promise.resolve({ data: rows, error: null }); },
+      update(patch) { const u = { in(_c, ids) { writes.push({ patch, ids }); return u; }, eq() { return u; }, select() { return Promise.resolve({ data: writes.at(-1).ids.map((id) => ({ id })), error: null }); } }; return u; } };
+    return q;
+  } };
+  const dry = await requeueReviewRows(db, { clock: () => now });
+  assert.deepEqual([dry.review_total, dry.review_expired, dry.review_recoverable, dry.requeued], [4, 2, 2, 0]);
+  assert.deepEqual(writes, []);
+  const run = await requeueReviewRows(db, { execute: true, clock: () => now });
+  assert.equal(run.requeued, 2);
+  assert.deepEqual(writes, [{ patch: { status: "failed", attempts: 0, lease_id: null, lease_until: null }, ids: ["ok1", "ok2"] }]);
+});

@@ -16,6 +16,7 @@ import { isAdLead, costPerLead } from "./ads-leads.mjs";
 import { isSystemAccount } from "./system-accounts.mjs";
 import { normalizePhone } from "./lead-contact.mjs";
 
+export const UNASSIGNED_LABEL = "未分配";
 export const MAX_TEXT_CHARS = 400;
 export const UNCONTACTED_AFTER_HOURS = 24;
 export const ATTENTION_UNCONTACTED_OVER = 5;
@@ -114,13 +115,15 @@ export function assignedAtMs(lead, transfers = []) {
 /**
  * Leads assigned more than `afterHours` ago with no first contact. Test records, archived, held, closed and very old
  * leads (maxAgeDays since creation: stale history is not a reminder) are left out.
- * @returns {Array<{lead_id, assigned_to, age_hours, first_name, channel}>} oldest first
+ * assigned_to is null for leads nobody owns in OS; sheet_owner is the name stored by the sheet sync (drive_sync.sheet_owner).
+ * @returns {Array<{lead_id, assigned_to, sheet_owner, age_hours, first_name, channel}>} oldest first
  */
 export function selectUncontacted({ leads, transfers = [], logLeadIds = new Set(), excludedTestIds = new Set(), now = new Date(),
   afterHours = UNCONTACTED_AFTER_HOURS, maxAgeDays = DEFAULT_MAX_LEAD_AGE_DAYS } = {}) {
   const out = [];
   for (const lead of leads ?? []) {
-    if (!isReportableLead(lead, excludedTestIds) || !lead.assigned_to || isBulkImported(lead)) continue;
+    // A lead with no OS owner still counts (the sales team works in the Google sheets): the brief must not report a false all-clear.
+    if (!isReportableLead(lead, excludedTestIds) || isBulkImported(lead)) continue;
     const outcome = leadOutcome(lead);
     if (outcome === "won" || outcome === "lost" || lead.hold_since) continue;
     if (hasFirstContact(lead, logLeadIds)) continue;
@@ -130,10 +133,16 @@ export function selectUncontacted({ leads, transfers = [], logLeadIds = new Set(
     if (since === null) continue;
     const ageMs = now.getTime() - since;
     if (ageMs <= afterHours * HOUR) continue;
-    out.push({ lead_id: lead.id, assigned_to: lead.assigned_to, age_hours: Math.floor(ageMs / HOUR),
+    out.push({ lead_id: lead.id, assigned_to: lead.assigned_to ?? null, sheet_owner: sheetOwnerName(lead), age_hours: Math.floor(ageMs / HOUR),
       first_name: firstName(lead.customer_name), channel: channelOf(lead) });
   }
   return out.sort((a, b) => b.age_hours - a.age_hours);
+}
+
+/** Owner name stored by the sheet sync (register "Assigned to" / sales tab owner); "" when unknown. */
+export function sheetOwnerName(lead) {
+  const sheet = lead?.drive_sync && typeof lead.drive_sync === "object" ? lead.drive_sync : null;
+  return text(sheet?.sheet_owner).slice(0, 40);
 }
 
 /** First word of the customer name, letters only and at most 20 characters (never a phone number or e-mail). */
@@ -159,6 +168,25 @@ export function planReminders(uncontacted, profiles) {
       number: phone.ok ? phone.e164.replace(/^\+/, "") : null };
   }).sort((a, b) => b.items.length - a.items.length || b.oldest_hours - a.oldest_hours);
   return { people, sendable: people.filter((p) => p.number), missingPhone: people.filter((p) => !p.number) };
+}
+
+/**
+ * Brief grouping of uncontacted leads by who is responsible: the OS profile name, else the sheet owner, else "未分配".
+ * Unlike planReminders nobody is dropped (no profile, no phone, system account all still show).
+ * @returns {Array<{name, unassigned, items, oldest_hours}>} biggest group first, the unassigned group last on ties
+ */
+export function groupUncontactedForBrief(uncontacted, profiles = []) {
+  const byId = new Map((profiles ?? []).filter((p) => !isSystemAccount(p)).map((p) => [p.id, p]));
+  const groups = new Map();
+  for (const item of uncontacted ?? []) {
+    const osName = item.assigned_to ? text(byId.get(item.assigned_to)?.full_name) : "";
+    const name = osName || text(item.sheet_owner) || UNASSIGNED_LABEL;
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(item);
+  }
+  return [...groups].map(([name, items]) => ({ name, unassigned: name === UNASSIGNED_LABEL, items,
+    oldest_hours: Math.max(...items.map((i) => i.age_hours)) }))
+    .sort((a, b) => b.items.length - a.items.length || Number(a.unassigned) - Number(b.unassigned) || b.oldest_hours - a.oldest_hours);
 }
 
 const amount = (n) => Number(n);
@@ -217,30 +245,37 @@ export function clip(value, max = MAX_TEXT_CHARS) {
  * The brief, one line. data: { leads (countNewLeads), people (planReminders().people), missingPhone, quotes, spend }.
  * "需要注意" appears only when something is off.
  */
-export function buildBrief({ dateKey, leads, people = [], missingPhone = [], quotes, spend }) {
+export function buildBrief({ dateKey, leads, people = [], groups = null, missingPhone = [], quotes, spend }) {
   const channels = CHANNELS.map((c) => `${channelLabel(c)}${leads.byChannel[c]}`).join(" ");
-  const uncontactedTotal = people.reduce((s, p) => s + p.items.length, 0);
+  // groups (groupUncontactedForBrief) cover every uncontacted lead; people (planReminders) only those with a known salesperson.
+  const shownGroups = groups ?? people.map((p) => ({ name: p.name, unassigned: false, items: p.items, oldest_hours: p.oldest_hours }));
+  const uncontactedTotal = shownGroups.reduce((s, p) => s + p.items.length, 0);
+  const unassignedCount = shownGroups.filter((g) => g.unassigned).reduce((s, g) => s + g.items.length, 0);
   const attention = [];
+  if (unassignedCount > 0) attention.push(`未分配${unassignedCount}条无人认领`);
   if (uncontactedTotal > ATTENTION_UNCONTACTED_OVER) attention.push(`未联系共${uncontactedTotal}条`);
   const silent = NORMAL_CHANNELS.filter((c) => leads.byChannel[c] === 0 && leads.prior[c] >= NORMAL_CHANNEL_MIN_LEADS).map(channelLabel);
   if (silent.length) attention.push(`${silent.join("、")}昨日0条线索`);
   if (missingPhone.length) attention.push(`${missingPhone.map((p) => p.name).join("、")}无手机号，提醒未发`);
 
   const build = (shown) => {
-    const rest = people.length - shown;
-    const who = people.length
-      ? `${people.slice(0, shown).map((p) => `${p.name}${p.items.length}条(最久${ageLabel(p.oldest_hours)})`).join("、")}${rest > 0 ? `等${people.length}人` : ""}`
+    // The unassigned group is always spelled out, even when the list is cut short.
+    const named = shownGroups.filter((g) => !g.unassigned), open = shownGroups.filter((g) => g.unassigned);
+    const kept = [...named.slice(0, Math.max(0, shown - open.length)), ...open];
+    const rest = shownGroups.length - kept.length;
+    const who = shownGroups.length
+      ? `${kept.map((p) => `${p.name}${p.items.length}条(最久${ageLabel(p.oldest_hours)})`).join("、")}${rest > 0 ? `等${shownGroups.length}人` : ""}`
       : "无";
     const parts = [`${dateKey}日报`, `新线索${leads.total}条（${channels}）`, `24小时未联系：${who}`, `昨日报价${quotes.count}单，合计AED ${money(quotes.total)}`];
     if (spend) parts.push(`广告花费AED ${money(spend.spend)}${spend.cpl === null ? "" : `，单条线索AED ${money(spend.cpl)}`}`);
     if (attention.length) parts.push(`需要注意：${attention.join("；")}`);
     return parts.join("；");
   };
-  for (let shown = people.length; shown >= 3; shown -= 1) {
+  for (let shown = shownGroups.length; shown >= 3; shown -= 1) {
     const candidate = build(shown);
     if ([...candidate].length <= MAX_TEXT_CHARS) return candidate;
   }
-  return clip(build(Math.min(3, people.length)));
+  return clip(build(Math.min(3, shownGroups.length)));
 }
 
 /** One reminder for one salesperson: count plus customer first name, channel and age (at most five lines of detail). */

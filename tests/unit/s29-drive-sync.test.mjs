@@ -8,7 +8,7 @@ import path from "node:path";
 import { runSync } from "../../scripts/drive-to-os-sync.mjs";
 import { createSheetsReader } from "../../scripts/lib/drive-sheets-readonly.mjs";
 import { SOURCES, assertAllowedTab, rangeOf } from "../../scripts/lib/drive-sync-sources.mjs";
-import { rowHashOf, decideChange, buildIndexes, fingerprintOf, maskId, mergeDriveSync, normalizePhone, phoneDigits, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
+import { rowHashOf, validateChange, decideChange, buildIndexes, fingerprintOf, maskId, mergeDriveSync, normalizePhone, phoneDigits, planBatch, resolveConfig, tokenMatches, writeCost } from "../../src/lib/drive-sync.mjs";
 
 const TOKEN = "t".repeat(40);
 const SALES_HEAD = ["Client", "Phone / WhatsApp", "Day 1 feedback", "Day 2 feedback", "Day 3 feedback", "Day 4 feedback", "Day 5 feedback", "Later follow-ups / previous records", "Next action", "Next follow-up date", "Lead quality", "Quality reason", "Assigned date", "Intake channel", "Segment", "Area", "Contact rule", "Rule starts", "Resume date", "Rule reason / evidence", "Lead key", "Email", "Requirement / Context", "Quality assessed at", "First contact at", "Sync status", "Sales Lead ID", "Previous qualification", "Source references", "Contact person"];
@@ -357,4 +357,20 @@ test("follow-up 6: blank sheet cells keep the stored drive_sync metadata", () =>
   assert.equal(mergeDriveSync(prev, { contact_rule: "call", contact_days_filled: 0 }).contact_rule, "call");
   assert.equal(mergeDriveSync(prev, { contact_days_filled: 0 }).contact_days_filled, 0);
   assert.match(readFileSync(path.resolve(import.meta.dirname, "../../src/app/api/sync/drive-ingest/route.ts"), "utf8"), /mergeDriveSync\(curRaw\.drive_sync, d\.raw_patch\.drive_sync\)/);
+});
+
+test("sheet owner: register 'Assigned to', else the sales tab owner, is stored in drive_sync and changes the row hash only when present", async () => {
+  const { buildLeadChanges } = await import("../../scripts/lib/drive-sync-sources.mjs");
+  const reg = { __row: 6, "Master Lead ID": "META-12345678901", "Dispatch status": "Delivered", "Primary phone": "0501112222", "Assigned to": "Faizan" };
+  const noOwner = { __row: 7, "Master Lead ID": "META-12345678902", "Dispatch status": "Unassigned", "Primary phone": "0503334444" };
+  const sales = { __row: 9, "Lead key": "META-12345678902", "Phone / WhatsApp": "0503334444" };
+  const out = buildLeadChanges({ lead_register: { rows: [reg, noOwner] }, sales_assem_b2c: { rows: [sales] } }, {});
+  assert.equal(out.find((c) => c.key === "META-12345678901").sheet_owner, "Faizan");
+  assert.equal(out.find((c) => c.key === "META-12345678902").sheet_owner, "Assem");
+  const c = { key: "k", sheet: "s", row: 1, owned: {} };
+  assert.equal(rowHashOf(c), rowHashOf({ ...c, sheet_owner: "" }));
+  assert.notEqual(rowHashOf(c), rowHashOf({ ...c, sheet_owner: "Faizan" }));
+  assert.equal(validateChange({ ...c, sheet_owner: "x".repeat(61) }), "bad_sheet_owner");
+  const d = decideChange({ ...c, identity: {}, insertable: true, sheet_owner: "Faizan" }, buildIndexes([]), { allowInsert: true });
+  assert.equal(d.action, "hold"); // no identity: nothing written; owner is only ever stored, never an OS assignee
 });

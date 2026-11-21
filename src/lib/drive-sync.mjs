@@ -106,7 +106,7 @@ export function resolveConfig(env = process.env) {
 /** Hash of the Drive-owned content of one row. Unchanged hash = nothing new to apply (idempotency). */
 export function rowHashOf(change) {
   const o = change.owned ?? {};
-  return sha(JSON.stringify([o.quality ?? "", o.quality_reason ?? "", o.next_action ?? "", o.next_followup_date ?? "", change.followup_text ?? "", change.contact_note ?? "", change.first_contact_at ?? "", change.contact_rule ?? "", key(change.opp_stage), moneyNumber(change.quote_value) ?? ""]));
+  return sha(JSON.stringify([o.quality ?? "", o.quality_reason ?? "", o.next_action ?? "", o.next_followup_date ?? "", change.followup_text ?? "", change.contact_note ?? "", change.first_contact_at ?? "", change.contact_rule ?? "", key(change.opp_stage), moneyNumber(change.quote_value) ?? "", ...(nonEmpty(change.sheet_owner) ? [norm(change.sheet_owner)] : [])])); // owner only when present: rows without one keep their old hash
 }
 
 const nonEmpty = (v) => v !== null && v !== undefined && norm(v) !== "";
@@ -121,6 +121,7 @@ export function validateChange(c) {
   if (c.source_modified_at != null && !Number.isFinite(Date.parse(c.source_modified_at))) return "bad_source_modified_at";
   if (c.owned != null && typeof c.owned !== "object") return "bad_owned";
   for (const f of ["opp_stage", "quote_value"]) if (c[f] != null && (typeof c[f] !== "string" && typeof c[f] !== "number" || String(c[f]).length > 60)) return `bad_${f}`;
+  if (c.sheet_owner != null && (typeof c.sheet_owner !== "string" || c.sheet_owner.length > 60)) return "bad_sheet_owner";
   for (const f of ["followup_text", "contact_note"]) if (c[f] != null && (typeof c[f] !== "string" || c[f].length > 8000)) return `bad_${f}`;
   if (c.identity != null && typeof c.identity !== "object") return "bad_identity";
   return null;
@@ -245,7 +246,7 @@ function notesOf(change) {
 }
 function rawPatchOf(change, hash, prev, osWon, q = {}) {
   const owned = change.owned ?? {};
-  return { drive_sync: mergeDriveSync(prev, { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason, next_followup_date: owned.next_followup_date, contact_days_filled: change.contact_days_filled, first_contact_at: change.first_contact_at, contact_rule: change.contact_rule, source_modified_at: change.source_modified_at, os_won: osWon, quote_baseline: q.baseline === true || q.state !== undefined ? true : undefined, quote_state: q.state, quote_value: q.value, quote_at: q.at }) };
+  return { drive_sync: mergeDriveSync(prev, { row_hash: hash, synced_at: null /* the route stamps the write time */, key: change.key, sheet: change.sheet, row: change.row, quality_reason: owned.quality_reason, next_followup_date: owned.next_followup_date, contact_days_filled: change.contact_days_filled, first_contact_at: change.first_contact_at, contact_rule: change.contact_rule, sheet_owner: change.sheet_owner, source_modified_at: change.source_modified_at, os_won: osWon, quote_baseline: q.baseline === true || q.state !== undefined ? true : undefined, quote_state: q.state, quote_value: q.value, quote_at: q.at }) };
 }
 /** Merge new drive_sync metadata over the stored one: a blank sheet cell keeps the stored value instead of erasing it. */
 export function mergeDriveSync(prev, patch) {

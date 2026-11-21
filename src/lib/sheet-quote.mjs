@@ -29,3 +29,14 @@ export function planSheetQuote({ lead, sheet, firstSeenIso, nowMs }) {
   const advanceStage = idx >= 0 && idx < STAGE_ORDER.indexOf("quotation_submitted");
   return { action: "queue", advanceStage, eventTime, value, currency };
 }
+
+/**
+ * Whether the sheet's "quotation reported" should also move the OS stage forward (S33): the lead is live (not archived, not
+ * won/lost) and sits on the funnel strictly before quotation_submitted. Forward only; the database routine
+ * sync_advance_lead_stage_from_sheet repeats every one of these checks and walks the audited steps.
+ */
+export function shouldAdvanceStageForQuote(lead) {
+  if (!lead || lead.archived || isFinal(lead)) return false;
+  const idx = STAGE_ORDER.indexOf(lead.stage);
+  return idx >= 0 && idx < STAGE_ORDER.indexOf("quotation_submitted");
+}

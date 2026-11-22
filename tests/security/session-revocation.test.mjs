@@ -255,6 +255,8 @@ test("real lead stage handler rejects an inactive old session before business ac
     },
     "@/lib/request-auth-context": requestAuth,
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "new" }] },
+    // S36: the won amount step is covered by tests/unit/s36-won-route.test.mjs; inert here.
+    "@/lib/won-amount.mjs": { ensureWonAmount: async () => ({ ok: true, amount: { value: 1, currency: "AED" }, wrote: false }) },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "skipped" },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppCapiForProgress: async () => "skipped", enqueueWhatsAppPurchaseForLead: async () => "skipped" },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped", enqueueWebsitePurchaseForLead: async () => "skipped" },

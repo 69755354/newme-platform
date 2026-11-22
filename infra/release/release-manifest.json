@@ -282,6 +282,12 @@
       "version": "20261121100000",
       "file": "20261121100000_sync_advance_lead_stage_from_sheet.sql",
       "sha256": "4e19cf64d411cfcbe4e77e8da16c3475ca36244f9947f8ece17f220d754a25b2"
+    },
+    {
+      "$comment": "S36 (OS fix S36): leads.quotation_value now follows the quotations (and a won lead's active contract). Three new routines and three row triggers (quotations, contracts, leads won) keep it equal to the newest live AED quotation total; the backfill fills only leads that have no amount yet. No table, column, policy or grant changes.",
+      "version": "20261122200000",
+      "file": "20261122200000_quotation_value_follows_quotations.sql",
+      "sha256": "882e9449b27f2203199429b007ab386f53b50d61068c0a7e9576068cc822ec95"
     }
   ],
   "companions": [
@@ -657,6 +663,11 @@
           "name": "s33-sync-advance-lead-stage-from-sheet-present",
           "expect": true,
           "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%system:drive_sync%') AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_advance_lead_stage_from_sheet(uuid,text,text)')),false)"
+        },
+        {
+          "name": "s36-quotation-value-follows-quotations-present",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=3 AND bool_and(NOT t.tgisinternal) FROM pg_catalog.pg_trigger t WHERE t.tgname IN ('trg_quotation_sync_lead_value','trg_contract_sync_lead_value','trg_lead_won_sync_value')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_lead_quotation_value(uuid,numeric)')),false)"
         }
       ]
     }

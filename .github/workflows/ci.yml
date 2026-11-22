@@ -746,6 +746,12 @@ jobs:
           createdb --template history newme_s33_stage_test
           PGDATABASE=newme_s33_stage_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s33-sync-advance-stage.sql
 
+      # S36: leads.quotation_value follows the quotations (and a won lead's active contract). Rolled back.
+      - name: Quotation amount follows the quotations (S36)
+        run: |
+          createdb --template history newme_s36_quote_test
+          PGDATABASE=newme_s36_quote_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s36-quotation-value.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

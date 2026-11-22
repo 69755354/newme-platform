@@ -19,6 +19,45 @@ import { isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
 import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
+const round2 = (value: number) => Math.round(value * 100) / 100;
+// leads.quotation_value / quotations.total_amount are numeric(12,2): anything from 10^10 up cannot be stored.
+const MAX_MANUAL_AMOUNT = 9_999_999_999;
+
+type ManualQuote = {
+  subtotal: number; discount_rate: number; discount_amount: number; tax_rate: number; tax_amount: number; total: number;
+  currency: string; valid_until: string; payment_terms: string | null; delivery_terms: string | null;
+};
+
+/** Validates and prices the hand-typed quotation. Returns a refusal message instead of throwing. */
+function priceManualQuote(raw: unknown): { quote: ManualQuote } | { error: string; error_zh: string; code: string } {
+  const bad = (error: string, error_zh: string, code: string) => ({ error, error_zh, code });
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return bad("manual must be an object", "金额格式不对", "manual_invalid");
+  const m = raw as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+  const subtotal = round2(num(m.subtotal));
+  if (!Number.isFinite(subtotal) || subtotal <= 0 || subtotal > MAX_MANUAL_AMOUNT) {
+    return bad("A quotation amount greater than zero is required", "请填写大于 0 的报价金额", "manual_amount_invalid");
+  }
+  const discountRate = m.discount_rate === undefined || m.discount_rate === null || m.discount_rate === "" ? 0 : num(m.discount_rate);
+  if (!Number.isFinite(discountRate) || discountRateError(discountRate)) {
+    return bad(discountRateError(discountRate) || "Invalid discount rate", discountRateErrorZh(discountRate) || "折扣率不对", "discount_rate_invalid");
+  }
+  const taxRate = m.tax_rate === undefined || m.tax_rate === null || m.tax_rate === "" ? 0 : num(m.tax_rate);
+  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) return bad("Invalid tax rate", "税率不对", "tax_rate_invalid");
+  const currency = m.currency === undefined || m.currency === null || m.currency === "" ? "AED" : String(m.currency);
+  if (!/^[A-Z]{3}$/.test(currency)) return bad("Invalid currency", "币种不对", "currency_invalid");
+  const discountAmount = round2(subtotal * (discountRate / 100));
+  const taxAmount = round2((subtotal - discountAmount) * (taxRate / 100));
+  const total = round2(subtotal - discountAmount + taxAmount);
+  if (total <= 0 || total > MAX_MANUAL_AMOUNT) return bad("Quotation total must be greater than zero", "报价总额必须大于 0", "manual_amount_invalid");
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 500) : null);
+  const validUntil = typeof m.valid_until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.valid_until)
+    ? m.valid_until
+    : new Date(Date.now() + 30 * 86_400_000).toISOString().split("T")[0];
+  return { quote: { subtotal, discount_rate: discountRate, discount_amount: discountAmount, tax_rate: taxRate, tax_amount: taxAmount, total,
+    currency, valid_until: validUntil, payment_terms: text(m.payment_terms), delivery_terms: text(m.delivery_terms) } };
+}
+
 const VALID_DEVICE_IDS = new Set<string>(
   DEVICE_CATALOG.flatMap((cat) => cat.devices.map((d) => d.id)),
 );
@@ -30,6 +69,11 @@ const VALID_DEVICE_IDS = new Set<string>(
  * Input:  { lead_id, devices, discount_rate?, notes?,
  *           bottom_up_labour?: { area_sqm, floors, point_quantities, tier? } }
  * Output: { status, quote_id, quote_no, total, valid_until, install_labor_basis }
+ *
+ * Hand-typed "amount only" quotation (no device list): send `manual` instead of `devices`:
+ *   { lead_id, manual: { subtotal, discount_rate?, tax_rate?, currency?, valid_until?, payment_terms?, delivery_terms? }, notes? }
+ * The server works out discount, tax and total itself (the browser total is never trusted) and the quotation then gets
+ * the same side effects as an engine quotation: activity, business event, stage step, Meta / WhatsApp quote feedback.
  *
  * `bottom_up_labour` switches the labour line from a percentage of the product
  * total to the cable/threading model; `point_quantities` is keyed on the cabling
@@ -58,7 +102,8 @@ export async function POST(request: NextRequest) {
       applyRequestAuthCookies(context, NextResponse.json(body, init));
 
     const body = await request.json();
-    const { lead_id, devices, discount_rate, notes, bottom_up_labour } = body;
+    const { lead_id, devices, discount_rate, notes, bottom_up_labour, manual } = body;
+    const isManual = manual !== undefined && manual !== null;
 
     if (!lead_id) {
       return respond({ error: "lead_id is required" }, { status: 400 });
@@ -77,6 +122,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let calculation: {
+      subtotal: number; discount_rate: number; discount_amount: number; tax_rate: number; tax_amount: number; total: number;
+      currency: string; valid_until: string; devices_json: unknown;
+      install_labor_basis?: unknown; install_labor_fallback_reason?: unknown;
+    };
+    let manualQuote: ManualQuote | null = null;
+
+    if (isManual) {
+      const priced = priceManualQuote(manual);
+      if ("error" in priced) {
+        return respond({ error: priced.error, error_zh: priced.error_zh, code: priced.code }, { status: 400 });
+      }
+      manualQuote = priced.quote;
+      calculation = { ...manualQuote, devices_json: {} };
+    } else {
     if (!devices || typeof devices !== "object" || Object.keys(devices).length === 0) {
       return respond(
         { error: "devices object is required with at least one device" },
@@ -110,7 +170,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Calculate quotation
-    const calculation: CalculateResult = calculateQuotation({
+    const engineResult: CalculateResult = calculateQuotation({
       lead_id,
       devices,
       discount_rate: typeof discount_rate === "number" ? discount_rate : 0,
@@ -120,6 +180,8 @@ export async function POST(request: NextRequest) {
         operation: "quotation_generate",
       }),
     });
+    calculation = engineResult;
+    }
 
     // Guard: calculation.total maps to the DB total_amount column which has a
     // CHECK > 0. Reject here (400) instead of letting convert hit a 500 later.
@@ -180,7 +242,8 @@ export async function POST(request: NextRequest) {
         // was priced, without a migration. Quotations on the percentage basis
         // get no marker, which is what keeps every earlier quotation — and
         // every fallback quotation — on its original export path.
-        internal_notes: formatInstallLabourNote(calculation),
+        internal_notes: manualQuote ? null : formatInstallLabourNote(calculation as CalculateResult),
+        ...(manualQuote ? { payment_terms: manualQuote.payment_terms, delivery_terms: manualQuote.delivery_terms } : {}),
       })
       .select("id, quote_no")
       .single();
@@ -288,15 +351,14 @@ export async function POST(request: NextRequest) {
     } catch {
       stageAdvance = { advanced: false, stage: null, reason: "stage_update_failed" };
     }
-    // Quotation with an amount is the main signal back to Meta (value = the quoted total). Best effort,
-    // only once the lead has really moved to quotation_submitted; each path dedupes per lead.
-    if (stageAdvance.advanced && stageAdvance.stage === "quotation_submitted") {
-      try {
-        await enqueueMetaCrmEventForLead(supabaseAdmin, lead_id, "quotation_submitted");
-        await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, lead_id, "quotation_submitted");
-        await enqueueWebsiteQuoteForProgress(supabaseAdmin, lead_id, "quotation_submitted");
-      } catch { /* tracking must never fail a quotation */ }
-    }
+    // A quotation with an amount is the main signal back to Meta (value = the quoted total). It is sent whenever a
+    // quotation is saved, whether or not the stage could move (a quote often comes before the first contact is logged).
+    // Best effort; each path dedupes per lead, so a second quotation or the sheet sync never sends it twice.
+    try {
+      await enqueueMetaCrmEventForLead(supabaseAdmin, lead_id, "quotation_submitted");
+      await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, lead_id, "quotation_submitted");
+      await enqueueWebsiteQuoteForProgress(supabaseAdmin, lead_id, "quotation_submitted");
+    } catch { /* tracking must never fail a quotation */ }
 
     if (!stageAdvance.advanced && stageAdvance.reason) {
       const log = stageAdvance.reason === "stage_update_failed" || stageAdvance.reason === "stage_read_failed" ? logger.warn : logger.info;

@@ -96,6 +96,15 @@ export function usePipelineDragDrop<T extends LeadBase>(
       return;
     }
 
+    // A deal can only be won with an amount. Dragging cannot ask for one, so a lead that already has an amount
+    // (quotation or contract, kept in quotation_value) may be dropped on Won; otherwise it is opened for the amount.
+    if (targetStage === "won" && !(Number(lead.quotation_value) > 0)) {
+      toast.error(lang === "zh"
+        ? "赢单必须有金额：请先给这个客户报价，或打开线索详情点“赢单”并填写成交金额"
+        : "A deal needs an amount to be won: add a quotation first, or open the lead and enter the deal amount when marking it Won");
+      return;
+    }
+
     // ─── Optimistic Update ───
     const oldStage = lead.stage;
     const oldFinal = lead.final_status;

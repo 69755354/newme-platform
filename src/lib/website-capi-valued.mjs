@@ -52,7 +52,7 @@ export async function enqueueWebsiteValuedEvent(db, leadId, kind, { attempt = /*
     const raw = lead.raw_import_data;
     if (raw?.intake !== "newme.ae" || typeof raw.event_id !== "string" || !raw.event_id) return "skipped";
     const stored = raw.capi_payload?.data?.[0]?.user_data;
-    const amount = kind === "purchase" ? await activeContractAmount(db, leadId) : await latestQuotationAmount(db, leadId);
+    const amount = kind === "purchase" ? ((await activeContractAmount(db, leadId)) ?? (await latestQuotationAmount(db, leadId))) : await latestQuotationAmount(db, leadId);
     if (!stored || !amount) return "skipped";
     const payload = buildWebsiteValuedPayload({ kind, leadEventId: raw.event_id, storedUserData: stored,
       value: amount.value, currency: amount.currency, eventTime: nowSeconds });

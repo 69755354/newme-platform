@@ -62,7 +62,9 @@ test("core lead / quote forms use the shared failure pattern", () => {
   assert.match(read("src/app/(dashboard)/leads/new/page.tsx"), /runMutation\(/);
   for (const f of ["src/app/(dashboard)/quotes/quote-calculator.tsx", "src/app/(dashboard)/quotes/quote-wizard.tsx"]) {
     const src = read(f);
-    assert.match(src, /reportMutationFailure\(/, f);
+    // S36: quotes are saved through the server route, which answers with its own (bilingual) refusal text, shown as a toast
+    assert.match(src, /saveQuoteViaServer\(/, f);
+    assert.match(src, /toast\.error\(saved\.message\)/, f);
     assert.doesNotMatch(src, /error\?\.message \|\| "Missing database quote number"/, f);
   }
   // contact quality buttons gave no feedback on a phone

@@ -13,17 +13,19 @@ import {
 } from "@/components/ui/collapsible";
 import {
   ChevronDown, ChevronUp, Plus, Minus, Search,
-  Save, FileDown, Send, X,
+  Save, FileDown, MessageCircle, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { reportMutationFailure } from "@/lib/mutation-feedback";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { DEVICE_CATALOG, findDevice, type DeviceInfo, type CategoryInfo } from "@/lib/device-catalog";
 import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
 import { logFetchFailure } from "@/lib/fetch-interruption";
+import { saveQuoteViaServer } from "@/lib/quote-save-client";
+import { buildQuoteShareText, buildWhatsAppUrl } from "@/lib/quote-share.mjs";
 
 interface Lead { id: string; customer_name: string | null; phone: string | null; }
+interface SavedQuote { id: string; no: string; total: number; currency: string; validUntil: string | null; }
 
 function fmtCurrency(v: number): string {
   if (v >= 1_000_000) return (v / 1_000_000).toFixed(2) + "M";
@@ -40,7 +42,7 @@ interface QuoteCalculatorProps {
 
 export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLeadId }: QuoteCalculatorProps) {
   const supabase = createClient();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const isEmbedded = !!initialLeadId;
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeadId, setSelectedLeadId] = useState(initialLeadId || "");
@@ -52,6 +54,8 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [savedQuoteId, setSavedQuoteId] = useState<string | null>(null);
+  const [savedQuote, setSavedQuote] = useState<SavedQuote | null>(null);
+  const [leadPhone, setLeadPhone] = useState<string | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
 
   useEffect(() => {
@@ -63,6 +67,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
         .then(({ data }) => {
           if (data) {
             setCustomerName(data.customer_name || data.phone || "");
+            setLeadPhone(data.phone ?? null);
             if (data.property_type === "villa" || data.property_type === "apartment") setPropertyType(data.property_type);
             if (data.property_size_sqm) setArea(data.property_size_sqm);
           }
@@ -78,6 +83,8 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
     setSelectedLeadId(leadId);
     const lead = leads.find((l) => l.id === leadId);
     setCustomerName(lead?.customer_name || lead?.phone || "");
+    setLeadPhone(lead?.phone ?? null);
+    setSavedQuoteId(null); setSavedQuote(null);
   };
 
   const getQty = (id: string) => quantities[id] || 0;
@@ -121,32 +128,23 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
   }, [deviceSearch]);
 
   const handleSave = async () => {
-    if (!selectedLeadId) return;
+    if (!selectedLeadId || savedQuoteId) return;
     if (discountRateError(discountRate)) { toast.error(t("quotes.invalidAmounts")); return; }
     setSaving(true);
     try {
-      const devicesPayload = Object.entries(quantities).map(([id, qty]) => {
-        const d = findDevice(id);
-        return { device_id: id, name: d?.name || id, price: d?.price || 0,
-          quantity: qty, unit: d?.unit || "pcs", subtotal: (d?.price || 0) * qty };
-      });
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: quote, error } = await supabase.from("quotations").insert({
-        lead_id: selectedLeadId, quote_no: "ALLOCATED_BY_DATABASE", version: 1,
-        subtotal: calc.deviceSubtotal, discount_rate: discountRate,
-        discount_amount: calc.discountAmount, tax_rate: 5, tax_amount: calc.vat,
-        total_amount: calc.total, currency: "AED", status: "draft",
-        devices_json: devicesPayload,
-        created_by: user?.id || null,
-notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${area}㎡\n${t("quotes.calc.installLabor")}: ${calc.installLabor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.pm.toFixed(2)} AED`,
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }).select("id, quote_no").single();
-      if (error || !quote?.quote_no) { logFetchFailure("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
+      const notes = `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${area}㎡\n${t("quotes.calc.installLabor")}: ${calc.installLabor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.pm.toFixed(2)} AED`;
+      // The server prices it (same catalogue and rates) and gives it the timeline entry, stage step, lead amount and Meta feedback.
+      const saved = await saveQuoteViaServer({ lead_id: selectedLeadId, devices: quantities, discount_rate: discountRate, notes }, lang);
+      if (!saved.ok) { logFetchFailure("Save error:", new Error(saved.message)); toast.error(saved.message); return; }
       // Notify about new quotation
       void import("@/lib/notify")
-        .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: selectedLeadId, quote_no: quote.quote_no }))
+        .then(({ notify }) => notify({ type: "quote_created", quote_id: saved.quoteId, lead_id: selectedLeadId, quote_no: saved.quoteNo }))
         .catch((notifyError) => logFetchFailure("quote_notification_failed", notifyError));
-      setSavedQuoteId(quote.id); onSaved?.(); onOpenChange(false);
+      // The dialog stays open: Export Excel and the WhatsApp message are used right after saving.
+      setSavedQuoteId(saved.quoteId);
+      setSavedQuote({ id: saved.quoteId, no: saved.quoteNo, total: saved.total, currency: saved.currency, validUntil: saved.validUntil });
+      toast.success(lang === "zh" ? `报价已保存 #${saved.quoteNo}` : `Quotation saved #${saved.quoteNo}`);
+      onSaved?.();
     } finally { setSaving(false); }
   };
 
@@ -155,12 +153,20 @@ notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.cal
     window.open(`/api/quotations/export?id=${savedQuoteId}`, "_blank");
   };
 
-  const handleSend = () => {
-    if (!savedQuoteId) { toast.error(t("quotes.saveFirst")); return; }
-    toast.success(t("quotes.calc.quoteSaved"));
+  // Honest "send": opens WhatsApp with the message typed (the salesperson presses send there); with no usable phone
+  // the same text is copied instead. It never claims the customer received anything.
+  const handleShare = () => {
+    if (!savedQuote) { toast.error(t("quotes.saveFirst")); return; }
+    const text = buildQuoteShareText({ lang, customerName, quoteNo: savedQuote.no, total: savedQuote.total, currency: savedQuote.currency, validUntil: savedQuote.validUntil });
+    const url = buildWhatsAppUrl(leadPhone, text);
+    if (url) { window.open(url, "_blank", "noopener"); return; }
+    navigator.clipboard.writeText(text).then(
+      () => toast.success(lang === "zh" ? "报价文案已复制，可粘贴发给客户" : "Message copied, paste it to the customer"),
+      () => toast.info(text),
+    );
   };
 
-  const handleReset = () => { setQuantities({}); setDiscountRate(5); setDeviceSearch(""); setSavedQuoteId(null); };
+  const handleReset = () => { setQuantities({}); setDiscountRate(5); setDeviceSearch(""); setSavedQuoteId(null); setSavedQuote(null); };
 
   const collapseBtn = (open: boolean) =>
     open ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> :
@@ -380,6 +386,14 @@ notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.cal
           </div>
         </div>
 
+        {savedQuote && (
+          <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
+            {lang === "zh"
+              ? `报价 #${savedQuote.no} 已保存（${savedQuote.currency} ${savedQuote.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}）。现在可以导出 Excel，或用 WhatsApp 发给客户；要做新报价请点“重置”。`
+              : `Quotation #${savedQuote.no} saved (${savedQuote.currency} ${savedQuote.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Export it to Excel or open it in WhatsApp now; press Reset for a new one.`}
+          </p>
+        )}
+
         {/* ─── Footer Actions ─── */}
         <DialogFooter className="flex-wrap gap-2">
           <button onClick={handleReset}
@@ -390,10 +404,10 @@ notes: `${t("quotes.calc.property")}: ${propertyType === "villa" ? t("quotes.cal
           <Button variant="outline" size="sm" onClick={handleExport} disabled={!savedQuoteId} className="gap-1.5">
             <FileDown className="w-3.5 h-3.5" /> {t("quotes.calc.exportExcel")}
           </Button>
-          <Button variant="outline" size="sm" onClick={handleSend} disabled={!savedQuoteId} className="gap-1.5">
-            <Send className="w-3.5 h-3.5" /> {t("quotes.calc.sendToClient")}
+          <Button variant="outline" size="sm" onClick={handleShare} disabled={!savedQuoteId} className="gap-1.5">
+            <MessageCircle className="w-3.5 h-3.5" /> {lang === "zh" ? "用 WhatsApp 发给客户" : "Open in WhatsApp"}
           </Button>
-          <Button onClick={handleSave} disabled={!selectedLeadId || saving || totalDeviceCount === 0} size="sm" className="gap-1.5">
+          <Button onClick={handleSave} disabled={!selectedLeadId || saving || totalDeviceCount === 0 || !!savedQuoteId} size="sm" className="gap-1.5">
             <Save className="w-3.5 h-3.5" /> {saving ? t("quotes.calc.saving") : t("quotes.calc.saveQuote")}
           </Button>
         </DialogFooter>

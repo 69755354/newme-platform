@@ -105,9 +105,9 @@ export interface UseLeadDetailMutationsReturn {
   updateField: <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string) => Promise<boolean>;
   saveProjectInfo: () => Promise<void>;
   resetProjectInfoDraft: () => void;
-  updateStage: (stage: string, note?: string) => Promise<boolean>;
+  updateStage: (stage: string, note?: string, amount?: string) => Promise<boolean>;
   updateNextTask: (updates: Partial<Pick<Task, "title" | "due_at">>) => Promise<void>;
-  handleWon: (note?: string) => Promise<boolean>;
+  handleWon: (note?: string, amount?: string) => Promise<boolean>;
   handleLost: (note?: string) => Promise<boolean>;
   addNote: (noteText: string) => Promise<void>;
   toggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
@@ -411,22 +411,22 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [lead, params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Stage update through the owned server route ───
-  const updateStage = useCallback(async (stage: string, note = ""): Promise<boolean> => {
+  const updateStage = useCallback(async (stage: string, note = "", amount?: string): Promise<boolean> => {
     const response = await fetch(`/api/leads/${leadId}/stage`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage, note: note.trim(), idempotencyKey: crypto.randomUUID() }),
+      body: JSON.stringify({ stage, note: note.trim(), idempotencyKey: crypto.randomUUID(), ...(stage === "won" && amount?.trim() ? { amount: amount.trim() } : {}) }),
     });
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
       const reasons = Array.isArray(json?.reasons) ? json.reasons.join("; ") : "";
-      toast.error(reasons || json?.error || t("common.saveFailed"));
+      toast.error(reasons || (lang === "zh" ? json?.error_zh : undefined) || json?.error || t("common.saveFailed"));
       return false;
     }
     await fetchData();
     toast.success(`${t("leadDetail.eventTypes.stage_changed")} → ${t(`stageLabels.${stage}`)}`);
     return true;
-  }, [leadId, fetchData, t]);
+  }, [leadId, fetchData, t, lang]);
 
   // ─── Next Required Action — updates nextTask (creates a task if none) ───
   const updateNextTask = useCallback(async (updates: Partial<Pick<Task, "title" | "due_at">>) => {
@@ -466,12 +466,13 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [nextTask, leadId, lead, t, lang, writeEvent, fetchData, setError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Won / Lost handlers (Stage update + toast, contract via DB trigger) ─
-  const handleWon = useCallback(async (note = ""): Promise<boolean> => {
+  const handleWon = useCallback(async (note = "", amount?: string): Promise<boolean> => {
     setUpdating(true);
     try {
       // Stage update only — contract & installment creation is handled
       // by the DB trigger trg_lead_won to avoid duplicates.
-      const updated = await updateStage("won", note);
+      // A deal can only be won with an amount: the server uses the contract / latest quotation, else this typed one.
+      const updated = await updateStage("won", note, amount);
       if (!updated) return false;
       toast.success(t("leads.markedWon"));
       return true;

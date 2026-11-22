@@ -19,10 +19,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { reportMutationFailure } from "@/lib/mutation-feedback";
 import { DEVICE_CATALOG, findDevice, QUOTATION_DEFAULTS } from "@/lib/device-catalog";
 import { calculateQuotation, type CalculateResult } from "@/lib/quotation-engine";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { saveQuoteViaServer } from "@/lib/quote-save-client";
 import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
 import { logFetchFailure } from "@/lib/fetch-interruption";
 
@@ -218,26 +218,15 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     if (discountRateError(s.discountRate)) { toast.error(t("quotes.invalidAmounts")); return; }
     d({ type: "SV", saving: true });
     try {
-      const dp = Object.entries(flatQ).map(([id, qty]) => {
-        const dev = findDevice(id);
-        return { device_id: id, name: dev?.name || id, price: dev?.price || 0, quantity: qty, unit: dev?.unit || "pcs", subtotal: (dev?.price || 0) * qty };
-      });
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: quote, error } = await supabase.from("quotations").insert({
-        lead_id: s.selectedLeadId, quote_no: "ALLOCATED_BY_DATABASE", version: 1,
-        subtotal: calc.subtotal, discount_rate: s.discountRate,
-        discount_amount: calc.discount_amount, tax_rate: 5, tax_amount: calc.tax_amount,
-        total_amount: calc.total, currency: "AED", status: "draft",
-        devices_json: dp, created_by: user?.id || null,
-        notes: `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")}: ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.project_management.toFixed(2)} AED`,
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }).select("id, quote_no").single();
-      if (error || !quote?.quote_no) { logFetchFailure("Save error:", error); reportMutationFailure(error ?? new Error("quote number missing"), t, "common.saveFailedRetry"); return; }
+      const notes = `${t("quotes.calc.property")}: ${s.propertyType === "villa" ? t("quotes.calc.villaType") : t("quotes.calc.apartmentType")}, ${t("quotes.calc.area")}: ${s.area}㎡\n${t("quotes.calc.installLabor")}: ${calc.install_labor.toFixed(2)} AED\n${t("quotes.calc.knxCommissioning")}: ${calc.commissioning.toFixed(2)} AED\n${t("quotes.calc.projectMgmt")}: ${calc.project_management.toFixed(2)} AED`;
+      // Saved through the server route: same timeline entry, stage step, lead amount and Meta feedback as every other quotation.
+      const saved = await saveQuoteViaServer({ lead_id: s.selectedLeadId, devices: flatQ, discount_rate: s.discountRate, notes }, lang);
+      if (!saved.ok) { logFetchFailure("Save error:", new Error(saved.message)); toast.error(saved.message); return; }
       // Notify about new quotation
       void import("@/lib/notify")
-        .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: s.selectedLeadId, quote_no: quote.quote_no }))
+        .then(({ notify }) => notify({ type: "quote_created", quote_id: saved.quoteId, lead_id: s.selectedLeadId, quote_no: saved.quoteNo }))
         .catch((notifyError) => logFetchFailure("quote_notification_failed", notifyError));
-      d({ type: "SQ", id: quote.id }); onSaved?.(); onOpenChange(false);
+      d({ type: "SQ", id: saved.quoteId }); onSaved?.(); onOpenChange(false);
     } finally { d({ type: "SV", saving: false }); }
   };
 

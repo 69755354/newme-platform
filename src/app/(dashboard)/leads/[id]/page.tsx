@@ -22,9 +22,11 @@ import { cn, fmtDubai } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
+import QuickQuoteDialog from "@/app/(dashboard)/quotes/quick-quote-dialog";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
+import LeadWaitingBadge from "./LeadWaitingBadge";
 import LeadAiNoteCard from "./LeadAiNoteCard";
 import LeadFollowupCard from "./LeadFollowupCard";
 
@@ -37,6 +39,8 @@ import LeadFoldingPanel from "./LeadFoldingPanel";
 import { useLeadDetailData } from "./useLeadDetailData";
 import { useLeadDetailMutations } from "./useLeadDetailMutations";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { effectiveLeadStatus, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 import type {
   RenderInlineEdit,
   RenderDateEdit,
@@ -112,7 +116,7 @@ export default function LeadDetailPage() {
     loading,
     notFound,
     error,
-    fetchData,
+    refreshData,
   } = useLeadDetailData(id as string);
 
   // ─── Page-local state for Meta Pixel effect + Mut block ──────────────────
@@ -225,7 +229,7 @@ export default function LeadDetailPage() {
     setLead,
     projectInfoDraft,
     setProjectInfoDraft,
-    fetchData,
+    fetchData: refreshData,
     salesRole,
     currentUserId,
     salesUsers,
@@ -237,6 +241,7 @@ export default function LeadDetailPage() {
   const [noteText, setNoteText] = useState("");
   const [openPanel, setOpenPanel] = useState<string | null>(null);
   const [showQuoteCalculator, setShowQuoteCalculator] = useState(false);
+  const [showQuickQuote, setShowQuickQuote] = useState(false);
 
   // LeadTimeline expects `onAddNote: () => void`. The hook accepts noteText as
   // a callback argument; we close over `noteText` here so the LeadTimeline call
@@ -500,6 +505,9 @@ export default function LeadDetailPage() {
     );
   }
 
+  // S37: temperature as of now (a new lead is hot for 48h, not "dormant"), and a click-to-WhatsApp
+  // lead whose customer is still waiting for the first reply says for how long (LeadWaitingBadge).
+  const shownStatus = effectiveLeadStatus(lead as unknown as MetricLead) ?? lead.lead_status;
   return (
     <DashboardScrollContainer className="mx-auto max-w-[1600px] space-y-5 pb-8">
       {/* T2-4: 锚定 Header — 整页滚动时返回按钮/客户名/状态徽章/delete 永远可见
@@ -520,15 +528,23 @@ export default function LeadDetailPage() {
             <h1 className="min-w-0 break-anywhere text-lg font-bold text-foreground line-clamp-2 md:text-2xl">
               {lead.customer_name || lead.phone || t("leadDetail.unnamed")}
             </h1>
-            {lead.lead_status && (
+            {shownStatus && (
               <span className={cn("text-xs px-2 py-0.5 rounded font-medium",
-                lead.lead_status === "hot" ? "bg-rose-500/10 text-rose-400" :
-                lead.lead_status === "warm" ? "bg-amber-500/10 text-amber-400" :
-                lead.lead_status === "cold" ? "bg-sky-500/10 text-sky-400" :
+                shownStatus === "hot" ? "bg-rose-500/10 text-rose-400" :
+                shownStatus === "warm" ? "bg-amber-500/10 text-amber-400" :
+                shownStatus === "cold" ? "bg-sky-500/10 text-sky-400" :
                 "bg-gray-500/10 text-muted-foreground")}>
-                {lead.lead_status === "hot" ? "🔥 " : lead.lead_status === "warm" ? "☀️ " : lead.lead_status === "cold" ? "❄️ " : "💤 "}
-                {t(`statusLabels.${lead.lead_status}`)}
+                {shownStatus === "hot" ? "🔥 " : shownStatus === "warm" ? "☀️ " : shownStatus === "cold" ? "❄️ " : "💤 "}
+                {t(`statusLabels.${shownStatus}`)}
               </span>
+            )}
+            {isWhatsAppAdLead(lead) && (
+              <span data-testid="whatsapp-ad-badge" className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-400">
+                {t("s37.wa.badge")}
+              </span>
+            )}
+            {isWhatsAppAdLead(lead) && lead.wa_first_inbound_at && !lead.wa_first_reply_at && !lead.final_status && !lead.last_contact_date && lead.stage === "new" && (lead.followup_count ?? 0) === 0 && (
+              <LeadWaitingBadge inboundAt={lead.wa_first_inbound_at} t={t} />
             )}
             {lead.quality === 'poor' && (
               <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400">
@@ -616,6 +632,7 @@ export default function LeadDetailPage() {
             onWon={handleWon}
             onLost={handleLost}
             onOpenQuoteCalculator={openQuoteCalculator}
+            onOpenQuickQuote={() => setShowQuickQuote(true)}
             onCreateContract={handleCreateContract}
             canCreateContract={salesRole === "admin" || salesRole === "boss" || salesRole === "operator" || salesRole === "sales"}
             onGenerateKnx={handleGenerateKnx}
@@ -647,7 +664,7 @@ export default function LeadDetailPage() {
             noteText={noteText}
             onNoteTextChange={setNoteText}
             onAddNote={handleAddNote}
-            onContactUpdated={fetchData}
+            onContactUpdated={refreshData}
             t={t}
             lang={lang}
           />
@@ -678,9 +695,15 @@ export default function LeadDetailPage() {
           open={showQuoteCalculator}
           onOpenChange={setShowQuoteCalculator}
           initialLeadId={id as string}
-          onSaved={() => { fetchData(); }}
+          onSaved={() => { void refreshData(); }}
         />
       )}
+      <QuickQuoteDialog
+        open={showQuickQuote}
+        onOpenChange={setShowQuickQuote}
+        leadId={id as string}
+        onSaved={() => { void refreshData(); }}
+      />
       {/* T2-4: toast 层级约定 — z-toast z-50
           sonner Toaster 已固定 z-50，作为最高优先级反馈层，
           覆盖 page-title / modal / dropdown。 */}

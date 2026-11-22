@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 // R5: this route reads installment_plans and answers with the ids it moved to
 // overdue, so it takes the same posture as every other money-derived read — no
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiDateKey() ?? new Date().toISOString().slice(0, 10);
 
     // Read first. A plan becomes overdue only after its notification write succeeds,
     // which keeps a failed notification eligible for the next cron run.

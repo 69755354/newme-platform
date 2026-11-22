@@ -17,6 +17,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { isActiveUnassignedLead, isCountedLead, type MetricLead } from "@/lib/lead-metrics.mjs";
 
 /* ─── Types ─── */
 interface Lead {
@@ -365,8 +366,11 @@ export default function SettingsPage() {
   };
 
   // Stats
-  const totalUnassigned = leads.filter(l => !l.assigned_to).length;
-  const activeUnassigned = leads.filter(l => !l.assigned_to && !l.final_status).length;
+  // Same definitions as the dashboard (src/lib/lead-metrics.mjs): archived leads are not counted,
+  // and "unassigned" means an open lead nobody owns.
+  const metricLeads = leads as unknown as MetricLead[];
+  const totalCounted = metricLeads.filter(isCountedLead).length;
+  const activeUnassigned = metricLeads.filter(isActiveUnassignedLead).length;
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">{t("common.loading")}</div>;
   if (error) return <div className="p-10 text-center text-rose-400">{t("common.error")}: {error} <button onClick={fetchData} className="underline ml-4">{t("common.retry")}</button></div>;
@@ -442,12 +446,13 @@ export default function SettingsPage() {
       <div data-newme-uat-sensitive="true" className="grid grid-cols-3 gap-3">
         <div className="p-4 rounded-xl border border-border/50 bg-card/50">
           <p className="text-xs text-muted-foreground">{t("settings.totalLeads")}</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{leads.length}</p>
+          <p className="text-2xl font-bold text-foreground mt-1">{totalCounted}</p>
+          <p className="text-[11px] text-muted-foreground">{t("settings.totalLeadsCaption")}</p>
         </div>
         <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
           <p className="text-xs text-amber-400">{t("settings.unassigned")}</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">{totalUnassigned}</p>
-          <p className="text-[10px] text-amber-400/60">{t("settings.activeUnassigned").replace("{n}", String(activeUnassigned))}</p>
+          <p className="text-2xl font-bold text-amber-400 mt-1">{activeUnassigned}</p>
+          <p className="text-[11px] text-amber-400/70">{t("settings.unassignedCaption")}</p>
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-card/50">
           <p className="text-xs text-muted-foreground">{t("settings.salesTeam")}</p>

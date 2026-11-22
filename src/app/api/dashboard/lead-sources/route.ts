@@ -1,7 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server";
 import { fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
-import { isWonLead, leadSourceKey, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { effectiveLeadStatus, isWonLead, leadSourceKey, wonLeadValue, type MetricLead } from "@/lib/lead-metrics.mjs";
 
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     // ── Base lead query ──
     const leadsResult = await fetchCountedLeads(
       supabase,
-      "id,archived,source,source_platform,stage,lead_status,final_status,assigned_to,quotation_value",
+      "id,archived,source,source_platform,stage,lead_status,last_contact_date,created_at,final_status,assigned_to,quotation_value",
       { assignedTo: isCEO ? null : user.id },
     );
     if (leadsResult.error) throw leadsResult.error;
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       const rev = wonLeadValue(l);
       if (rev > 0) a.revenue += rev;
 
-      const q = l.lead_status || "unknown";
+      const q = effectiveLeadStatus(l as MetricLead) || "unknown";
       if (a.quality[q] === undefined) a.quality.unknown += 1;
       else a.quality[q] += 1;
 

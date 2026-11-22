@@ -5,7 +5,7 @@ import { applyPrivateNoStore } from "@/lib/request-auth-context"
 import { countsAsCash } from "@/lib/payment-state.mjs"
 import { fetchAllRows, LIST_MAX_ROWS } from "@/lib/fetch-all-rows.mjs"
 import { dubaiDateKey, dubaiMonthBounds, dubaiMonthKey } from "@/lib/dubai-time.mjs"
-import { isWonInPeriod, wonLeadValue } from "@/lib/lead-metrics.mjs"
+import { effectiveLeadStatus, isWonInPeriod, wonLeadValue } from "@/lib/lead-metrics.mjs"
 import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs"
 
 /**
@@ -135,8 +135,10 @@ export async function GET(request: Request) {
     }
   }
 
+  // S37: temperature as of now, not the value a trigger stored when the lead last changed.
+  const readAt = new Date()
   const responseData = {
-    leads: (leadsResult.data ?? []) as any[],
+    leads: ((leadsResult.data ?? []) as any[]).map((l) => ({ ...l, lead_status: effectiveLeadStatus(l, readAt) ?? l.lead_status })),
     total: leadsResult.total,
     truncated: leadsResult.truncated,
     role,

@@ -74,7 +74,7 @@ test("the lead page shows both cards for the roles that may use them and passes 
   }
 });
 
-test("the list pages are guarded for the four roles and listed in the edge matcher; the sidebars are unchanged", () => {
+test("the list pages are guarded for the four roles and listed in the edge matcher; the sidebars link to them (S35)", () => {
   for (const page of ["opportunities", "visits"]) {
     const src = read(`src/app/(dashboard)/${page}/page.tsx`);
     assert.match(src, /authorizeServerPage\(\{ roles: \["admin", "boss", "operator", "sales"\] \}\)/);
@@ -84,11 +84,12 @@ test("the list pages are guarded for the four roles and listed in the edge match
     assert.match(proxy, new RegExp(`"/${route}": \\["admin", "boss", "operator", "sales"\\]`));
     assert.match(proxy, new RegExp(`"/${route}/:path\\*"`));
   }
-  // The sidebar contract is checked by the post-deploy browser acceptance (CANONICAL_NAV_BY_ROLE); adding the two
-  // links belongs to the change that updates that contract, after the database batch is provisioned.
+  // S35: the two links were deliberately held back until the pages shipped; the sidebar contract (CANONICAL_NAV_BY_ROLE in the
+  // post-deploy browser acceptance) was updated in the same change, and tests/unit/s35-nav-dispatch.test.mjs holds each
+  // entry to the roles proxy.ts admits.
   const nav = read("src/lib/nav.ts");
-  assert.equal(nav.includes("/opportunities"), false);
-  assert.equal(nav.includes("/visits"), false);
+  assert.equal((nav.match(/"\/opportunities"/g) ?? []).length, 2, "management and sales sidebars");
+  assert.equal((nav.match(/"\/visits"/g) ?? []).length, 2, "management and sales sidebars");
 });
 
 test("approving and reviewing buttons are for staff only in the screen, and the API checks again", () => {

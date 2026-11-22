@@ -30,6 +30,8 @@ import {
 import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import {
   LEAD_METRIC_COLUMNS,
+  effectiveLeadStatus,
+  isActiveLead,
   isCountedLead,
   overdueDays,
   summarizeLeads,
@@ -122,7 +124,7 @@ export async function GET(request: Request) {
   // Now the counting happens here, once, with src/lib/lead-metrics.mjs.
   const leadsPromise = fetchCountedLeads(
     supabase,
-    LEAD_METRIC_COLUMNS,
+    `${LEAD_METRIC_COLUMNS},customer_name,phone`,
     { assignedTo: isSales ? userId : null },
   );
 
@@ -201,31 +203,6 @@ export async function GET(request: Request) {
       return q;
     });
 
-  const buildRiskPoolQuery = async (): Promise<number> => {
-    if (isSales && userId) {
-      const { count } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("assignee_id", userId)
-        .eq("status", "pending")
-        .lt("due_at", new Date().toISOString());
-      return count || 0;
-    }
-    try {
-      const { count } = await supabase
-        .from("v_risk_pool")
-        .select("*", { count: "exact", head: true });
-      return count || 0;
-    } catch {
-      const { count } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending")
-        .lt("due_at", new Date().toISOString());
-      return count || 0;
-    }
-  };
-
   const buildTodayFollowupsQuery = () => {
     let q = supabase
       .from("tasks")
@@ -251,20 +228,6 @@ export async function GET(request: Request) {
       .order("due_at", { ascending: true })
       .limit(5);
     if (isSales && userId) q = q.eq("assignee_id", userId);
-    return q;
-  };
-
-  const buildHotLeadsQuery = () => {
-    let q = supabase
-      .from("leads")
-      .select("id, customer_name, quotation_value, win_probability, stage, phone")
-      .eq("lead_status", "hot")
-      .eq("archived", false)
-      .or(EXCLUDE_SYNTHETIC_QA_FILTER)
-      .is("final_status", null)
-      .order("quotation_value", { ascending: false })
-      .limit(3);
-    if (isSales && userId) q = q.eq("assigned_to", userId);
     return q;
   };
 
@@ -315,10 +278,8 @@ export async function GET(request: Request) {
     paymentsResult,
     overdueResult,
     dueResult,
-    riskPoolCount,
     { data: todayFollowupsRaw },
     { data: overdueFollowups },
-    { data: hotLeads },
     { data: draftQuotes },
     { data: staleLeads },
     { data: overdueWorkflow },
@@ -331,10 +292,8 @@ export async function GET(request: Request) {
     paymentsPromise,
     installmentsPromise("overdue"),
     installmentsPromise("due"),
-    buildRiskPoolQuery(),
     buildTodayFollowupsQuery(),
     buildOverdueFollowupsQuery(),
-    buildHotLeadsQuery(),
     buildDraftQuotesQuery(),
     buildStaleLeadsQuery(),
     buildOverdueWorkflowQuery(),
@@ -405,6 +364,7 @@ export async function GET(request: Request) {
     overdue: Math.round(overdueAmount),
     dueNextWeek: Math.round(dueNextWeekAmount),
     contractCount: activeContracts.length,
+    dueNextWeekCount: (duePlans || []).length,
     ...(month
       ? {
           // "Signed" this month = what was won this month (leads.won_at, Dubai
@@ -467,17 +427,23 @@ export async function GET(request: Request) {
     });
   });
 
-  // 2. Hot leads
-  ((hotLeads as any[]) || []).forEach((l: any) => {
+  // 2. Hot leads: decided on read from every counted active lead (a new ad lead has no value, so a
+  //    value-ordered database top-N could miss it). Top 3 by value, then newest.
+  const hotLeads = (leadsData as any[])
+    .filter((l) => isActiveLead(l) && effectiveLeadStatus(l, nowDate) === "hot")
+    .sort((a, b) => (b.quotation_value || 0) - (a.quotation_value || 0) || String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 3);
+  hotLeads.forEach((l: any) => {
+    const fresh = !l.last_contact_date;
     actions.push({
       type: "hot_lead",
       title: l.customer_name || "Unnamed",
-      subtitle: `${l.customer_name || "Unnamed"} · Win prob ${l.win_probability || 0}%`,
+      subtitle: fresh ? `${l.customer_name || "Unnamed"} · New lead · awaiting first contact` : `${l.customer_name || "Unnamed"} · Win prob ${l.win_probability || 0}%`,
       link: `/leads/${l.id}`,
-      priority: (l.win_probability || 0) >= 70 ? "high" : "medium",
+      priority: (l.win_probability || 0) >= 70 || fresh ? "high" : "medium",
       customerName: l.customer_name || "Unnamed",
       value: l.quotation_value || 0,
-      reason: "Hot lead priority",
+      reason: fresh ? "New lead · awaiting first contact" : "Hot lead priority",
       phone: l.phone || null,
       leadId: l.id,
     });
@@ -557,7 +523,9 @@ export async function GET(request: Request) {
     leadStats,
     finance,
     kpiTargets: kpiTargets || [],
-    riskPoolCount,
+    // S37: the risk pool is a count of ACTIVE LEADS (no next follow-up date, or one that has
+    // passed), from the same summary as every other lead number, so it can never exceed them.
+    riskPoolCount: leadStats.riskPool,
     todayFollowups,
     topActions: sorted.slice(0, 5),
     // Include raw data needed for UI i18n

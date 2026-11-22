@@ -9,17 +9,15 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { cn } from "@/lib/utils";
-import {
-  AlertTriangle,
-  ArrowUpRight, CheckCircle2,
-} from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import AlertPanel from "./_components/AlertPanel";
 import WeeklyReview from "./_components/WeeklyReview";
 import { ErrorState } from "@/components/ui/error-state";
 import { dubaiMonthElapsedPct, dubaiMonthKey, recentDubaiMonthKeys } from "@/lib/dubai-time.mjs";
 import { summarizeLeads, type LeadSummary } from "@/lib/lead-metrics.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption";
-import { startEarlyFetch } from "@/lib/early-fetch";
+import { formatAED } from "@/lib/display-format.mjs";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 
 /* ─── Types ─── */
 interface Lead {
@@ -62,11 +60,8 @@ const STAGE_COLORS: Record<string,string> = {
   negotiation: "#3B82F6", pending_decision: "#F59E0B", won: "#4ADE80", lost: "#6B7280",
 };
 
-function fmtAED(v: number): string {
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v}`;
-}
+// S37: one money format everywhere on the cockpit, whole dirhams: "AED 12,345".
+const fmtAED = formatAED;
 
 /* ─── Real financial data types ─── */
 interface FinanceStats {
@@ -75,10 +70,22 @@ interface FinanceStats {
   outstanding: number;
   overdue: number;
   dueNextWeek: number;
+  dueNextWeekCount?: number;
   contractCount?: number;
   signedAmount?: number;
   paymentAmount?: number;
   wonCount?: number;
+}
+
+/* ─── shared: section header (module level: a component declared inside the page re-mounts every render) ─── */
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className="w-1 h-4 rounded-full bg-copper-400" />
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
+    </div>
+  );
 }
 
 /* ════════════════════════════════════════ */
@@ -198,13 +205,8 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
 
-  // S22: the alert banner is mounted only once the summary has rendered the
-  // page, so its request used to start a full round trip after the summary
-  // finished. It goes out at mount, together with the summary, and the panel
-  // takes that request over (once; a month change does not start another).
-  useEffect(() => {
-    startEarlyFetch("/api/alerts");
-  }, []);
+  // S37: the overdue sentence takes its number from the lead summary (AlertPanel count), so the
+  // alerts feed is no longer requested at mount.
 
   // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {
@@ -324,8 +326,10 @@ export default function DashboardPage() {
       other: t("sourceLabels.other"),
       unknown: t("sourceLabels.unknown"),
     };
+    // Any other stored source code (unknown_import, referral, ...) is translated too, never shown raw.
     return Object.entries(leadStats.bySource)
-      .map(([k, v]) => ({ source: k, label: sourceLabels[k] || k, total: v.total, won: v.won, value: v.value }))
+      .filter(([, v]) => v.total > 0)
+      .map(([k, v]) => ({ source: k, label: sourceLabels[k] || translatedOrRaw(t, `sourceLabels.${k}`, k), total: v.total, won: v.won, value: v.value }))
       .sort((a, b) => b.total - a.total);
   }, [leadStats, t]);
   const maxSourceTotal = Math.max(...sourceBreakdown.map(s => s.total), 1);
@@ -372,29 +376,12 @@ export default function DashboardPage() {
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">{t("common.loading")}</div>;
   if (error) return <ErrorState message={error} retryText={t("common.retry")} onRetry={() => window.location.reload()} />;
 
-  const overdueCount = (stats.redCount || 0) + (stats.yellowCount || 0);
   const isManagement = userRole !== "sales";
   const weeklyReviewProps = { month, finance: financeStats, signingPct, collectionPct, signingTarget, collectionTarget,
     periodLeads, topActions, riskPoolCount, todayFollowups, overdueFollowups, redCount: stats.redCount,
     yellowCount: stats.yellowCount, highProbStale: stats.highProbStale, pendingStale: stats.pendingStale,
     recoveryCount: stats.recoveryCount, transferCount: stats.transferCount, reviewCount: stats.reviewCount,
     isLoading: loading, language };
-
-  /* ─── shared: alert banner ─── */
-  const AlertBanner = overdueCount > 0 && (
-    <div className="px-5 py-3 rounded-xl flex items-center justify-between bg-red-500/10 border border-red-500/20">
-      <div className="flex items-center gap-3">
-        <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
-        <span className="text-sm text-red-300 font-medium">
-          {t("dashboard.overdueAlert").replace("{n}", String(overdueCount))}
-        </span>
-      </div>
-      <button onClick={() => router.push("/leads?alert=red")}
-        className="text-sm font-medium text-copper-400 hover:text-copper-300 transition-colors">
-        {t("dashboard.viewAlerts")} →
-      </button>
-    </div>
-  );
 
   /* ─── shared: header ─── */
   const headerTitle = isManagement ? t("dashboard.title") : t("nav.salesDashboard");
@@ -430,24 +417,27 @@ export default function DashboardPage() {
     </div>
   );
 
-  /* ─── shared: KPI mini stat cards ─── */
+  /* ─── shared: KPI mini stat cards (each says what it counts) ─── */
+  const fill = (text: string, vars: Record<string, string | number>) =>
+    Object.entries(vars).reduce((acc, [k, v]) => acc.replace(`{${k}}`, String(v)), text);
   const KpiStatCards = (
-    <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
       {[
-        { label: t("dashboard.kpiLeads"), value: String(stats.totalActive), sub: t("dashboard.plusNwk").replace("{n}", String(stats.newThisWeek)), href: "/leads" },
-        { label: t("dashboard.kpiActive"), value: String(contractCount), sub: t("dashboard.nPipeline").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=negotiation" },
-        { label: t("dashboard.kpiQuotes"), value: String(stats.stageCounts.quotation_submitted + stats.stageCounts.negotiation + stats.stageCounts.pending_decision), sub: t("dashboard.nPending").replace("{n}", String(stats.stageCounts.quotation_submitted)), href: "/quotes" },
-        { label: t("dashboard.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: t("dashboard.nDeals").replace("{n}", String(stats.pipelineSize)), href: "/leads?stage=quotation_submitted" },
-        { label: t("dashboard.wonThisMonth"), value: fmtAED(stats.monthlyRevenue), sub: t("dashboard.nClosed").replace("{n}", String(stats.wonCount)), href: "/leads?stage=won" },
-        { label: t("dashboard.kpiConv"), value: `${stats.conversionRate}%`, sub: t("dashboard.nPctContacted").replace("{n}", String(stats.contactRate)), href: "/leads" },
+        { label: t("s37.labels.leads"), value: String(stats.totalActive), sub: fill(t("s37.sub.weekNew"), { n: stats.newThisWeek }), caption: t("s37.captions.leads"), href: "/leads" },
+        { label: t("s37.labels.contracts"), value: String(contractCount), sub: fill(t("s37.sub.contractsOpen"), { n: stats.pipelineSize }), caption: t("s37.captions.contracts"), href: "/contracts" },
+        { label: t("s37.labels.quotes"), value: String(leadStats.quotedCount), sub: fill(t("s37.sub.quotationStage"), { n: stats.stageCounts.quotation_submitted }), caption: t("s37.captions.quotes"), href: "/quotes" },
+        { label: t("s37.labels.pipelineValue"), value: fmtAED(stats.totalPipeline), sub: fill(t("s37.sub.valuedOf"), { n: leadStats.valuedCount, m: stats.pipelineSize }), caption: t("s37.captions.pipelineValue"), href: "/leads?stage=quotation_submitted" },
+        { label: `${t("s37.labels.wonMonth")} (${month})`, value: fmtAED(stats.monthlyRevenue), sub: fill(t("s37.sub.wonCount"), { n: stats.wonCount }), caption: t("s37.captions.wonMonth"), href: "/leads?stage=won" },
+        { label: t("s37.labels.conversion"), value: `${stats.conversionRate}%`, sub: fill(t("s37.sub.contactedPct"), { n: stats.contactRate }), caption: t("s37.captions.conversion"), href: "/leads" },
       ].map(card => (
         <button key={card.label}
           onClick={() => router.push(card.href)}
           className="p-3 rounded-lg border border-border/50 bg-card/50 hover:bg-accent/30 transition-all text-left group"
         >
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{card.label}</p>
+          <p className="text-xs text-muted-foreground font-medium">{card.label}</p>
           <p className="text-lg font-bold text-foreground group-hover:text-copper-400 transition-colors">{card.value}</p>
-          <p className="text-[10px] text-emerald-400/70">{card.sub}</p>
+          <p className="text-xs text-emerald-400/80">{card.sub}</p>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{card.caption}</p>
         </button>
       ))}
     </div>
@@ -553,129 +543,89 @@ export default function DashboardPage() {
     </div>
   );
 
-  /* ─── shared: section header ─── */
-  const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
-    <div className="flex items-center gap-2 mb-3">
-      <div className="w-1 h-4 rounded-full bg-copper-400" />
-      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-      {subtitle && <span className="text-[11px] text-muted-foreground">{subtitle}</span>}
-    </div>
-  );
-
   /* ════════════════════════════════════════
      MANAGEMENT VIEW
      KPI completion → pipeline stat cards → leaderboard → sources → today (compact)
      ════════════════════════════════════════ */
   if (isManagement) {
+    // The four numbers a boss reads first. Each one carries a line saying what it counts.
+    const coreCards = [
+      { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.wonOrders").replace("{n}", String(signingCount)), caption: t("s37.captions.signing") },
+      { label: t("kpi.collection"), pct: collectionPct, actual: collectionActual, target: collectionTarget, sub: t("dashboard.ratePct").replace("{n}", String(financeStats.totalContractValue > 0 ? Math.round((financeStats.received / financeStats.totalContractValue) * 100) : 0)), caption: t("s37.captions.collection") },
+      { label: t("payment.overdue"), pct: null, actual: financeStats.overdue, target: 0, sub: financeStats.overdue > 0 ? t("dashboard.needsFollowup") : t("dashboard.noTargetSet"), caption: t("s37.captions.overduePay"), alert: financeStats.overdue > 0 },
+      // dueNextWeek is an AMOUNT; it used to be printed as "43796 pending", an amount shown as a count.
+      { label: t("dashboard.dueNextWeek"), pct: null, actual: financeStats.dueNextWeek, target: 0, sub: financeStats.dueNextWeekCount ? fill(t("s37.sub.installments"), { n: financeStats.dueNextWeekCount }) : t("dashboard.noTargetSet"), caption: t("s37.captions.dueNextWeek") },
+    ];
+    const funnelRows = STAGE_KEYS
+      .map((k) => ({ key: k, count: leadStats.stageCounts[k] ?? 0 }))
+      .filter((r) => r.count > 0);
+    const maxFunnel = Math.max(...funnelRows.map((r) => r.count), 1);
+
     return (
       <DashboardScrollContainer className="space-y-5">
-        <AlertPanel />
         {Header}
+        <AlertPanel count={leadStats.followUpOverdue} />
 
-        {/* L1: KPI completion — BIG numbers with progress bars */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: t("kpi.signing"), pct: signingPct, actual: signingActual, target: signingTarget, sub: t("kpi.wonOrders").replace("{n}", String(signingCount)) },
-            { label: t("kpi.collection"), pct: collectionPct, actual: collectionActual, target: collectionTarget, sub: t("dashboard.ratePct").replace("{n}", String(financeStats.totalContractValue > 0 ? Math.round((financeStats.received / financeStats.totalContractValue) * 100) : 0)) },
-            { label: t("payment.overdue"), pct: null, actual: financeStats.overdue, target: 0, sub: financeStats.overdue > 0 ? `⚠ ${t("dashboard.needsFollowup")}` : t("dashboard.noTargetSet"), alert: financeStats.overdue > 0 },
-            { label: t("dashboard.dueNextWeek"), pct: null, actual: financeStats.dueNextWeek, target: 0, sub: financeStats.dueNextWeek > 0 ? t("dashboard.nPending").replace("{n}", String(financeStats.dueNextWeek)) : t("dashboard.noTargetSet") },
-          ].map(card => (
-            <div key={card.label}
-              className={cn("p-4 rounded-xl border bg-card/50", card.alert ? "border-red-500/30" : "border-border/50")}
-            >
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 font-medium">{card.label}</p>
-              {card.pct !== null ? (
-                <>
-                  <p className={cn("text-[36px] font-bold leading-none", pctColor(card.pct))}>
-                    {card.pct !== null ? `${card.pct}%` : "—"}
-                  </p>
-                  <div className="h-2 bg-muted rounded-full mt-2 mb-1 overflow-hidden">
-                    <div className={cn("h-full rounded-full transition-all", barColor(card.pct))}
-                      style={{ width: `${Math.min(card.pct ?? 0, 100)}%` }} />
-                  </div>
-                </>
-              ) : (
-                <p className={cn("text-[36px] font-bold leading-none", card.alert ? "text-red-400" : "text-foreground")}>
-                  {fmtAED(card.actual)}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground mt-1">
-                {card.pct !== null ? `${fmtAED(card.actual)} / ${fmtAED(card.target)} · ${card.sub}` : card.sub}
-              </p>
-            </div>
-          ))}
+        {/* 1. Today's actions come first: what to do now */}
+        <div>
+          <SectionHeader title={t("dashboard.todaysActions")} subtitle={topActions.length > 0 ? t("dashboard.nItems").replace("{n}", String(topActions.length)) : t("s37.allClear")} />
+          {TodayActions}
         </div>
 
-        {/* L2: Pipeline stat cards — compact */}
-        {KpiStatCards}
-
-        {/* Weekly Review — L1/L2/L3 period review */}
-        {weeklyReviewData ? (
-          <WeeklyReview
-            {...weeklyReviewProps}
-            mode="period"
-            l1={weeklyReviewData.l1}
-            l2={weeklyReviewData.l2}
-            l3_by_user={weeklyReviewData.l3_by_user}
-            periodStart={weeklyReviewData.periodStart}
-            periodEnd={weeklyReviewData.periodEnd}
-            range={weeklyReviewRange}
-            onRangeChange={setWeeklyReviewRange}
-            customStart={weeklyReviewStart}
-            customEnd={weeklyReviewEnd}
-            onCustomRangeChange={(start, end) => {
-              setWeeklyReviewStart(start);
-              setWeeklyReviewEnd(end);
-            }}
-          />
-        ) : (
-          <WeeklyReview {...weeklyReviewProps} />
-        )}
-
-        {/* L3: Sales Leaderboard */}
-        {salesLeaderboard.length > 0 && (
-          <div>
-            <SectionHeader title={t("dashboard.salesLeaderboard")} subtitle={`(${month})`} />
-            <div className="space-y-2">
-              {salesLeaderboard.slice(0, 5).map((s) => (
-                <div key={s.id}
-                  className="p-3 rounded-xl border border-border/50 bg-card/50 hover:bg-accent/30 transition-all cursor-pointer"
-                  onClick={() => router.push(`/leads?assigned_to=${s.id}`)}
-                >
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium w-24 shrink-0 truncate">{s.name}</span>
-                    <div className="flex-1 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">
-                          {t("dashboard.wonThisMonth")} {fmtAED(s.wonValue)} ({s.wonCount}) · {language === "zh" ? "总计" : "Total"} {s.totalLeads} · {language === "zh" ? "导入" : "Imported"} {s.imported} · {language === "zh" ? "活跃" : "Active"} {s.active} · {language === "zh" ? "累计成交" : "Won to date"} {s.won} · {language === "zh" ? "流失" : "Lost"} {s.lost}
-                        </span>
-                        {s.targetAmount > 0 ? (
-                          <span className={cn("font-medium", s.completionRate <= 0 ? "text-muted-foreground" : s.completionRate >= expectedPct ? "text-emerald-400" : "text-amber-400")}>
-                            {s.completionRate}%
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </div>
-                      {s.targetAmount > 0 && (
-                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className={cn("h-full rounded-full transition-all",
-                            s.completionRate <= 0 ? "bg-muted" : s.completionRate >= expectedPct ? "bg-emerald-500" : "bg-amber-500"
-                          )} style={{ width: `${Math.min(s.completionRate, 100)}%` }} />
-                        </div>
-                      )}
+        {/* 2. Four core numbers */}
+        <div>
+          <SectionHeader title={t("s37.coreTitle")} subtitle={month} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {coreCards.map(card => (
+              <div key={card.label}
+                className={cn("p-4 rounded-xl border bg-card/50", card.alert ? "border-red-500/30" : "border-border/50")}
+              >
+                <p className="text-xs text-muted-foreground mb-1 font-medium">{card.label}</p>
+                {card.pct !== null ? (
+                  <>
+                    <p className={cn("text-[32px] font-bold leading-none", pctColor(card.pct))}>{`${card.pct}%`}</p>
+                    <div className="h-2 bg-muted rounded-full mt-2 mb-1 overflow-hidden">
+                      <div className={cn("h-full rounded-full transition-all", barColor(card.pct))}
+                        style={{ width: `${Math.min(card.pct ?? 0, 100)}%` }} />
                     </div>
-                  </div>
-                </div>
+                  </>
+                ) : (
+                  <p className={cn("text-[26px] font-bold leading-none", card.alert ? "text-red-400" : "text-foreground")}>
+                    {fmtAED(card.actual)}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {card.pct !== null ? `${fmtAED(card.actual)} / ${fmtAED(card.target)} · ${card.sub}` : card.sub}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{card.caption}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Funnel (stages with no leads are hidden) */}
+        {funnelRows.length > 0 && (
+          <div>
+            <SectionHeader title={t("s37.funnelTitle")} subtitle={t("s37.funnelCaption")} />
+            <div className="space-y-1.5">
+              {funnelRows.map((r) => (
+                <button key={r.key} type="button" onClick={() => router.push(`/leads?stage=${r.key}`)}
+                  className="w-full flex items-center gap-3 text-left group">
+                  <span className="w-28 shrink-0 text-xs text-muted-foreground group-hover:text-foreground">{t(`stages.${r.key}`)}</span>
+                  <span className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                    <span className="block h-full rounded-full" style={{ width: `${Math.max(Math.round((r.count / maxFunnel) * 100), 3)}%`, backgroundColor: STAGE_COLORS[r.key] }} />
+                  </span>
+                  <span className="w-10 text-right text-sm font-medium">{r.count}</span>
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* L4: Lead Sources */}
+        {/* 4. Lead sources */}
         {sourceBreakdown.length > 0 && (
           <div>
-            <SectionHeader title={t("dashboard.leadSources")} subtitle={`(${sourceBreakdown.reduce((a, b) => a + b.total, 0)} ${t("dashboard.leads")})`} />
+            <SectionHeader title={t("s37.sourcesTitle")} subtitle={`${sourceBreakdown.reduce((a, b) => a + b.total, 0)} ${t("dashboard.leads")} · ${t("s37.sourcesCaption")}`} />
             <div className="space-y-2">
               {sourceBreakdown.map((s) => {
                 const pct = Math.round((s.total / maxSourceTotal) * 100);
@@ -683,8 +633,8 @@ export default function DashboardPage() {
                 return (
                   <div key={s.source} className="p-3 rounded-xl border border-border/50 bg-card/50 group hover:border-copper-400/30 transition-all">
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-medium">{s.label}</span>
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-sm font-medium">{s.label}</span>
+                      <span className="text-xs text-muted-foreground">
                         {s.total} {t("leads.title").toLowerCase()} · {s.won} {t("dashboard.won")} · {convRate}%
                       </span>
                     </div>
@@ -692,9 +642,6 @@ export default function DashboardPage() {
                       <div className={cn("h-full rounded-full transition-all", convRate >= 30 ? "bg-emerald-500" : convRate >= 10 ? "bg-amber-500" : "bg-muted-foreground/40")}
                         style={{ width: `${Math.max(pct, 6)}%` }} />
                     </div>
-                    {s.value > 0 && (
-                      <p className="text-[10px] text-muted-foreground mt-1">{fmtAED(s.value)} {t("dashboard.pipelineValue").toLowerCase()}</p>
-                    )}
                   </div>
                 );
               })}
@@ -702,13 +649,79 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* L5: Today's Actions — compressed, small, at very bottom */}
-        {topActions.length > 0 && (
-          <div>
-            <SectionHeader title={t("dashboard.todaysActions")} subtitle={t("dashboard.nItems").replace("{n}", String(topActions.length))} />
-            {TodayActions}
+        {/* 5. Everything else, folded away */}
+        <details className="rounded-xl border border-border/50 bg-card/30 group">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-foreground flex items-center justify-between">
+            <span>{t("s37.detailsTitle")}</span>
+            <span className="text-xs font-normal text-muted-foreground">{t("s37.detailsHint")}</span>
+          </summary>
+          <div className="space-y-5 p-4 pt-1">
+            {KpiStatCards}
+
+            {/* Weekly Review — L1/L2/L3 period review */}
+            {weeklyReviewData ? (
+              <WeeklyReview
+                {...weeklyReviewProps}
+                mode="period"
+                l1={weeklyReviewData.l1}
+                l2={weeklyReviewData.l2}
+                l3_by_user={weeklyReviewData.l3_by_user}
+                periodStart={weeklyReviewData.periodStart}
+                periodEnd={weeklyReviewData.periodEnd}
+                range={weeklyReviewRange}
+                onRangeChange={setWeeklyReviewRange}
+                customStart={weeklyReviewStart}
+                customEnd={weeklyReviewEnd}
+                onCustomRangeChange={(start, end) => {
+                  setWeeklyReviewStart(start);
+                  setWeeklyReviewEnd(end);
+                }}
+              />
+            ) : (
+              <WeeklyReview {...weeklyReviewProps} />
+            )}
+
+            {/* Sales Leaderboard */}
+            {salesLeaderboard.length > 0 && (
+              <div>
+                <SectionHeader title={t("dashboard.salesLeaderboard")} subtitle={`(${month})`} />
+                <div className="space-y-2">
+                  {salesLeaderboard.slice(0, 5).map((s) => (
+                    <div key={s.id}
+                      className="p-3 rounded-xl border border-border/50 bg-card/50 hover:bg-accent/30 transition-all cursor-pointer"
+                      onClick={() => router.push(`/leads?assigned_to=${s.id}`)}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm font-medium w-24 shrink-0 truncate">{s.name}</span>
+                        <div className="flex-1 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">
+                              {t("dashboard.wonThisMonth")} {fmtAED(s.wonValue)} ({s.wonCount}) · {language === "zh" ? "总计" : "Total"} {s.totalLeads} · {language === "zh" ? "导入" : "Imported"} {s.imported} · {language === "zh" ? "活跃" : "Active"} {s.active} · {language === "zh" ? "累计成交" : "Won to date"} {s.won} · {language === "zh" ? "流失" : "Lost"} {s.lost}
+                            </span>
+                            {s.targetAmount > 0 ? (
+                              <span className={cn("font-medium", s.completionRate <= 0 ? "text-muted-foreground" : s.completionRate >= expectedPct ? "text-emerald-400" : "text-amber-400")}>
+                                {s.completionRate}%
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </div>
+                          {s.targetAmount > 0 && (
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className={cn("h-full rounded-full transition-all",
+                                s.completionRate <= 0 ? "bg-muted" : s.completionRate >= expectedPct ? "bg-emerald-500" : "bg-amber-500"
+                              )} style={{ width: `${Math.min(s.completionRate, 100)}%` }} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </details>
       </DashboardScrollContainer>
     );
   }
@@ -719,8 +732,8 @@ export default function DashboardPage() {
      ════════════════════════════════════════ */
   return (
     <DashboardScrollContainer className="space-y-5">
-      <AlertPanel />
       {Header}
+      <AlertPanel count={leadStats.followUpOverdue} />
 
       {/* L1: Today's Actions — THE hero section for sales */}
       <div>

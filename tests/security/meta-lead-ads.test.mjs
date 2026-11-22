@@ -385,6 +385,7 @@ test("webhook route: fails closed, verifies challenge and signature, stores once
       queued.push([lead.meta_leadgen_id, stage]); return "queued";
     } },
     "@/lib/meta-lead-ads.mjs": lib,
+    "@/lib/lead-intake-notify.mjs": { notifyNewLeadSafe: async () => ({ created: 0, skipped: 0 }) }, // covered by tests/unit/s35-intake-notify.test.mjs
     "@/lib/meta-leadgen-failure.mjs": await import("../../src/lib/meta-leadgen-failure.mjs"),
     "@/lib/logger": { logger: { info() {}, warn() {}, error() {} } },
   });

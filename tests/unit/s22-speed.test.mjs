@@ -180,7 +180,8 @@ test("request auth: a refusal is remembered for the request too, and is not retr
 
 test("dashboard page starts alerts with the summary and does not hold the weekly review for the role", () => {
   const page = read("src/app/(dashboard)/dashboard/page.tsx");
-  assert.match(page, /startEarlyFetch\("\/api\/alerts"\)/, "alerts are requested at mount, not after the summary renders the panel");
+  // S37: the overdue sentence uses the lead summary count, so the alerts feed is not requested at mount any more.
+  assert.doesNotMatch(page, /startEarlyFetch\("\/api\/alerts"\)/);
   const weekly = page.slice(page.indexOf("params.set(\"start\", weeklyReviewStart)") - 400, page.indexOf("/api/dashboard/weekly-review") + 200);
   assert.doesNotMatch(weekly, /!userRole/, "the weekly review no longer waits for the summary to supply the role");
   assert.doesNotMatch(page.slice(page.indexOf("weekly-review?"), page.indexOf("weekly-review?") + 1200), /\[userRole,/);

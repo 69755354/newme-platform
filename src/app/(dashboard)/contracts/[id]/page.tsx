@@ -26,6 +26,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { fmtAED } from "@/shared/utils/format";
 import { paymentState } from "@/lib/payment-state.mjs";
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 /* ─── Types ─── */
 interface DetailResponse {
@@ -183,7 +184,8 @@ export default function ContractDetailPage() {
   const { contract, installments, payments, approvals, allowedStatusTransitions } = data;
   // Absent from an older API response → show nothing the routine might refuse.
   const permissions = data.permissions ?? { approve: false, revoke: false, upload: false, remind: false };
-  const today = new Date().toISOString().slice(0, 10);
+  // S35 F05: "today" is the Dubai calendar day (the UTC date is still yesterday until 04:00 Dubai).
+  const today = dubaiDateKey() ?? new Date().toISOString().slice(0, 10);
 
   const STATUS_LABELS: Record<string, string> = {
     draft: t("contracts.statusDraft"),

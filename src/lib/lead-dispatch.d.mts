@@ -16,3 +16,8 @@ export function parseReopenInput(input: unknown): ParseResult<{ reason: string }
 export function allowedActions(row: { status?: string | null; phone_flag?: string | null; missing_fields?: string[] | null; release_reason?: string | null } | null | undefined): DecisionAction[];
 export function sweepWindowStart(now?: string | number | Date): string;
 export function mapDbError(error: { code?: string; message?: string } | null | undefined): { status: number; code: string };
+export function canAssignFromQueue(row: { status?: string; lead?: { assigned_to?: string | null } | null } | null | undefined): boolean;
+export function buildQueueAssignRequest(
+  row: { lead_id: string; status?: string; lead?: { assigned_to?: string | null; updated_at?: string | null } | null },
+  assigneeId: string, idempotencyKey: string,
+): { url: string; body: { assignedTo: string; expectedUpdatedAt: string | null; idempotencyKey: string; reason: string } } | null;

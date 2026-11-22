@@ -58,6 +58,7 @@ function loadRoute({ insertError = null, taskError = null, capiError = null, cap
   const tasks = [];
   const capi = [];
   const deliveries = [];
+  const pings = [];
   const deliveryUpdates = [];
   const rows = { leads: new Map(), business_events: new Map(), tasks: new Map() };
   const admin = {
@@ -116,6 +117,10 @@ function loadRoute({ insertError = null, taskError = null, capiError = null, cap
         if (capiError) throw capiError;
       },
     },
+    "@/lib/lead-intake-notify.mjs": {
+      // S35: the real helper has its own tests (tests/unit/s35-intake-notify.test.mjs); here only the call is recorded.
+      notifyNewLeadSafe: async (_db, lead) => { pings.push(lead); return { created: 1, skipped: 0 }; },
+    },
     "@/lib/website-lead-identity": loadTypeScriptModule("src/lib/website-lead-identity.ts"),
     "@/lib/meta-capi-delivery": loadTypeScriptModule("src/lib/meta-capi-delivery.ts"),
     "@/lib/logger": {
@@ -123,7 +128,7 @@ function loadRoute({ insertError = null, taskError = null, capiError = null, cap
       logger: { error() {}, warn() {}, info() {} },
     },
   });
-  return { route, inserts, tasks, capi, deliveries, deliveryUpdates, rows };
+  return { route, inserts, tasks, capi, deliveries, deliveryUpdates, rows, pings };
 }
 
 test.beforeEach(() => {
@@ -527,4 +532,17 @@ test("opaque attribution identifiers are never shortened into different identifi
     assert.equal(over.ok,true,field+" never loses the inquiry");
     assert.equal(over.value.attribution[key],null,field+" omits an overlong ID");
   }
+});
+
+test("S35: a new website lead pings the dispatchers once per submission, unassigned, even when a retry re-enters", async () => {
+  const { route, pings, inserts } = loadRoute();
+  const body = { name: "Nadia", phone: "+971501234567", event_id: "web-s35-1" };
+  assert.equal((await route.POST(websiteRequest(body))).status, 201);
+  assert.equal(pings.length, 1);
+  assert.equal(pings[0].id, inserts[0].id);
+  assert.equal(pings[0].assigned_to, null);
+  assert.equal(pings[0].customer_name, "Nadia");
+  // The retry takes the 23505 branch and pings again with the same lead id: the shared event key makes it a no-op in the database.
+  assert.equal((await route.POST(websiteRequest(body, { "x-real-ip": "203.0.113.11" }))).status, 201);
+  assert.equal(new Set(pings.map((p) => p.id)).size, 1);
 });

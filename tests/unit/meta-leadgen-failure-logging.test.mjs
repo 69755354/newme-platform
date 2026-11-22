@@ -42,6 +42,7 @@ test("webhook logs a reason code for signature and Graph failures, without secre
     "@/lib/supabase-admin": { supabaseAdmin: {} },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "queued" },
     "@/lib/meta-lead-ads.mjs": lib,
+    "@/lib/lead-intake-notify.mjs": { notifyNewLeadSafe: async () => ({ created: 0, skipped: 0 }) },
     "@/lib/meta-leadgen-failure.mjs": { leadgenFailureReason },
     "@/lib/logger": { logger: { info: sink("info"), warn: sink("warn"), error: sink("error") } },
   });

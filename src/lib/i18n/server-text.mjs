@@ -8,6 +8,7 @@ const ZH_PATTERNS = [
   [/^Overdue follow-up \((\d+)d\)$/, (m) => `跟进已逾期（${m[1]} 天）`],
   [/^No reply \((\d+)d\)$/, (m) => `未回复（${m[1]} 天）`],
   [/^Hot lead priority$/, () => "高意向线索优先"],
+  [/^New lead · awaiting first contact$/, () => "新线索 · 等待首次联系"],
   [/^Draft quote pending$/, () => "报价草稿待发送"],
   [/^Workflow stage overdue$/, () => "流程阶段已超期"],
   [/^Follow[- ]up$/i, () => "跟进"],

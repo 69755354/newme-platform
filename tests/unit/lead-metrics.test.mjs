@@ -91,9 +91,10 @@ test("attribution groups by source before platform and counts good/normal as val
   ];
   assert.equal(leadSourceKey(rows[2]), "other");
   const g = aggregateAttribution(rows);
-  assert.deepEqual(g.fb, { total: 1, valid: 1, quoted: 1, won: 1, value: 100 });
-  assert.deepEqual(g.meta, { total: 1, valid: 1, quoted: 1, won: 0, value: 50 });
-  assert.deepEqual(g.other, { total: 1, valid: 0, quoted: 0, won: 0, value: 0 });
+  // S37 added rated / unrated (quality judged or not yet) and waAd (last touch was a WhatsApp ad).
+  assert.deepEqual(g.fb, { total: 1, valid: 1, rated: 1, unrated: 0, waAd: 0, quoted: 1, won: 1, value: 100 });
+  assert.deepEqual(g.meta, { total: 1, valid: 1, rated: 1, unrated: 0, waAd: 0, quoted: 1, won: 0, value: 50 });
+  assert.deepEqual(g.other, { total: 1, valid: 0, rated: 1, unrated: 0, waAd: 0, quoted: 0, won: 0, value: 0 });
 });
 
 test("source table and per-assignee rollups add up to the company totals", () => {
@@ -152,7 +153,8 @@ test("quality buckets, dormant and zero-follow-up are counted once, here", () =>
   ];
   const s = summarizeLeads(rows, { now: NOW });
   assert.deepEqual(s.qualityBreakdown, { pending: 0, good: 1, normal: 1, bad: 1, unknown: 1 });
-  assert.equal(s.dormant, 2);
+  // S37: the fourth lead (never contacted, created weeks ago) is dormant by the facts, whatever its stored status.
+  assert.equal(s.dormant, 3);
   assert.equal(s.zeroFollowup, 2);
 });
 

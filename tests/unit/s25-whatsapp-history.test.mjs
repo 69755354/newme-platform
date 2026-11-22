@@ -158,7 +158,7 @@ function loadRoute(mocks) {
   const ts = require("typescript");
   const output = ts.transpileModule(read("src/app/api/whatsapp/webhook/route.ts"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports = {};
-  new Function("require", "exports", output)((name) => mocks[name] ?? require(name), exports);
+  new Function("require", "exports", output)((name) => mocks[name] ?? ({ "@/lib/logger": { logger: { info() {}, warn() {}, error() {} } }, "@/lib/intake-degraded.mjs": { markIntakeDegraded() {} } })[name] ?? require(name), exports);
   return exports;
 }
 

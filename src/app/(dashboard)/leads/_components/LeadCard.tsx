@@ -16,6 +16,7 @@ import {
   PIPELINE_STAGES, STATUS_EMOJIS, STATUS_LABELS, isPlaceholder, SOURCE_ICONS,
 } from "../_utils/constants";
 import { daysSince, fmtAED } from "../_utils/format";
+import { isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 import type { Lead } from "../_hooks/useLeadsData";
 import type { SalesUser, UseLeadMutationsReturn } from "../_hooks/useLeadMutations";
 
@@ -201,6 +202,9 @@ export function LeadCard({
             <div className="flex items-center gap-1.5 flex-wrap">
               <p className="text-sm font-medium text-foreground truncate max-w-[180px]">{!isPlaceholder(lead.customer_name) ? lead.customer_name : (lead.phone || t("common.unnamed"))}</p>
               {statusStyle && <span className={cn("text-[9px] px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{STATUS_EMOJIS[lead.lead_status || ""] || ""} {t(`statusLabels.${lead.lead_status || ""}`)}</span>}
+              {isWhatsAppAdLead(lead) && (
+                <span data-testid="whatsapp-ad-badge" className="text-[9px] px-1 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-400">{t("s37.wa.badge")}</span>
+              )}
             </div>
             {(!isPlaceholder(lead.property_type) || !isPlaceholder(lead.location)) && (
               <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground mt-0.5">

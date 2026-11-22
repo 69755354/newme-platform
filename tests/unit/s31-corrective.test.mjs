@@ -104,14 +104,19 @@ test("(d) a live delivery promotes a backfilled history row instead of returning
 
 test("the release plumbing names the migration (last until S32 followed) and CI runs its database test", () => {
   const manifest = JSON.parse(read("infra/release/release-manifest.json"));
-  // S32 (20261120200000) is the entry after S31 now; S31 keeps its place and predicate.
+  // S32, S33, S36 and S37 follow S31 in that order; S31 keeps its place and predicate.
   const at = manifest.deferred_contract.findIndex((x) => x.file === "20261120100000_dispatch_and_history_corrections.sql");
-  assert.ok(at >= 0 && at >= manifest.deferred_contract.length - 3, "S31 is among the last three deferred entries");
+  assert.ok(at >= 0 && at >= manifest.deferred_contract.length - 5, "S31 is among the last five deferred entries");
   const predAt = manifest.posture.deferred_contract.predicates.findIndex((x) => x.name === "s31-dispatch-and-history-corrections-present");
-  assert.ok(predAt >= 0 && predAt >= manifest.posture.deferred_contract.predicates.length - 3);
-  assert.equal(manifest.deferred_contract.at(-2).file, "20261120200000_tasks_future_only_not_valid.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-2).name, "s32-tasks-future-only-not-valid");
-  assert.equal(manifest.deferred_contract.at(-1).file, "20261121100000_sync_advance_lead_stage_from_sheet.sql");
+  assert.ok(predAt >= 0 && predAt >= manifest.posture.deferred_contract.predicates.length - 5);
+  assert.equal(manifest.deferred_contract.at(-4).file, "20261120200000_tasks_future_only_not_valid.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-4).name, "s32-tasks-future-only-not-valid");
+  assert.equal(manifest.deferred_contract.at(-3).file, "20261121100000_sync_advance_lead_stage_from_sheet.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-3).name, "s33-sync-advance-lead-stage-from-sheet-present");
+  assert.equal(manifest.deferred_contract.at(-2).file, "20261122200000_quotation_value_follows_quotations.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-2).name, "s36-quotation-value-follows-quotations-present");
+  assert.equal(manifest.deferred_contract.at(-1).file, "20261122300000_s37_new_lead_not_dormant.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-1).name, "s37-new-lead-not-dormant");
   assert.match(read(".github/workflows/ci.yml"), /tests\/database\/s31-corrective\.sql/);
   const dbTest = read("tests/database/s31-corrective.sql");
   for (const marker of ["a-second-evaluation-without-confirmation-still-reviews-phone", "b-canonical-twin-is-found",

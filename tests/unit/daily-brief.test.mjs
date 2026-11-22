@@ -147,7 +147,7 @@ const brief = (over = {}) => buildBrief({ dateKey: "2026-11-20",
 test("brief: short Chinese line with every requested figure and no attention line when nothing is off", () => {
   const text = brief();
   assert.match(text, /^2026-11-20日报；新线索11条（FB表单5 Instagram3 WhatsApp2 网站1 其他0）；/);
-  assert.match(text, /24小时未联系：甲3条\(最久2天\)、乙1条\(最久26小时\)/);
+  assert.match(text, /24小时未记录联系：甲3条\(最久2天\)、乙1条\(最久26小时\)/);
   assert.match(text, /昨日报价4单，合计AED 123,400/);
   assert.match(text, /广告花费AED 560，单条线索AED 70/);
   assert.ok(!text.includes("需要注意"));
@@ -160,7 +160,7 @@ test("brief: no spend line without spend data; attention for uncontacted over 5,
     leads: { total: 6, byChannel: { fb_form: 6, instagram: 0, whatsapp: 0, website: 0, other: 0 }, prior: { fb_form: 40, instagram: 20, whatsapp: 2, website: 6, other: 0 }, adLeads: 6 } });
   assert.ok(!text.includes("广告花费"));
   assert.match(text, /最久4天/);
-  assert.match(text, /需要注意：未联系共6条；Instagram、网站昨日0条线索；丙无手机号，提醒未发$/);
+  assert.match(text, /需要注意：未记录联系共6条；Instagram、网站昨日0条线索；丙无手机号，提醒未发$/);
 });
 
 test("brief: a long salesperson list is shortened to stay within 400 characters", () => {
@@ -194,7 +194,9 @@ class Query {
 const fakeDb = (tables) => ({ from: (name) => new Query(tables[name] ?? []) });
 const tables = () => ({
   lead_dispatch_state: [],
-  leads: [lead({ id: "x1", created_at: at("2026-11-19T06:00:00Z") }), lead({ id: "x2", created_at: at("2026-11-20T10:00:00Z"), source: "ins" })],
+  // Showroom leads: the 24 hour reminder applies to every channel; the 1 hour ad-lead reminder (S35) does not, so these
+  // runner tests keep covering the 24 hour job on its own. The ad-lead reminder has its own runner tests below.
+  leads: [lead({ id: "x1", created_at: at("2026-11-19T06:00:00Z"), source: "show_room" }), lead({ id: "x2", created_at: at("2026-11-20T10:00:00Z"), source: "show_room" })],
   profiles: [{ id: "u1", full_name: "Sales One", phone: "0501234567", is_active: true }],
   follow_up_logs: [], transfer_history: [], quotations: [], ad_spend: [{ spend_date: "2026-11-20", amount: 90 }],
 });
@@ -281,7 +283,7 @@ test("all leads unassigned in OS: the brief shows them, not 0", () => {
   const groups = groupUncontactedForBrief(un, []);
   assert.deepEqual(groups.map((g) => [g.name, g.items.length, g.unassigned]), [["未分配", 3, true]]);
   const text = buildBrief({ dateKey: "2026-11-20", leads: { total: 3, adLeads: 3, ...quietLeads }, groups, quotes: { count: 0, total: 0 } });
-  assert.match(text, /24小时未联系：未分配3条/);
+  assert.match(text, /24小时未记录联系：未分配3条/);
   assert.match(text, /需要注意：未分配3条无人认领/);
   assert.ok(!/未联系：无/.test(text));
 });
@@ -320,7 +322,7 @@ test("runner: every new lead unassigned in OS, brief counts them (not a false al
   const b = await runBrief(fakeDb(t()), { execute: true, now: NOW, send: async (m) => { sent.push(m); return true; }, env: { NEWME_DAILY_BRIEF_ENABLED: "true" } });
   assert.equal(b.uncontacted, 1); // x2 is under 24h; x1 is 46h old
   assert.equal(b.unassigned, 1);
-  assert.match(sent[0].text, /24小时未联系：未分配1条/);
+  assert.match(sent[0].text, /24小时未记录联系：未分配1条/);
   const r = await runReminders(fakeDb(t()), { now: NOW, env: { NEWME_LEAD_REMINDER_ENABLED: "true" } });
   assert.deepEqual([r.uncontacted, r.due], [0, 0]);
 });

@@ -1319,3 +1319,11 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 
 - 工作程序 `scripts/os-drive-nas-sync.mjs`（每 5 分钟增量、`--reconcile` 每晚对账、`--dry-run` 只读演练）；纯函数 `src/lib/os-drive-sync.mjs`（电话规范化、按键对号入座、写入白名单、总闸、退避）；表格客户端 `src/lib/google-sheets-client.mjs`；单元模板 `infra/os-drive-sync/newme-os-drive-sync.service`、`infra/os-drive-sync/newme-os-drive-reconcile.service` 及对应定时器，开关 OS_DRIVE_SYNC_ENABLED 默认关；说明见 `docs/s28-drive-nas-sync.md`。
 - 只写两处：Meta 编号表（原地更新、追加、不删）与销售表 Home-owners 页 X 列的单个格子；每次写后读回核对；超过 200 格总闸一格不写；无数据库迁移。
+
+## 2026-11-22 S37 编号与数字口径补充登记
+
+- 线索页 AI 备注与等待提示：`src/app/(dashboard)/leads/[id]/LeadAiNoteCard.tsx`（AI 备注卡片）、`src/app/(dashboard)/leads/[id]/LeadWaitingBadge.tsx`（等待时长徽标）；接口 `src/app/api/leads/ai-notes/route.ts`（读取线索 AI 备注，按角色校验，不缓存）。
+- 报价快捷入口：`src/app/(dashboard)/quotes/quick-quote-dialog.tsx`（快速报价弹窗）；保存逻辑 `src/lib/quote-save-client.ts`。
+- 官网带金额回传：`src/lib/website-capi-valued.ts`（带报价金额的官网转化事件）。
+- 看板赢单弹窗：`src/shared/kanban/WonDropDialog.tsx`（拖入赢单时填写金额与确认）。
+- 派发工作台改为通过接口取可转交销售名单：`src/app/api/dispatch/reps/route.ts`（管理员、老板、运营可读，规则与线索页一致，隐藏测试账号），浏览器端不再直接查询用户资料表。

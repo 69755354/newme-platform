@@ -23,9 +23,12 @@
 //                         pending / good / normal / bad / unknown.
 //
 // All period and day math lives in dubai-time.mjs.
-import { dubaiDaysBetween, inBounds } from "./dubai-time.mjs";
+import { dubaiDateKey, dubaiDaysBetween, inBounds } from "./dubai-time.mjs";
+import { isWhatsAppAdLead } from "./whatsapp-ad-display.mjs";
 
 export const NEVER_CONTACTED_GRACE_MS = 48 * 3600 * 1000;
+/** A lead created within this window and never contacted is "hot", not "dormant" (S37). */
+export const NEW_LEAD_HOT_WINDOW_MS = 48 * 3600 * 1000;
 export const STALE_YELLOW_DAYS = 7;
 export const STALE_RED_DAYS = 14;
 
@@ -49,7 +52,7 @@ export const LEAD_METRIC_COLUMNS =
 
 /** Columns the two ads-attribution pages group and count by. */
 export const ADS_ATTRIBUTION_COLUMNS =
-  "archived,source,source_platform,created_at,ctwa_clid,campaign_id,campaign_name,utm_campaign,meta_campaign,adset_id,adset_name,ad_id,ad_name,stage,final_status,quotation_value,quality,ai_quality";
+  "archived,source,source_platform,created_at,ctwa_clid,source_channel,campaign_id,campaign_name,utm_campaign,meta_campaign,adset_id,adset_name,ad_id,ad_name,stage,final_status,quotation_value,quality,ai_quality";
 
 /** Source of the daily production check lead (S7). It is never a customer. */
 export const SYNTHETIC_QA_SOURCE = "synthetic_qa";
@@ -89,6 +92,37 @@ export function isContactedLead(lead) {
   if (lead.last_contact_date || (lead.followup_count ?? 0) > 0) return true;
   const outcome = leadOutcome(lead);
   return CONTACTED_STAGES.has(outcome) || outcome === "won";
+}
+
+/** Counted, still open and nobody owns it. */
+export function isActiveUnassignedLead(lead) {
+  return isActiveLead(lead) && !lead.assigned_to;
+}
+
+/**
+ * Temperature of a lead at `now`, computed from facts rather than read from the
+ * stored column (a trigger only fires on update, so a stored value goes stale
+ * with the calendar). Mirrors derive_lead_status() after S37:
+ *   never contacted and created in the last 48h  -> hot (a fresh lead is not dormant)
+ *   never contacted, older                       -> dormant
+ *   last contact within 7 / 14 / 30 Dubai days   -> hot / warm / cold, else dormant
+ * Won and lost leads keep their stored value.
+ */
+export function effectiveLeadStatus(lead, now = new Date()) {
+  if (!lead) return null;
+  const outcome = leadOutcome(lead);
+  if (outcome === "won" || outcome === "lost") return lead.lead_status ?? null;
+  if (!lead.last_contact_date) {
+    const createdMs = lead.created_at ? new Date(lead.created_at).getTime() : NaN;
+    if (!Number.isFinite(createdMs)) return lead.lead_status ?? "dormant";
+    return new Date(now).getTime() - createdMs < NEW_LEAD_HOT_WINDOW_MS ? "hot" : "dormant";
+  }
+  const days = dubaiDaysBetween(lead.last_contact_date, now);
+  if (days === null) return lead.lead_status ?? null;
+  if (days <= 7) return "hot";
+  if (days <= 14) return "warm";
+  if (days <= 30) return "cold";
+  return "dormant";
 }
 
 export function isQuotedLead(lead) {
@@ -242,7 +276,14 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     highProbStale: 0, pendingStale: 0,
     followUpOverdue: 0,
     dormant: 0, zeroFollowup: 0,
+    // S37: counts the boss tiles used to guess at.
+    hot: 0,               // effectiveLeadStatus === "hot" among active leads
+    quotedCount: 0,       // isQuotedLead: open quoted stages plus won (same as the ads pages)
+    valuedCount: 0,       // active leads that actually carry a quotation value
+    riskPool: 0,          // active leads with no next follow-up date, or one that has passed
+    unassignedActive: 0,  // active leads nobody owns
   };
+  const todayKey = dubaiDateKey(now);
   const qualityBreakdown = Object.fromEntries(QUALITY_BUCKETS.map((k) => [k, 0]));
 
   for (const lead of rows || []) {
@@ -261,7 +302,7 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
       stageCounts[outcome]++;
       stageValues[outcome] += value;
     }
-    const status = lead.lead_status || "unknown";
+    const status = effectiveLeadStatus(lead, now) || "unknown";
     statusCounts[status] = (statusCounts[status] || 0) + 1;
     if (won) { s.won++; s.wonValue += value; }
     if (lost) s.lost++;
@@ -272,12 +313,22 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     if (!lead.followup_count || !lead.last_contact_date) s.zeroFollowup++;
     {
       const sinceContact = dubaiDaysBetween(lead.last_contact_date, now);
-      if (lead.lead_status === "dormant" || (active && sinceContact !== null && sinceContact >= STALE_RED_DAYS)) s.dormant++;
+      const temperature = effectiveLeadStatus(lead, now);
+      // Dormant by the facts (effective temperature), not by whatever a trigger stored long ago.
+      if (temperature === "dormant" || (active && sinceContact !== null && sinceContact >= STALE_RED_DAYS)) s.dormant++;
+      if (active && temperature === "hot") s.hot++;
     }
+    if (isQuotedLead(lead)) s.quotedCount++;
 
     if (active) {
       s.active++;
       s.pipelineValue += value;
+      if (value > 0) s.valuedCount++;
+      if (!lead.assigned_to) s.unassignedActive++;
+      {
+        const due = lead.next_followup_date ? String(lead.next_followup_date).slice(0, 10) : null;
+        if (!due || (todayKey && due < todayKey)) s.riskPool++;
+      }
       s.weightedPipelineValue += (value * (lead.win_probability || 0)) / 100;
       const staleDays = dubaiDaysBetween(lead.last_contact_date || lead.updated_at, now);
       if (staleDays !== null && staleDays >= STALE_RED_DAYS) s.redCount++;
@@ -334,10 +385,15 @@ export function aggregateAttribution(rows, keyOf = leadSourceKey) {
   for (const lead of rows || []) {
     if (!isCountedLead(lead)) continue;
     const key = keyOf(lead);
-    if (!groups[key]) groups[key] = { total: 0, valid: 0, quoted: 0, won: 0, value: 0 };
+    if (!groups[key]) groups[key] = { total: 0, valid: 0, rated: 0, unrated: 0, waAd: 0, quoted: 0, won: 0, value: 0 };
     const g = groups[key];
     g.total++;
     if (isValidQualityLead(lead)) g.valid++;
+    // "Rated" = someone (or the AI) has judged the lead; the rest are simply not rated yet.
+    const bucket = qualityBucket(lead);
+    if (bucket === "pending" || bucket === "unknown") g.unrated++; else g.rated++;
+    // The lead has come through a click-to-WhatsApp ad at some point, whatever the stored first-touch source says.
+    if (isWhatsAppAdLead(lead)) g.waAd++;
     const quoted = isQuotedLead(lead);
     if (quoted) g.quoted++;
     if (isWonLead(lead)) g.won++;
@@ -348,9 +404,10 @@ export function aggregateAttribution(rows, keyOf = leadSourceKey) {
 }
 
 export function totalAttribution(groups) {
-  const totals = { total: 0, valid: 0, quoted: 0, won: 0, value: 0 };
+  const totals = { total: 0, valid: 0, rated: 0, unrated: 0, waAd: 0, quoted: 0, won: 0, value: 0 };
   for (const g of Object.values(groups)) {
     totals.total += g.total; totals.valid += g.valid; totals.quoted += g.quoted;
+    totals.rated += g.rated; totals.unrated += g.unrated; totals.waAd += g.waAd;
     totals.won += g.won; totals.value += g.value;
   }
   return totals;

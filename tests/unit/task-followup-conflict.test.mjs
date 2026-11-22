@@ -147,7 +147,8 @@ test("every task open/overdue consumer filters the canonical pending status", as
   const entries = await Promise.all([
     ["workbench", "src/app/api/workbench/route.ts", 3],
     ["weekly review", "src/app/api/dashboard/weekly-review/route.ts", 2],
-    ["dashboard summary", "src/app/api/dashboard/summary/route.ts", 4],
+    // S37: the two risk-pool task counts are gone (the risk pool is now counted from leads), so 2 remain.
+    ["dashboard summary", "src/app/api/dashboard/summary/route.ts", 2],
     ["command center", "src/app/api/command-center/route.ts", 1],
     ["daily reminder", "src/app/api/cron/daily-reminder/route.ts", 1],
     ["daily metrics", "src/app/api/metrics/daily/route.ts", 2],

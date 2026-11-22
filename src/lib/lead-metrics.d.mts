@@ -47,6 +47,7 @@ export interface LeadSummary {
   highProbStale: number; pendingStale: number;
   followUpOverdue: number;
   dormant: number; zeroFollowup: number;
+  hot: number; quotedCount: number; valuedCount: number; riskPool: number; unassignedActive: number;
   qualityBreakdown: Record<QualityBucket, number>;
   conversionRate: number; contactRate: number;
   stageCounts: Record<string, number>;
@@ -56,7 +57,7 @@ export interface LeadSummary {
   byAssignee: Record<string, AssigneeSummary>;
 }
 
-export interface AttributionGroup { total: number; valid: number; quoted: number; won: number; value: number }
+export interface AttributionGroup { total: number; valid: number; rated: number; unrated: number; waAd: number; quoted: number; won: number; value: number }
 
 export const NEVER_CONTACTED_GRACE_MS: number;
 export const STALE_YELLOW_DAYS: number;
@@ -74,6 +75,9 @@ export function isWonLead(lead: MetricLead | null | undefined): boolean;
 export function isLostLead(lead: MetricLead | null | undefined): boolean;
 export function isWonInPeriod(lead: MetricLead | null | undefined, bounds: Bounds): boolean;
 export function isContactedLead(lead: MetricLead | null | undefined): boolean;
+export function isActiveUnassignedLead(lead: MetricLead | null | undefined): boolean;
+export function effectiveLeadStatus(lead: MetricLead | null | undefined, now?: Date | string | number): string | null;
+export const NEW_LEAD_HOT_WINDOW_MS: number;
 export function isQuotedLead(lead: MetricLead | null | undefined): boolean;
 export function conversionRate(won: number, total: number): number;
 export function percentOf(part: number, total: number): number;

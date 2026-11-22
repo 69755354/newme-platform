@@ -24,6 +24,11 @@ export const NORMAL_CHANNEL_MIN_LEADS = 5; // leads in the 14 days before yester
 export const REMINDER_FIRST_HOUR = 9;
 export const REMINDER_LAST_HOUR = 21; // inclusive: the 21:00 run still goes out
 export const DEFAULT_MAX_LEAD_AGE_DAYS = 30;
+// S35: ad-sourced leads (Meta form, WhatsApp click-to-chat, website) are chased far sooner than the 24 hour rule.
+export const AD_FIRST_CONTACT_MINUTES = 60;
+export const AD_REMINDER_THRESHOLD = "1h"; // part of every ledger / event key: one reminder per lead per threshold
+export const AD_REMINDER_MAX_AGE_DAYS = 3; // older ad leads belong to the 24 hour reminder and the brief
+export const MANAGER_ROLES = Object.freeze(["admin", "boss"]);
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
@@ -253,7 +258,7 @@ export function buildBrief({ dateKey, leads, people = [], groups = null, missing
   const unassignedCount = shownGroups.filter((g) => g.unassigned).reduce((s, g) => s + g.items.length, 0);
   const attention = [];
   if (unassignedCount > 0) attention.push(`未分配${unassignedCount}条无人认领`);
-  if (uncontactedTotal > ATTENTION_UNCONTACTED_OVER) attention.push(`未联系共${uncontactedTotal}条`);
+  if (uncontactedTotal > ATTENTION_UNCONTACTED_OVER) attention.push(`未记录联系共${uncontactedTotal}条`);
   const silent = NORMAL_CHANNELS.filter((c) => leads.byChannel[c] === 0 && leads.prior[c] >= NORMAL_CHANNEL_MIN_LEADS).map(channelLabel);
   if (silent.length) attention.push(`${silent.join("、")}昨日0条线索`);
   if (missingPhone.length) attention.push(`${missingPhone.map((p) => p.name).join("、")}无手机号，提醒未发`);
@@ -266,7 +271,7 @@ export function buildBrief({ dateKey, leads, people = [], groups = null, missing
     const who = shownGroups.length
       ? `${kept.map((p) => `${p.name}${p.items.length}条(最久${ageLabel(p.oldest_hours)})`).join("、")}${rest > 0 ? `等${shownGroups.length}人` : ""}`
       : "无";
-    const parts = [`${dateKey}日报`, `新线索${leads.total}条（${channels}）`, `24小时未联系：${who}`, `昨日报价${quotes.count}单，合计AED ${money(quotes.total)}`];
+    const parts = [`${dateKey}日报`, `新线索${leads.total}条（${channels}）`, `24小时未记录联系：${who}`, `昨日报价${quotes.count}单，合计AED ${money(quotes.total)}`];
     if (spend) parts.push(`广告花费AED ${money(spend.spend)}${spend.cpl === null ? "" : `，单条线索AED ${money(spend.cpl)}`}`);
     if (attention.length) parts.push(`需要注意：${attention.join("；")}`);
     return parts.join("；");
@@ -283,6 +288,100 @@ export function buildReminder(person) {
   const shown = person.items.slice(0, 5).map((i) => `${i.first_name}·${channelLabel(i.channel)}·${ageLabel(i.age_hours)}`);
   const more = person.items.length > shown.length ? `等共${person.items.length}条` : "";
   return clip(`${person.name}，您有${person.items.length}条线索分配超24小时仍未记录首次联系：${shown.join("，")}${more}。请尽快联系，并在OS里记录首次联系。`);
+}
+
+const isAdSourced = (lead) => isAdLead(lead) || text(lead?.source).toLowerCase() === "website"
+  || ["meta_lead_form", "whatsapp_ctwa"].includes(text(lead?.source_channel));
+
+/**
+ * When an ad lead that arrived at `intakeMs` must have been contacted by (epoch ms). Dubai working hours are
+ * 09:00-21:00: a lead arriving 09:00-20:00 is due one hour later; anything else (evening, night, early morning)
+ * is due at 10:00 Dubai, the same day when it arrived before 09:00, else the next day.
+ */
+export function adFirstContactDueMs(intakeMs) {
+  const local = intakeMs + 4 * HOUR; // Dubai wall clock read through the UTC fields
+  const minutes = new Date(local).getUTCHours() * 60 + new Date(local).getUTCMinutes();
+  if (minutes >= REMINDER_FIRST_HOUR * 60 && minutes <= (REMINDER_LAST_HOUR - 1) * 60) return intakeMs + AD_FIRST_CONTACT_MINUTES * 60_000;
+  const dayStartLocal = Math.floor(local / DAY) * DAY; // Dubai midnight, in shifted time
+  const tenToday = dayStartLocal + 10 * HOUR;
+  const dueLocal = minutes < REMINDER_FIRST_HOUR * 60 ? tenToday : tenToday + DAY;
+  return dueLocal - 4 * HOUR;
+}
+
+/**
+ * Ad-sourced leads past their first-contact deadline with no recorded contact, assigned or not.
+ * Test records, archived, held, closed, bulk-imported and old (AD_REMINDER_MAX_AGE_DAYS) leads are left out.
+ * @returns {Array<{lead_id, assigned_to, first_name, channel, overdue_minutes}>} longest waiting first
+ */
+export function selectAdUncontacted({ leads, logLeadIds = new Set(), excludedTestIds = new Set(), now = new Date(),
+  maxAgeDays = AD_REMINDER_MAX_AGE_DAYS } = {}) {
+  const out = [];
+  for (const lead of leads ?? []) {
+    if (!isReportableLead(lead, excludedTestIds) || isBulkImported(lead) || !isAdSourced(lead)) continue;
+    const outcome = leadOutcome(lead);
+    if (outcome === "won" || outcome === "lost" || lead.hold_since) continue;
+    if (hasFirstContact(lead, logLeadIds)) continue;
+    const created = Date.parse(lead.created_at ?? "");
+    if (!Number.isFinite(created) || now.getTime() - created > maxAgeDays * DAY) continue;
+    const due = adFirstContactDueMs(created);
+    if (now.getTime() < due) continue;
+    out.push({ lead_id: lead.id, assigned_to: lead.assigned_to ?? null, first_name: firstName(lead.customer_name),
+      channel: channelOf(lead), overdue_minutes: Math.floor((now.getTime() - due) / 60_000) });
+  }
+  return out.sort((a, b) => b.overdue_minutes - a.overdue_minutes);
+}
+
+/**
+ * Who hears about each overdue ad lead: its active owner; a lead with no usable owner (none, inactive, system account)
+ * goes to every active admin and boss. Items already reminded (`done` keys "<person id>:<lead id>") are dropped, so each
+ * lead is reminded once per person per threshold.
+ * @returns {{people: Array<{id, name, role, manager, items, number}>, sendable, missingPhone}}
+ */
+export function planAdReminders(items, profiles, done = new Set()) {
+  const usable = (profiles ?? []).filter((p) => p?.is_active !== false && !isSystemAccount(p));
+  const byId = new Map(usable.map((p) => [p.id, p]));
+  const managers = usable.filter((p) => MANAGER_ROLES.includes(p.role));
+  const groups = new Map();
+  const add = (person, item) => {
+    if (done.has(`${person.id}:${item.lead_id}`)) return;
+    if (!groups.has(person.id)) groups.set(person.id, []);
+    groups.get(person.id).push(item);
+  };
+  for (const item of items) {
+    const owner = item.assigned_to ? byId.get(item.assigned_to) : null;
+    if (owner) add(owner, { ...item, unassigned: false });
+    else for (const manager of managers) add(manager, { ...item, unassigned: true });
+  }
+  const people = [...groups].map(([id, list]) => {
+    const p = byId.get(id);
+    const phone = normalizePhone(p.phone);
+    return { id, name: text(p.full_name) || "同事", role: p.role, manager: MANAGER_ROLES.includes(p.role) && list.every((i) => i.unassigned),
+      items: list, number: phone.ok ? phone.e164.replace(/^\+/, "") : null };
+  }).sort((a, b) => b.items.length - a.items.length);
+  return { people, sendable: people.filter((p) => p.number), missingPhone: people.filter((p) => !p.number) };
+}
+
+/** One WhatsApp text for the ad-lead reminder (owner or manager version), at most 400 characters. */
+export function buildAdReminder(person) {
+  const shown = person.items.slice(0, 5).map((i) => `${i.first_name}·${channelLabel(i.channel)}·超时${ageLabel(Math.max(1, Math.ceil(i.overdue_minutes / 60)))}`);
+  const more = person.items.length > shown.length ? `等共${person.items.length}条` : "";
+  const text_ = person.manager
+    ? `${person.name}，有${person.items.length}条广告线索未分配且超1小时无人联系：${shown.join("，")}${more}。未分配，请尽快安排跟进。`
+    : `${person.name}，您有${person.items.length}条广告线索超1小时未联系：${shown.join("，")}${more}。请尽快联系，并在OS里记录首次联系。`;
+  return clip(text_);
+}
+
+/** In-app bell rows for the same reminder (one per person and lead; the event key makes a repeat a no-op). */
+export function adReminderNotificationRows(person) {
+  return person.items.map((item) => ({
+    user_id: person.id,
+    type: "follow_up_overdue",
+    title: `Lead not contacted yet: ${item.first_name}`,
+    body: `Lead "${item.first_name}" has had no first contact for over 1 hour`,
+    related_id: item.lead_id,
+    related_type: "lead",
+    event_key: `lead_uncontacted_${AD_REMINDER_THRESHOLD}:${item.lead_id}`,
+  }));
 }
 
 /** Is `now` inside the reminder window (Dubai 09:00 through the 21:00 run)? */

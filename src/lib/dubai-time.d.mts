@@ -17,3 +17,5 @@ export interface DubaiWeek { year: number; week: number; start: Date; end: Date;
 export function isoWeekOfDateKey(dateKey: string): { year: number; week: number };
 export function recentDubaiWeeks(count: number, value?: Date | string | number): DubaiWeek[];
 export function inWeek(value: string | Date | number | null | undefined, week: DubaiWeek): boolean;
+export function dubaiInputValue(value?: Date | string | number): string;
+export function dubaiInputToIso(value: unknown): string | null;

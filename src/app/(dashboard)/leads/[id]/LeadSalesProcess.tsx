@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn, fmtDubai } from "@/lib/utils";
+import { dubaiInputToIso, dubaiInputValue } from "@/lib/dubai-time.mjs";
 import {
   CheckCircle,
   AlertTriangle,
@@ -61,9 +62,11 @@ interface Props {
   onToggleMilestone: (milestoneKey: string, currentlyCompleted: boolean, notes?: string) => Promise<boolean>;
   onReopenMilestone: (milestoneKey: string, reason: string) => Promise<boolean>;
   onUpdateField: LeadFieldUpdater;
-  onWon: (note?: string) => Promise<boolean>;
+  onWon: (note?: string, amount?: string) => Promise<boolean>;
   onLost: (note?: string) => Promise<boolean>;
   onOpenQuoteCalculator: () => void;
+  /** "Only the amount" quotation, available at any time. */
+  onOpenQuickQuote: () => void;
   onCreateContract: () => void;
   /** /contracts/new admits admin and boss only; others get no button that bounces. */
   canCreateContract?: boolean;
@@ -100,6 +103,7 @@ export default function LeadSalesProcess({
   onWon,
   onLost,
   onOpenQuoteCalculator,
+  onOpenQuickQuote,
   onCreateContract,
   canCreateContract = false,
   onGenerateKnx,
@@ -114,7 +118,8 @@ export default function LeadSalesProcess({
 }: Props) {
   // ── Inline workspace state for first_contact milestone ──
   const [contactMethod, setContactMethod] = useState("");
-  const [contactTime, setContactTime] = useState(new Date().toISOString().slice(0, 16));
+  // S35 F05: the field is Dubai time (never the UTC clock, never the browser zone).
+  const [contactTime, setContactTime] = useState(() => dubaiInputValue());
   const [contactResult, setContactResult] = useState("");
   const [contactNotes, setContactNotes] = useState("");
   const [contactFormOpen, setContactFormOpen] = useState(false);
@@ -125,6 +130,7 @@ export default function LeadSalesProcess({
   const [qualitySetting, setQualitySetting] = useState<string | null>(null);
   const [qualitySaveError, setQualitySaveError] = useState<string | null>(null);
   const [stageNote, setStageNote] = useState("");
+  const [wonAmount, setWonAmount] = useState("");
   const [milestoneNoteError, setMilestoneNoteError] = useState<string | null>(null);
   const [firstContactBlockReason, setFirstContactBlockReason] = useState<string | null>(null);
   const [reopenMilestoneKey, setReopenMilestoneKey] = useState<string | null>(null);
@@ -449,9 +455,14 @@ export default function LeadSalesProcess({
                         setContactSaveError(null);
                         setContactSubmitting(true);
                         try {
+                          const contactTimeIso = dubaiInputToIso(contactTime);
+                          if (!contactTimeIso) {
+                            setContactSaveError(t("leadDetail.contactTimeInvalid"));
+                            return;
+                          }
                           const result = await onAddStructuredContact({
                             contact_method: contactMethod,
-                            contact_time: new Date(contactTime).toISOString(),
+                            contact_time: contactTimeIso,
                             contact_result: contactResult.trim(),
                             summary: contactNotes.trim() || undefined,
                           });
@@ -462,7 +473,7 @@ export default function LeadSalesProcess({
                           }
                           // Reset form
                           setContactMethod("");
-                          setContactTime(new Date().toISOString().slice(0, 16));
+                          setContactTime(dubaiInputValue());
                           setContactResult("");
                           setContactNotes("");
                           setContactFormOpen(false);
@@ -527,7 +538,7 @@ export default function LeadSalesProcess({
                         {/* ── Add Structured Contact Record ── */}
                         {!contactFormOpen ? (
                           <button
-                            onClick={() => setContactFormOpen(true)}
+                            onClick={() => { setContactTime(dubaiInputValue()); setContactFormOpen(true); }}
                             className="flex items-center gap-1.5 text-[10px] text-copper-400 hover:text-copper-300 transition-colors w-full py-1"
                           >
                             <Plus className="h-3 w-3" />
@@ -561,7 +572,7 @@ export default function LeadSalesProcess({
                               <input
                                 type="datetime-local"
                                 value={contactTime}
-                                max={new Date().toISOString().slice(0, 16)}
+                                max={dubaiInputValue()}
                                 onChange={(e) => setContactTime(e.target.value)}
                                 disabled={contactSubmitting}
                                 className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
@@ -911,6 +922,23 @@ export default function LeadSalesProcess({
             />
             <p className="text-right text-[10px] text-muted-foreground">{stageNote.length}/1000</p>
           </div>
+          {!(lead.quotation_value != null && lead.quotation_value > 0) && (
+            <div>
+              <label htmlFor="won-amount" className="text-xs text-muted-foreground">
+                {lang === "zh" ? "成交金额 AED（点“赢单”时必填：还没有报价或合同）" : "Deal amount AED (required to mark Won: there is no quotation or contract yet)"}
+              </label>
+              <input
+                id="won-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={wonAmount}
+                onChange={(event) => setWonAmount(event.target.value)}
+                className="mt-1 h-8 w-full rounded border border-border bg-muted px-2 text-xs text-foreground"
+              />
+            </div>
+          )}
           <p className="rounded-md border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
             {lang === "zh" ? "阶段只能通过上方当前里程碑的真实推进备注完成；后续阶段会在满足顺序后解锁。" : "Complete the current milestone above with a real progress note. Future stages unlock in sequence."}
           </p>
@@ -920,10 +948,10 @@ export default function LeadSalesProcess({
               variant="outline"
               className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
               onClick={async () => {
-                const changed = await onWon(stageNote);
-                if (changed) setStageNote("");
+                const changed = await onWon(stageNote, wonAmount);
+                if (changed) { setStageNote(""); setWonAmount(""); }
               }}
-              disabled={updating || !firstContactGate.allowed || !stageNote.trim()}
+              disabled={updating || !firstContactGate.allowed || !stageNote.trim() || (!(lead.quotation_value != null && lead.quotation_value > 0) && !(Number(wonAmount) > 0))}
               title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <CheckCircle className="w-4 h-4 mr-1" />{t("stageLabels.won")}
@@ -951,6 +979,14 @@ export default function LeadSalesProcess({
             onClick={onOpenQuoteCalculator}
           >
             <Plus className="w-4 h-4 mr-2" />{t("leadDetail.createQuote")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full border-copper-500/30 text-copper-400 justify-start"
+            onClick={onOpenQuickQuote}
+          >
+            <DollarSign className="w-4 h-4 mr-2" />{lang === "zh" ? "只填金额报价" : "Quick quote (amount only)"}
           </Button>
           <Button
             variant="outline"

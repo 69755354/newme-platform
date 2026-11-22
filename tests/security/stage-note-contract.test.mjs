@@ -21,15 +21,15 @@ test("sales process reserves direct stage actions for terminal outcomes", async 
   assert.ok(source.includes("maxLength={1000}"));
   assert.ok(source.includes("Complete the current milestone above with a real progress note"));
   assert.equal(source.includes("onStageChange(s, stageNote)"), false);
-  assert.ok(source.includes("onWon(stageNote)"));
+  assert.ok(source.includes("onWon(stageNote, wonAmount)")); // S36: won carries the deal amount
   assert.ok(source.includes("onLost(stageNote)"));
-  assert.ok(source.includes('if (changed) setStageNote("")'));
+  assert.ok(source.includes('if (changed) { setStageNote(""); setWonAmount(""); }'));
 });
 
 test("stage mutation forwards notes without bypassing the owned stage endpoint", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
-  assert.ok(source.includes('updateStage = useCallback(async (stage: string, note = "")'));
-  assert.match(source, /JSON\.stringify\(\{ stage, note: note\.trim\(\), idempotencyKey: crypto\.randomUUID\(\) \}\)/);
+  assert.ok(source.includes('updateStage = useCallback(async (stage: string, note = "", amount?: string)'));
+  assert.match(source, /JSON\.stringify\(\{ stage, note: note\.trim\(\), idempotencyKey: crypto\.randomUUID\(\), \.\.\.\(stage === "won" && amount\?\.trim\(\) \? \{ amount: amount\.trim\(\) \} : \{\}\) \}\)/);
   assert.equal(source.includes('.from("leads").update({ stage'), false);
 });
 

@@ -142,6 +142,7 @@ test("quotation generate executes the insert once and propagates the database qu
     "@/lib/milestone-stage-advance.mjs": stageAdvance,
     "@/lib/first-contact-gate.mjs": firstContactGate,
     // Meta feedback for the quotation step is covered by tests/unit/purchase-capi.test.mjs; inert here.
+    "@/lib/quote-feedback.mjs": { enqueueQuotedFeedback: async () => [] },
     "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async () => "skipped" },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped" },
   });
@@ -188,6 +189,10 @@ test("Hermes generate executes the insert once and propagates the database quote
     },
     "../../../../lib/quotation-engine": { calculateQuotation: calculation },
     "@/lib/logger": { logger: quietLogger, genReqId: () => "request-2" },
+    // The Quoted feedback is covered by tests/unit/s36-quote-hermes.test.mjs; inert here.
+    "@/lib/quote-feedback.mjs": { enqueueQuotedFeedback: async () => [] },
+    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async () => "skipped" },
+    "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped" },
   });
 
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -265,15 +270,14 @@ function quotationInsertChains(sourceFile) {
   });
 }
 
+// S36: the three browser screens no longer insert quotations themselves; they all save through
+// /api/quotations/generate (asserted in tests/unit/s36-quote-ui-wiring.test.mjs), so only the two server routes write.
 const QUOTE_ENTRY_FILES = [
-  "src/app/(dashboard)/quotes/quote-wizard.tsx",
-  "src/app/(dashboard)/quotes/quote-calculator.tsx",
-  "src/app/(dashboard)/quotes/quotes-client.tsx",
   "src/app/api/quotations/generate/route.ts",
   "src/app/api/hermes/generate-quote/route.ts",
 ];
 
-test("all five quote entry points delegate allocation and select the inserted id and quote number", () => {
+test("both server quote entry points delegate allocation and select the inserted id and quote number", () => {
   for (const relativePath of QUOTE_ENTRY_FILES) {
     const sourceFile = parse(relativePath);
     const chains = quotationInsertChains(sourceFile);

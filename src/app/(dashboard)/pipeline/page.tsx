@@ -5,6 +5,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ErrorState } from "@/components/ui/error-state";
 import { writeBusinessEvent } from "@/app/actions/pipeline";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
+import { WonDropDialog } from "@/shared/kanban/WonDropDialog";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { SalesKpiDashboard } from "./_components/SalesKpiDashboard";
@@ -37,7 +38,7 @@ export default function PipelinePage() {
 
   // ─── Infrastructure hooks ───
   const { isValidTransition, getValidTransitions } = useStageGuard();
-  const { onDragStart, onDragOver, onDragLeave, onDragEnter, onDrop, draggingLeadId, draggingOverStage } = usePipelineDragDrop(leads, setLeads, userId);
+  const { onDragStart, onDragOver, onDragLeave, onDragEnter, onDrop, draggingLeadId, draggingOverStage, wonPrompt, wonSaving, confirmWon, cancelWon } = usePipelineDragDrop(leads, setLeads, userId);
 
   // Get current user, role, sales users, and leads from BFF API
   useEffect(() => {
@@ -143,6 +144,7 @@ export default function PipelinePage() {
         isSales={false}
         isUpdating={updating}
       />
+      <WonDropDialog prompt={wonPrompt} saving={wonSaving} onConfirm={confirmWon} onCancel={cancelWon} />
     </DashboardScrollContainer>
   );
 }

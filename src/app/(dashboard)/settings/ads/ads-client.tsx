@@ -10,7 +10,7 @@ import { fmtAED } from "@/shared/utils/format";
 
 /* ─── Types ─── */
 interface GroupData {
-  total: number; valid: number; quoted: number; won: number; value: number;
+  total: number; valid: number; rated: number; unrated: number; waAd: number; quoted: number; won: number; value: number;
 }
 
 interface AdsClientProps {
@@ -51,10 +51,8 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-emerald-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.validLeads")}</p>
           <p className="text-2xl font-bold text-emerald-400">{totals.valid}</p>
-          <p className="text-[10px] text-muted-foreground">
-            {totals.total > 0
-              ? `${Math.round((totals.valid / totals.total) * 100)}%`
-              : ""}
+          <p className="text-xs text-muted-foreground">
+            {t("ads.validOfRated").replace("{valid}", String(totals.valid)).replace("{rated}", String(totals.rated)).replace("{unrated}", String(totals.unrated))}
           </p>
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-purple-500/5 to-transparent">
@@ -94,7 +92,13 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
                   {t("ads.validLeads")}
                 </th>
                 <th className="text-right py-3 px-3 text-muted-foreground font-medium">
-                  {t("ads.validLeads")} %
+                  {t("ads.validLeads")} / {t("ads.ratedLeads")}
+                </th>
+                <th className="text-right py-3 px-3 text-muted-foreground font-medium">
+                  {t("ads.notYetRated")}
+                </th>
+                <th className="text-right py-3 px-3 text-muted-foreground font-medium">
+                  {t("ads.lastTouch")}
                 </th>
                 <th className="text-right py-3 px-3 text-muted-foreground font-medium">
                   {t("ads.quoted")}
@@ -113,7 +117,7 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
             <tbody>
               {sorted.map(([key, g]) => {
                 const validRate =
-                  g.total > 0 ? Math.round((g.valid / g.total) * 100) : 0;
+                  g.rated > 0 ? Math.round((g.valid / g.rated) * 100) : null;
                 const convRate =
                   g.total > 0 ? Math.round((g.won / g.total) * 100) : 0;
                 return (
@@ -129,16 +133,20 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
                     <td className="text-right py-3 px-3">
                       <span
                         className={
-                          validRate >= 50
+                          validRate === null
+                            ? "text-muted-foreground"
+                            : validRate >= 50
                             ? "text-emerald-400"
                             : validRate >= 20
                               ? "text-amber-400"
                               : "text-muted-foreground"
                         }
                       >
-                        {validRate}%
+                        {validRate === null ? "—" : `${validRate}%`}
                       </span>
                     </td>
+                    <td className="text-right py-3 px-3 text-muted-foreground">{g.unrated}</td>
+                    <td className="text-right py-3 px-3">{g.waAd > 0 ? g.waAd : "—"}</td>
                     <td className="text-right py-3 px-3">{g.quoted}</td>
                     <td className="text-right py-3 px-3 font-semibold text-emerald-400">
                       {g.won}
@@ -165,7 +173,7 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
               {sorted.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={10}
                     className="text-center py-8 text-muted-foreground"
                   >
                     {t("ads.noAccountData")}
@@ -188,6 +196,7 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
             <p className="text-xs text-muted-foreground mt-1">
               {t("ads.adminOnlyNote")}
             </p>
+            <p className="text-xs text-muted-foreground mt-1">{t("ads.lastTouchNote")}</p>
           </div>
         </div>
       </div>

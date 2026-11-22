@@ -158,7 +158,8 @@ export default function AdsPage() {
   if (roleLoading || blocked) return null;
 
   // No spend rows at all in the window: say so once, instead of an empty cost column.
-  const spendMissing = roi !== null && roi.summary?.total_spend == null;
+  const spendMissing = roi !== null && !roi.data_last_updated;
+  const noSpendInWindow = roi !== null && !spendMissing && roi.summary?.total_spend == null;
   const pctOfRated = (valid: number, rated: number) => (rated > 0 ? `${Math.round((valid / rated) * 100)}%` : "—");
 
   const viewLabels: Record<string, string> = {
@@ -197,6 +198,9 @@ export default function AdsPage() {
           <p className="text-xs text-amber-300/80 mt-0.5">{t("ads.spendNotConnectedHint")}</p>
         </div>
       )}
+      {noSpendInWindow && !roi?.spend_stale && (
+        <p className="text-xs text-muted-foreground" data-testid="no-spend-in-window">{t("ads.noSpendInWindow")}</p>
+      )}
       {roi?.spend_stale && roi.data_last_updated && (
         <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-400">
           {t("ads.staleBanner").replace("{date}", roi.data_last_updated).replace("{n}", String(roi.spend_days_old ?? ""))}
@@ -211,7 +215,7 @@ export default function AdsPage() {
       {roi && days === 0 && <p className="text-xs text-amber-400" data-testid="roi-period-90">{t("ads.roiPeriod90")}</p>}
 
       {/* Summary: leads, cost per lead - the return stops at leads */}
-      <div className={cn("grid grid-cols-2 gap-3", roi?.summary && !spendMissing ? "md:grid-cols-5" : "md:grid-cols-2")}>
+      <div className={cn("grid grid-cols-2 gap-3", roi?.summary && !spendMissing && !noSpendInWindow ? "md:grid-cols-5" : "md:grid-cols-2")}>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-blue-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.totalLeads")}</p>
           <p className="text-2xl font-bold text-foreground">{totalStats.total}</p>
@@ -224,7 +228,7 @@ export default function AdsPage() {
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">{t("ads.validNote")}</p>
         </div>
-        {roi?.summary && !spendMissing && (
+        {roi?.summary && !spendMissing && !noSpendInWindow && (
           <>
             <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-purple-500/5 to-transparent">
               <p className="text-xs text-muted-foreground">{t("ads.spend")}</p>
@@ -315,7 +319,7 @@ export default function AdsPage() {
       <p className="text-xs text-muted-foreground">{t("ads.lastTouchNote")}</p>
 
       {/* Cost per lead per week and per ad (boss/admin only: spend is not shown to operator) */}
-      {roi && !spendMissing && (
+      {roi && (
         <div className="grid gap-4 md:grid-cols-2">
           {days === 0 && <p className="md:col-span-2 text-xs text-amber-400">{t("ads.roiPeriod90")}</p>}
           <div className="rounded-xl border border-border/50 overflow-hidden">
@@ -324,20 +328,20 @@ export default function AdsPage() {
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-border/50 text-muted-foreground">
                   <th className="text-left py-2 px-4 font-medium">{t("ads.week")}</th>
-                  <th className="text-right py-2 px-3 font-medium">{t("ads.spend")}</th>
+                  {!spendMissing && <th className="text-right py-2 px-3 font-medium">{t("ads.spend")}</th>}
                   <th className="text-right py-2 px-3 font-medium">{t("ads.totalLeads")}</th>
-                  <th className="text-right py-2 px-3 font-medium">{t("ads.cpl")}</th>
+                  {!spendMissing && <th className="text-right py-2 px-3 font-medium">{t("ads.cpl")}</th>}
                 </tr></thead>
                 <tbody>
                   {roi.weekly_breakdown.map((w) => (
                     <tr key={w.week_start} className="border-b border-border/20">
                       <td className="py-2 px-4">{w.week_start} ~ {w.week_end}</td>
-                      <td className="text-right py-2 px-3">{fmtAED(w.spend)}</td>
+                      {!spendMissing && <td className="text-right py-2 px-3">{fmtAED(w.spend)}</td>}
                       <td className="text-right py-2 px-3">{w.leads}</td>
-                      <td className="text-right py-2 px-3 font-medium">{fmtAED(w.cpl)}</td>
+                      {!spendMissing && <td className="text-right py-2 px-3 font-medium">{fmtAED(w.cpl)}</td>}
                     </tr>
                   ))}
-                  {roi.weekly_breakdown.length === 0 && <tr><td colSpan={4} className="text-center py-6 text-muted-foreground">{t("common.noResults")}</td></tr>}
+                  {roi.weekly_breakdown.length === 0 && <tr><td colSpan={spendMissing ? 2 : 4} className="text-center py-6 text-muted-foreground">{t("common.noResults")}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -348,20 +352,20 @@ export default function AdsPage() {
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-border/50 text-muted-foreground">
                   <th className="text-left py-2 px-4 font-medium">{t("ads.byAd")}</th>
-                  <th className="text-right py-2 px-3 font-medium">{t("ads.spend")}</th>
+                  {!spendMissing && <th className="text-right py-2 px-3 font-medium">{t("ads.spend")}</th>}
                   <th className="text-right py-2 px-3 font-medium">{t("ads.totalLeads")}</th>
-                  <th className="text-right py-2 px-3 font-medium">{t("ads.cpl")}</th>
+                  {!spendMissing && <th className="text-right py-2 px-3 font-medium">{t("ads.cpl")}</th>}
                 </tr></thead>
                 <tbody>
                   {roi.ad_breakdown.map((a) => (
                     <tr key={`${a.ad_id ?? ""}|${a.ad}`} className="border-b border-border/20">
                       <td className="py-2 px-4 max-w-[220px] truncate">{a.ad}</td>
-                      <td className="text-right py-2 px-3">{a.spend_ambiguous && a.spend === null ? "?" : fmtAED(a.spend)}</td>
+                      {!spendMissing && <td className="text-right py-2 px-3">{a.spend_ambiguous && a.spend === null ? "?" : fmtAED(a.spend)}</td>}
                       <td className="text-right py-2 px-3">{a.leads}</td>
-                      <td className="text-right py-2 px-3 font-medium">{fmtAED(a.cpl)}</td>
+                      {!spendMissing && <td className="text-right py-2 px-3 font-medium">{fmtAED(a.cpl)}</td>}
                     </tr>
                   ))}
-                  {roi.ad_breakdown.length === 0 && <tr><td colSpan={4} className="text-center py-6 text-muted-foreground">{t("common.noResults")}</td></tr>}
+                  {roi.ad_breakdown.length === 0 && <tr><td colSpan={spendMissing ? 2 : 4} className="text-center py-6 text-muted-foreground">{t("common.noResults")}</td></tr>}
                 </tbody>
               </table>
             </div>

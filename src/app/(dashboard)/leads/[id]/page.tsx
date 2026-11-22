@@ -541,7 +541,7 @@ export default function LeadDetailPage() {
                 {t("s37.wa.badge")}
               </span>
             )}
-            {isWhatsAppAdLead(lead) && lead.wa_first_inbound_at && !lead.wa_first_reply_at && !lead.final_status && (
+            {isWhatsAppAdLead(lead) && lead.wa_first_inbound_at && !lead.wa_first_reply_at && !lead.final_status && !lead.last_contact_date && lead.stage === "new" && (lead.followup_count ?? 0) === 0 && (
               <LeadWaitingBadge inboundAt={lead.wa_first_inbound_at} t={t} />
             )}
             {lead.quality === 'poor' && (

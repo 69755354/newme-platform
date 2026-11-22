@@ -21,13 +21,15 @@ export default function AlertPanel({ count }: { count?: number }) {
   const [data, setData] = useState<AlertsSummary | null>(null);
 
   useEffect(() => {
+    // The page passes the count from the lead summary; the alerts feed is only a fallback.
+    if (count !== undefined) return; // count === undefined only when a caller has no lead summary
     let active = true;
     takeEarlyFetch("/api/alerts")
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => { if (active && json) setData(json); })
       .catch(() => { /* silent */ });
     return () => { active = false; };
-  }, []);
+  }, [count]);
 
   const total = count ?? data?.summary.total ?? 0;
   if (total <= 0) return null;
@@ -35,7 +37,7 @@ export default function AlertPanel({ count }: { count?: number }) {
   return (
     <button
       type="button"
-      onClick={() => router.push("/leads?alert=red")}
+      onClick={() => router.push("/leads?alert=overdue")}
       className="w-full text-left text-sm font-medium text-amber-300 hover:text-amber-200 transition-colors"
     >
       {t("s37.alertLine").replace("{n}", String(total))} →

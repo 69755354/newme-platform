@@ -153,7 +153,8 @@ test("quality buckets, dormant and zero-follow-up are counted once, here", () =>
   ];
   const s = summarizeLeads(rows, { now: NOW });
   assert.deepEqual(s.qualityBreakdown, { pending: 0, good: 1, normal: 1, bad: 1, unknown: 1 });
-  assert.equal(s.dormant, 2);
+  // S37: the fourth lead (never contacted, created weeks ago) is dormant by the facts, whatever its stored status.
+  assert.equal(s.dormant, 3);
   assert.equal(s.zeroFollowup, 2);
 });
 

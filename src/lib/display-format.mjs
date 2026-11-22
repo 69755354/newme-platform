@@ -15,7 +15,7 @@ export function isDateOnly(value) {
 
 /** "AED 12,345". null / NaN -> "—". Amounts are rounded to whole dirhams. */
 export function formatAED(value) {
-  const n = typeof value === "number" ? value : parseFloat(String(value ?? ""));
+  const n = typeof value === "number" ? value : parseFloat(String(value ?? "").replace(/,/g, ""));
   if (!Number.isFinite(n)) return "—";
   const rounded = Math.round(n);
   const body = Math.abs(rounded).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -37,11 +37,14 @@ function parts(value) {
   return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
 }
 
-/** "22 Nov" (en) / "11月22日" (zh). */
-export function formatShortDate(value, lang = "en") {
+/** "22 Nov" (en) / "11月22日" (zh); with the year ("22 Nov 2025" / "2025年11月22日") when it is not the current Dubai year. */
+export function formatShortDate(value, lang = "en", now = new Date()) {
   const p = parts(value);
   if (!p) return "—";
-  return lang === "zh" ? `${p.month}月${p.day}日` : `${p.day} ${MONTHS_EN[p.month - 1]}`;
+  const thisYear = parts(now)?.year;
+  const withYear = thisYear !== undefined && p.year !== thisYear;
+  if (lang === "zh") return `${withYear ? `${p.year}年` : ""}${p.month}月${p.day}日`;
+  return `${p.day} ${MONTHS_EN[p.month - 1]}${withYear ? ` ${p.year}` : ""}`;
 }
 
 /** "14:05" in Dubai time; "" for a date-only value (it has no clock time). */
@@ -52,8 +55,8 @@ export function formatDubaiTime(value) {
 }
 
 /** "22 Nov 14:05" / "11月22日 14:05"; just the date for a date-only value. */
-export function formatDateTime(value, lang = "en") {
-  const date = formatShortDate(value, lang);
+export function formatDateTime(value, lang = "en", now = new Date()) {
+  const date = formatShortDate(value, lang, now);
   const time = formatDubaiTime(value);
   return time ? `${date} ${time}` : date;
 }

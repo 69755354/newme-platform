@@ -52,7 +52,7 @@ export const LEAD_METRIC_COLUMNS =
 
 /** Columns the two ads-attribution pages group and count by. */
 export const ADS_ATTRIBUTION_COLUMNS =
-  "archived,source,source_platform,created_at,ctwa_clid,campaign_id,campaign_name,utm_campaign,meta_campaign,adset_id,adset_name,ad_id,ad_name,stage,final_status,quotation_value,quality,ai_quality";
+  "archived,source,source_platform,created_at,ctwa_clid,source_channel,campaign_id,campaign_name,utm_campaign,meta_campaign,adset_id,adset_name,ad_id,ad_name,stage,final_status,quotation_value,quality,ai_quality";
 
 /** Source of the daily production check lead (S7). It is never a customer. */
 export const SYNTHETIC_QA_SOURCE = "synthetic_qa";
@@ -302,7 +302,7 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
       stageCounts[outcome]++;
       stageValues[outcome] += value;
     }
-    const status = lead.lead_status || "unknown";
+    const status = effectiveLeadStatus(lead, now) || "unknown";
     statusCounts[status] = (statusCounts[status] || 0) + 1;
     if (won) { s.won++; s.wonValue += value; }
     if (lost) s.lost++;
@@ -314,9 +314,8 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     {
       const sinceContact = dubaiDaysBetween(lead.last_contact_date, now);
       const temperature = effectiveLeadStatus(lead, now);
-      // Dormant = the stored status says dormant AND the facts still agree (a lead created in the last
-      // 48h is not dormant whatever an old trigger stored), or 14+ days without contact.
-      if ((lead.lead_status === "dormant" && temperature === "dormant") || (active && sinceContact !== null && sinceContact >= STALE_RED_DAYS)) s.dormant++;
+      // Dormant by the facts (effective temperature), not by whatever a trigger stored long ago.
+      if (temperature === "dormant" || (active && sinceContact !== null && sinceContact >= STALE_RED_DAYS)) s.dormant++;
       if (active && temperature === "hot") s.hot++;
     }
     if (isQuotedLead(lead)) s.quotedCount++;
@@ -393,7 +392,7 @@ export function aggregateAttribution(rows, keyOf = leadSourceKey) {
     // "Rated" = someone (or the AI) has judged the lead; the rest are simply not rated yet.
     const bucket = qualityBucket(lead);
     if (bucket === "pending" || bucket === "unknown") g.unrated++; else g.rated++;
-    // Last touch was a click-to-WhatsApp ad, whatever the stored first-touch source says.
+    // The lead has come through a click-to-WhatsApp ad at some point, whatever the stored first-touch source says.
     if (isWhatsAppAdLead(lead)) g.waAd++;
     const quoted = isQuotedLead(lead);
     if (quoted) g.quoted++;

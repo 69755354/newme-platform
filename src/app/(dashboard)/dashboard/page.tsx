@@ -16,7 +16,6 @@ import { ErrorState } from "@/components/ui/error-state";
 import { dubaiMonthElapsedPct, dubaiMonthKey, recentDubaiMonthKeys } from "@/lib/dubai-time.mjs";
 import { summarizeLeads, type LeadSummary } from "@/lib/lead-metrics.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption";
-import { startEarlyFetch } from "@/lib/early-fetch";
 import { formatAED } from "@/lib/display-format.mjs";
 import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 
@@ -206,13 +205,8 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [weeklyReviewRange, weeklyReviewStart, weeklyReviewEnd]);
 
-  // S22: the alert banner is mounted only once the summary has rendered the
-  // page, so its request used to start a full round trip after the summary
-  // finished. It goes out at mount, together with the summary, and the panel
-  // takes that request over (once; a month change does not start another).
-  useEffect(() => {
-    startEarlyFetch("/api/alerts");
-  }, []);
+  // S37: the overdue sentence takes its number from the lead summary (AlertPanel count), so the
+  // alerts feed is no longer requested at mount.
 
   // ── Unified dashboard data fetch via server-side API ──
   useEffect(() => {

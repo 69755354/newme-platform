@@ -31,6 +31,7 @@ import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import {
   LEAD_METRIC_COLUMNS,
   effectiveLeadStatus,
+  isActiveLead,
   isCountedLead,
   overdueDays,
   summarizeLeads,
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
   // Now the counting happens here, once, with src/lib/lead-metrics.mjs.
   const leadsPromise = fetchCountedLeads(
     supabase,
-    LEAD_METRIC_COLUMNS,
+    `${LEAD_METRIC_COLUMNS},customer_name,phone`,
     { assignedTo: isSales ? userId : null },
   );
 
@@ -230,24 +231,6 @@ export async function GET(request: Request) {
     return q;
   };
 
-  // S37: the stored lead_status is only refreshed on update, and used to read "dormant" for
-  // every brand-new lead. Candidates are the stored-hot leads plus leads created in the last
-  // 48h that nobody has contacted yet (new ad leads); the final "hot" test is made on read
-  // with effectiveLeadStatus() below, so a stored value that has since gone stale drops out.
-  const buildHotLeadsQuery = () => {
-    let q = supabase
-      .from("leads")
-      .select("id, customer_name, quotation_value, win_probability, stage, phone, lead_status, last_contact_date, created_at, final_status")
-      .or(`lead_status.eq.hot,and(last_contact_date.is.null,created_at.gte.${cutoff48h})`)
-      .eq("archived", false)
-      .or(EXCLUDE_SYNTHETIC_QA_FILTER)
-      .is("final_status", null)
-      .order("quotation_value", { ascending: false, nullsFirst: false })
-      .limit(30);
-    if (isSales && userId) q = q.eq("assigned_to", userId);
-    return q;
-  };
-
   const buildDraftQuotesQuery = () => {
     let q = supabase
       .from("quotations")
@@ -297,7 +280,6 @@ export async function GET(request: Request) {
     dueResult,
     { data: todayFollowupsRaw },
     { data: overdueFollowups },
-    { data: hotLeads },
     { data: draftQuotes },
     { data: staleLeads },
     { data: overdueWorkflow },
@@ -312,7 +294,6 @@ export async function GET(request: Request) {
     installmentsPromise("due"),
     buildTodayFollowupsQuery(),
     buildOverdueFollowupsQuery(),
-    buildHotLeadsQuery(),
     buildDraftQuotesQuery(),
     buildStaleLeadsQuery(),
     buildOverdueWorkflowQuery(),
@@ -446,20 +427,23 @@ export async function GET(request: Request) {
     });
   });
 
-  // 2. Hot leads (temperature decided on read, top 3 by value)
-  ((hotLeads as any[]) || [])
-    .filter((l: any) => effectiveLeadStatus(l, nowDate) === "hot")
-    .slice(0, 3)
-    .forEach((l: any) => {
+  // 2. Hot leads: decided on read from every counted active lead (a new ad lead has no value, so a
+  //    value-ordered database top-N could miss it). Top 3 by value, then newest.
+  const hotLeads = (leadsData as any[])
+    .filter((l) => isActiveLead(l) && effectiveLeadStatus(l, nowDate) === "hot")
+    .sort((a, b) => (b.quotation_value || 0) - (a.quotation_value || 0) || String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 3);
+  hotLeads.forEach((l: any) => {
+    const fresh = !l.last_contact_date;
     actions.push({
       type: "hot_lead",
       title: l.customer_name || "Unnamed",
-      subtitle: `${l.customer_name || "Unnamed"} · Win prob ${l.win_probability || 0}%`,
+      subtitle: fresh ? `${l.customer_name || "Unnamed"} · New lead · awaiting first contact` : `${l.customer_name || "Unnamed"} · Win prob ${l.win_probability || 0}%`,
       link: `/leads/${l.id}`,
-      priority: (l.win_probability || 0) >= 70 ? "high" : "medium",
+      priority: (l.win_probability || 0) >= 70 || fresh ? "high" : "medium",
       customerName: l.customer_name || "Unnamed",
       value: l.quotation_value || 0,
-      reason: "Hot lead priority",
+      reason: fresh ? "New lead · awaiting first contact" : "Hot lead priority",
       phone: l.phone || null,
       leadId: l.id,
     });

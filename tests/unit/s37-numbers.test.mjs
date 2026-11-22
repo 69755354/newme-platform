@@ -65,10 +65,10 @@ test("migration makes a fresh never-contacted lead hot and keeps the definer pos
   for (const v of assigned) assert.ok(["hot", "warm", "cold", "dormant"].includes(v), v);
 });
 
-test("cockpit hot-lead query includes new uncontacted leads", () => {
+test("cockpit hot leads are chosen in memory from every counted lead, not a value-ordered top 30", () => {
   const src = read("src/app/api/dashboard/summary/route.ts");
-  assert.match(src, /lead_status\.eq\.hot/);
-  assert.match(src, /last_contact_date\.is\.null/);
+  assert.doesNotMatch(src, /buildHotLeadsQuery/);
+  assert.match(src, /effectiveLeadStatus\(l, nowDate\) === "hot"/);
 });
 
 // ── B9 / F07 : one definition ─────────────────────────────────────────────
@@ -232,4 +232,66 @@ test("cockpit has no emoji alert bar and no raw status codes", () => {
     assert.doesNotMatch(src, emoji, `${name} still contains an emoji`);
   }
   assert.match(alert, /s37\.alertLine|overdueSentence/);
+});
+
+// ── review round 1 ────────────────────────────────────────────────────────
+import { followUpOverdue, LEAD_METRIC_COLUMNS, ADS_ATTRIBUTION_COLUMNS } from "../../src/lib/lead-metrics.mjs";
+
+test("P1: a stored-hot lead created 5 days ago and never contacted counts as dormant", () => {
+  const rows = [lead({ id: "x", created_at: "2026-11-17T08:00:00Z", last_contact_date: null, lead_status: "hot" })];
+  const s = summarizeLeads(rows, { now: NOW });
+  assert.equal(s.dormant, 1);
+  assert.equal(s.hot, 0);
+  assert.deepEqual(s.statusCounts, { dormant: 1 }, "statusCounts uses the effective temperature too");
+});
+
+test("P2: stored-status readers use the effective temperature", () => {
+  const ls = read("src/app/api/dashboard/lead-sources/route.ts");
+  assert.match(ls, /effectiveLeadStatus/);
+  assert.match(ls, /last_contact_date,created_at/);
+  assert.match(read("src/app/api/pipeline/list/route.ts"), /effectiveLeadStatus/);
+});
+
+test("P2: the overdue sentence links to a filter that uses the same definition as its number", () => {
+  assert.match(read("src/app/(dashboard)/dashboard/_components/AlertPanel.tsx"), /alert=overdue/);
+  const f = read("src/app/(dashboard)/leads/_hooks/useLeadsFiltering.ts");
+  assert.match(f, /alertFilter === "overdue"/);
+  assert.match(f, /followUpOverdue/);
+  const panel = read("src/app/(dashboard)/dashboard/_components/AlertPanel.tsx");
+  assert.match(panel, /count === undefined/, "no alerts fetch when the page passes the count");
+  assert.equal(followUpOverdue(lead({ next_followup_date: "2026-11-20" }), NOW).overdue, true);
+});
+
+test("P2: ads columns carry source_channel and the column is labelled 'via WhatsApp ad'", () => {
+  assert.match(ADS_ATTRIBUTION_COLUMNS, /source_channel/);
+  assert.match(LEAD_METRIC_COLUMNS, /created_at/);
+  const dict = read("src/lib/i18n/translations.ts");
+  assert.match(dict, /lastTouch: "Via WhatsApp ad"/);
+  assert.match(dict, /lastTouch: "经 WhatsApp 广告"/);
+});
+
+test("P2: spend-not-connected only when there is no spend history at all; tables stay", () => {
+  const page = read("src/app/(dashboard)/ads/page.tsx");
+  assert.match(page, /spendMissing = roi !== null && !roi\.data_last_updated/);
+  assert.match(page, /ads\.noSpendInWindow/);
+  assert.doesNotMatch(page, /roi && !spendMissing && \(\s*<div className="grid gap-4 md:grid-cols-2"/);
+});
+
+test("P2: waiting badge only for a never-contacted new lead", () => {
+  const page = read("src/app/(dashboard)/leads/[id]/page.tsx");
+  assert.match(page, /!lead\.last_contact_date && lead\.stage === "new"/);
+  assert.match(page, /followup_count \?\? 0\) === 0/);
+});
+
+test("P3: money parses thousands separators, dates show the year when not current", () => {
+  assert.equal(formatAED("12,345"), "AED 12,345");
+  assert.equal(formatAED("1,234,567.4"), "AED 1,234,567");
+  assert.equal(formatShortDate("2025-03-04", "en", NOW), "4 Mar 2025");
+  assert.equal(formatShortDate("2025-03-04", "zh", NOW), "2025年3月4日");
+  assert.equal(formatShortDate("2026-03-04", "en", NOW), "4 Mar");
+});
+
+test("P3: a new ad lead in today's actions reads 'new lead, awaiting first contact'", () => {
+  assert.match(read("src/app/api/dashboard/summary/route.ts"), /New lead · awaiting first contact/);
+  assert.match(read("src/lib/i18n/server-text.mjs"), /等待首次联系/);
 });

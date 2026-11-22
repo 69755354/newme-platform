@@ -33,17 +33,29 @@ function loadModule(relativePath, mocks) {
 const wonAmount = await import("../../src/lib/won-amount.mjs");
 const firstContactGate = await import("../../src/lib/first-contact-gate.mjs");
 
-async function patch(body, { quotationValue = null, quotes = [], contracts = [], rpcFails = false } = {}) {
-  const state = { adminWrites: [], rpcCalls: [], lead: { quotation_value: quotationValue } };
+async function patch(body, { quotationValue = null, quotes = [], contracts = [], rpcFails = false, beforeRpc = null } = {}) {
+  const state = { adminWrites: [], conditionalWrites: [], rpcCalls: [], lead: { quotation_value: quotationValue } };
   const admin = {
     from(table) {
       let patchBody = null;
+      const conds = [];
       const q = {
-        select: () => q, eq: () => q, not: () => q, order: () => q, limit: () => q,
+        select: () => q, not: () => q, order: () => q, limit: () => q,
+        eq: (col, val) => { if (patchBody) conds.push(["eq", col, val]); return q; },
+        neq: (col, val) => { if (patchBody) conds.push(["neq", col, val]); return q; },
+        or: (expr) => { if (patchBody) conds.push(["or", expr]); return q; },
         update: (p) => { patchBody = p; return q; },
         maybeSingle: async () => ({ data: table === "leads" ? { ...state.lead, meta_leadgen_id: null, final_status: "won", ctwa_clid: null } : null, error: null }),
         then: (res, rej) => {
-          if (patchBody) { state.adminWrites.push([table, patchBody]); if (table === "leads") Object.assign(state.lead, patchBody); return Promise.resolve({ error: null }).then(res, rej); }
+          if (patchBody) {
+            // Like the database: a conditional update only applies while every condition holds for the current row.
+            const row = state.lead;
+            const holds = conds.every(([op, col, val]) => (op === "eq" && col === "quotation_value" ? row.quotation_value === val : op === "neq" && col === "stage" ? row.stage !== val : op === "or" ? row.final_status !== "won" : true));
+            state.adminWrites.push([table, patchBody]);
+            if (conds.some(([op, col]) => op === "eq" && col === "quotation_value")) state.conditionalWrites.push({ conds, applied: holds });
+            if (table === "leads" && holds) Object.assign(state.lead, patchBody);
+            return Promise.resolve({ error: null }).then(res, rej);
+          }
           return Promise.resolve({ data: table === "contracts" ? contracts : table === "quotations" ? quotes : [], error: null }).then(res, rej);
         },
       };
@@ -60,6 +72,7 @@ async function patch(body, { quotationValue = null, quotes = [], contracts = [],
     },
     async rpc(name, args) {
       state.rpcCalls.push([name, args.p_next_stage]);
+      if (beforeRpc) beforeRpc(state);
       return rpcFails ? { data: null, error: { message: "boom" } } : { data: { id: LEAD_ID, stage: "won" }, error: null };
     },
   };
@@ -115,6 +128,27 @@ test("a typed amount is taken back out when the transition fails", async () => {
   const { response, state } = await patch({ amount: 5000 }, { rpcFails: true });
   assert.equal(response.status, 400);
   assert.deepEqual(state.adminWrites, [["leads", { quotation_value: 5000 }], ["leads", { quotation_value: null }]]);
+});
+
+test("review P1 race: another request already won the lead with the same amount, so the failed request must not null it", async () => {
+  // The other request wrote the same typed amount, won the lead (stage + final_status) and kept the amount.
+  const { response, state } = await patch({ amount: 5000 }, { rpcFails: true, beforeRpc: (s) => { s.lead.stage = "won"; s.lead.final_status = "won"; } });
+  assert.equal(response.status, 400);
+  assert.equal(state.lead.quotation_value, 5000, "the winner's amount survives");
+  assert.deepEqual(state.conditionalWrites.map((w) => w.applied), [false]);
+  const conds = state.conditionalWrites[0].conds;
+  assert.ok(conds.some(([op, col, val]) => op === "eq" && col === "quotation_value" && val === 5000), "revert is conditional on the written value");
+});
+
+test("review P3-5: a newer value stored by the quote trigger is not overwritten by the revert", async () => {
+  const { state } = await patch({ amount: 5000 }, { rpcFails: true, beforeRpc: (s) => { s.lead.quotation_value = 7000; } });
+  assert.equal(state.lead.quotation_value, 7000);
+});
+
+test("when this request fails alone the amount is still reverted to the previous value", async () => {
+  const { state } = await patch({ amount: 5000 }, { rpcFails: true });
+  assert.equal(state.lead.quotation_value, null);
+  assert.deepEqual(state.conditionalWrites.map((w) => w.applied), [true]);
 });
 
 test("moving to a stage other than won never asks for an amount", async () => {

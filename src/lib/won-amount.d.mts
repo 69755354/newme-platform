@@ -8,3 +8,4 @@ export function ensureWonAmount(db: Db, leadId: string, enteredAmount: unknown):
   | { ok: true; amount: Amount; wrote: boolean }
   | { ok: false; code: string; error: string; error_zh: string }
 >;
+export function revertWonAmount(db: Db, leadId: string, written: number, previous: number | null): Promise<boolean>;

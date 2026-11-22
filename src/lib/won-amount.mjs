@@ -46,3 +46,23 @@ export async function ensureWonAmount(db, leadId, enteredAmount) {
   }
   return { ok: true, amount: { value: typed, currency: "AED" }, wrote: true };
 }
+
+/**
+ * Takes a typed amount back out after a failed won transition, but only if it is still safe: one conditional UPDATE that
+ * matches the row only while it still holds exactly the value this request wrote AND the lead is not won. If a concurrent
+ * request already won the lead with that amount, or a quotation trigger stored a newer value, nothing is touched.
+ * (The amount cannot ride in transition_lead_stage without a SQL change, so the pre-write stays; see FOLLOWUPS.)
+ * Best effort: never throws. `db` must be the service-role client.
+ */
+export async function revertWonAmount(db, leadId, written, previous) {
+  try {
+    const { error } = await db.from("leads").update({ quotation_value: previous ?? null })
+      .eq("id", leadId)
+      .eq("quotation_value", written)
+      .neq("stage", "won")
+      .or("final_status.is.null,final_status.neq.won");
+    return !error;
+  } catch {
+    return false;
+  }
+}

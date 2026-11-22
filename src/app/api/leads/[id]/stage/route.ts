@@ -11,7 +11,7 @@ import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
-import { ensureWonAmount } from "@/lib/won-amount.mjs";
+import { ensureWonAmount, revertWonAmount } from "@/lib/won-amount.mjs";
 import { enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
 import { enqueueWebsitePurchaseForLead, enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
@@ -92,6 +92,7 @@ export async function PATCH(
     // the same dialog (body.amount). A typed amount is stored first, so the contract the won trigger creates, the KPIs
     // and the Won / Purchase events to Meta all carry it. An idempotent replay of an already-won lead has one already.
     let wroteAmount = false;
+    let writtenAmount = 0;
     if (stage === "won") {
       const won = await ensureWonAmount(supabaseAdmin, leadId, body?.amount);
       if (!won.ok) {
@@ -101,6 +102,7 @@ export async function PATCH(
         );
       }
       wroteAmount = won.wrote;
+      writtenAmount = won.amount.value;
     }
 
     const { data: updated, error: updateError } = await supabase.rpc("transition_lead_stage", {
@@ -112,10 +114,10 @@ export async function PATCH(
     });
 
     if (updateError || !updated) {
-      // The lead did not become won: take the typed amount back out so nothing half-saved is left behind.
-      if (wroteAmount) {
-        try { await supabaseAdmin.from("leads").update({ quotation_value: lead.quotation_value ?? null }).eq("id", leadId); } catch { /* best effort */ }
-      }
+      // The lead did not become won: take the typed amount back out so nothing half-saved is left behind. Conditional:
+      // only while the row still holds exactly what this request wrote and the lead is not won, so a concurrent request
+      // that did win the lead (or a newer quotation value) is never wiped.
+      if (wroteAmount) await revertWonAmount(supabaseAdmin, leadId, writtenAmount, lead.quotation_value ?? null);
       const message = updateError?.message ?? "Stage update failed";
       const status = message.includes("concurrently") ? 409
         : message.includes("First Contact requirements") ? 409

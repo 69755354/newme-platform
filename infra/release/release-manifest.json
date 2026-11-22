@@ -287,7 +287,7 @@
       "$comment": "S36 (OS fix S36): leads.quotation_value now follows the quotations (and a won lead's active contract). Three new routines and three row triggers (quotations, contracts, leads won) keep it equal to the newest live AED quotation total; the backfill fills only leads that have no amount yet. No table, column, policy or grant changes.",
       "version": "20261122200000",
       "file": "20261122200000_quotation_value_follows_quotations.sql",
-      "sha256": "882e9449b27f2203199429b007ab386f53b50d61068c0a7e9576068cc822ec95"
+      "sha256": "56782b7a0e47d907085c8020574b36f1dd5a5ce9dbda22fdaa66615acbc36e0e"
     }
   ],
   "companions": [
@@ -667,7 +667,7 @@
         {
           "name": "s36-quotation-value-follows-quotations-present",
           "expect": true,
-          "sql": "SELECT coalesce((SELECT count(*)=3 AND bool_and(NOT t.tgisinternal) FROM pg_catalog.pg_trigger t WHERE t.tgname IN ('trg_quotation_sync_lead_value','trg_contract_sync_lead_value','trg_lead_won_sync_value')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_lead_quotation_value(uuid,numeric)')),false)"
+          "sql": "SELECT coalesce((SELECT count(*)=3 AND bool_and(NOT t.tgisinternal) FROM pg_catalog.pg_trigger t WHERE t.tgname IN ('trg_quotation_sync_lead_value','trg_contract_sync_lead_value','trg_lead_won_sync_value') AND t.tgenabled='O') AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_lead_quotation_value(uuid,numeric)')),false)"
         }
       ]
     }

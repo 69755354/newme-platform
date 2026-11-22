@@ -17,6 +17,7 @@ import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 import { advanceStageForMilestone } from "@/lib/milestone-stage-advance.mjs";
 import { isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueQuotedFeedback } from "@/lib/quote-feedback.mjs";
 import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -268,7 +269,8 @@ export async function POST(request: NextRequest) {
       lead_id,
       type: "quote_sent",
       content: `报价已生成 #${quoteNo} (${calculation.currency} ${calculation.total.toLocaleString()})`,
-      ai_generated: true,
+      // A hand-typed (amount only) quotation is not machine generated.
+      ai_generated: !manualQuote,
       user_id: user.id,
     });
     if (activityErr) {
@@ -352,13 +354,11 @@ export async function POST(request: NextRequest) {
       stageAdvance = { advanced: false, stage: null, reason: "stage_update_failed" };
     }
     // A quotation with an amount is the main signal back to Meta (value = the quoted total). It is sent whenever a
-    // quotation is saved, whether or not the stage could move (a quote often comes before the first contact is logged).
-    // Best effort; each path dedupes per lead, so a second quotation or the sheet sync never sends it twice.
-    try {
-      await enqueueMetaCrmEventForLead(supabaseAdmin, lead_id, "quotation_submitted");
-      await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, lead_id, "quotation_submitted");
-      await enqueueWebsiteQuoteForProgress(supabaseAdmin, lead_id, "quotation_submitted");
-    } catch { /* tracking must never fail a quotation */ }
+    // quotation is saved, whether or not the stage could move (a quote often comes before the first contact is logged),
+    // but not for a lead that is already won / lost or archived. Best effort; each path dedupes per lead.
+    await enqueueQuotedFeedback(supabaseAdmin, lead_id, calculation.total, {
+      form: enqueueMetaCrmEventForLead, whatsapp: enqueueWhatsAppProgressWithDelivery, website: enqueueWebsiteQuoteForProgress,
+    });
 
     if (!stageAdvance.advanced && stageAdvance.reason) {
       const log = stageAdvance.reason === "stage_update_failed" || stageAdvance.reason === "stage_read_failed" ? logger.warn : logger.info;

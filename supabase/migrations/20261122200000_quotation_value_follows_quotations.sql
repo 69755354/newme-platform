@@ -171,13 +171,22 @@ execute function public.trg_lead_won_sync_quotation_value();
 do $backfill$
 declare
   v_trigger text;
+  v_mode "char";
   v_disabled text[] := '{}';
+  v_modes "char"[] := '{}';
+  v_i int;
   v_rows int;
 begin
+  -- Only a trigger that is switched on right now is switched off, and only those are switched back on, in the mode they
+  -- were in (origin / replica / always); a trigger that was already disabled stays disabled.
   foreach v_trigger in array array['trg_set_updated_at', 'trg_update_lead_metrics', 'trg_enforce_followup'] loop
-    if exists (select 1 from pg_trigger where tgrelid = 'public.leads'::regclass and tgname = v_trigger and not tgisinternal) then
+    select t.tgenabled into v_mode
+      from pg_trigger t
+     where t.tgrelid = 'public.leads'::regclass and t.tgname = v_trigger and not t.tgisinternal and t.tgenabled <> 'D';
+    if found then
       execute format('alter table public.leads disable trigger %I', v_trigger);
       v_disabled := v_disabled || v_trigger;
+      v_modes := v_modes || v_mode;
     end if;
   end loop;
 
@@ -212,8 +221,10 @@ begin
   get diagnostics v_rows = row_count;
   raise notice 'S36 backfill: % lead(s) got quotation_value from their quotations / contract', v_rows;
 
-  foreach v_trigger in array v_disabled loop
-    execute format('alter table public.leads enable trigger %I', v_trigger);
+  for v_i in 1 .. coalesce(array_length(v_disabled, 1), 0) loop
+    execute format('alter table public.leads %s trigger %I',
+                   case v_modes[v_i] when 'R' then 'enable replica' when 'A' then 'enable always' else 'enable' end,
+                   v_disabled[v_i]);
   end loop;
 end
 $backfill$;

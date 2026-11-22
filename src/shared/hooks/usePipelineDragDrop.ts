@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import { PIPELINE_STAGES, TERMINAL_STAGES } from "@/shared/kanban/types";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { leadHasWonAmount, submitWonFromDrag } from "@/lib/won-drag.mjs";
 
 // ─── Types ───
 interface LeadBase {
@@ -22,6 +23,19 @@ interface UsePipelineDragDropReturn {
   onDrop: (e: React.DragEvent, targetStage: string) => Promise<void>;
   draggingLeadId: string | null;
   draggingOverStage: string | null;
+  /** Set while a lead dropped on Won waits for its note (and amount); render it with WonDropDialog. */
+  wonPrompt: WonPrompt | null;
+  wonSaving: boolean;
+  confirmWon: (note: string, amount: string) => Promise<void>;
+  cancelWon: () => void;
+}
+
+export interface WonPrompt {
+  leadId: string;
+  name: string;
+  /** The lead has no amount yet (or the server asked for one): the dialog shows the amount field. */
+  needsAmount: boolean;
+  error: string | null;
 }
 
 const STAGE_INDEX: Record<string, number> = {};
@@ -39,6 +53,8 @@ export function usePipelineDragDrop<T extends LeadBase>(
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null);
   const [draggingOverStage, setDraggingOverStage] = useState<string | null>(null);
   const dragCounter = useRef<Record<string, number>>({});
+  const [wonPrompt, setWonPrompt] = useState<WonPrompt | null>(null);
+  const [wonSaving, setWonSaving] = useState(false);
 
   // ─── Drag Start ───
   const onDragStart = useCallback((e: React.DragEvent, leadId: string) => {
@@ -96,12 +112,15 @@ export function usePipelineDragDrop<T extends LeadBase>(
       return;
     }
 
-    // A deal can only be won with an amount. Dragging cannot ask for one, so a lead that already has an amount
-    // (quotation or contract, kept in quotation_value) may be dropped on Won; otherwise it is opened for the amount.
-    if (targetStage === "won" && !(Number(lead.quotation_value) > 0)) {
-      toast.error(lang === "zh"
-        ? "赢单必须有金额：请先给这个客户报价，或打开线索详情点“赢单”并填写成交金额"
-        : "A deal needs an amount to be won: add a quotation first, or open the lead and enter the deal amount when marking it Won");
+    // Won is never written from the browser: it goes through the same server route as the lead page (amount required,
+    // audited stage change, Won / Purchase events queued). The drop opens the note + amount dialog; confirmWon sends it.
+    if (targetStage === "won") {
+      setWonPrompt({
+        leadId,
+        name: String(lead.customer_name ?? lead.name ?? ""),
+        needsAmount: !leadHasWonAmount(lead),
+        error: null,
+      });
       return;
     }
 
@@ -161,6 +180,34 @@ export function usePipelineDragDrop<T extends LeadBase>(
     toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === targetStage)?.label || targetStage}`);
   }, [leads, setLeads, currentUserId, lang]);
 
+  // ─── Won (through the server route) ───
+  const confirmWon = useCallback(async (note: string, amount: string) => {
+    if (!wonPrompt || wonSaving) return;
+    const { leadId } = wonPrompt;
+    setWonSaving(true);
+    try {
+      const result = await submitWonFromDrag(fetch, leadId, { note, amount, idempotencyKey: crypto.randomUUID() });
+      if (!result.ok) {
+        const message = lang === "zh" ? result.error_zh : result.error;
+        setWonPrompt(prev => prev && { ...prev, needsAmount: prev.needsAmount || result.needsAmount, error: message });
+        return;
+      }
+      const typed = Number(amount.replace(/,/g, "").trim());
+      setLeads(prev => prev.map(l => l.id === leadId ? {
+        ...l,
+        stage: result.lead?.stage ?? "won",
+        final_status: "won",
+        ...(!leadHasWonAmount(l) && typed > 0 ? { quotation_value: typed } : {}),
+      } : l));
+      setWonPrompt(null);
+      toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === "won")?.label || "won"}`);
+    } finally {
+      setWonSaving(false);
+    }
+  }, [wonPrompt, wonSaving, setLeads, lang]);
+
+  const cancelWon = useCallback(() => { if (!wonSaving) setWonPrompt(null); }, [wonSaving]);
+
   return {
     onDragStart,
     onDragOver,
@@ -169,5 +216,9 @@ export function usePipelineDragDrop<T extends LeadBase>(
     onDrop,
     draggingLeadId,
     draggingOverStage,
+    wonPrompt,
+    wonSaving,
+    confirmWon,
+    cancelWon,
   };
 }

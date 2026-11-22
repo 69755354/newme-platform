@@ -4,6 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import { getAuthProfile, canAccessLead } from "@/lib/lead-auth";
 import { calculateQuotation } from "../../../../lib/quotation-engine";
 import { logger, genReqId } from "@/lib/logger";
+import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueQuotedFeedback } from "@/lib/quote-feedback.mjs";
+import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
 /**
  * POST /api/hermes/generate-quote
@@ -272,6 +275,11 @@ export async function POST(request: NextRequest) {
         "[Hermes API] Failed to update lead stage",
       );
     }
+
+    // Same Meta / WhatsApp / website "quoted" feedback as the app's own quotation route (skipped for closed / archived leads).
+    await enqueueQuotedFeedback(supabaseAdmin, lead_id, calculation.total, {
+      form: enqueueMetaCrmEventForLead, whatsapp: enqueueWhatsAppProgressWithDelivery, website: enqueueWebsiteQuoteForProgress,
+    });
 
     return NextResponse.json({
       status: "ok",

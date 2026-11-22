@@ -122,3 +122,8 @@ test("moving to a stage other than won never asks for an amount", async () => {
   const { response } = await patch({ stage: "negotiation" });
   assert.equal(response.status, 200);
 });
+
+test("review P2-1: the milestone route no longer runs the won amount step (won goes only through the stage route)", () => {
+  const source = fs.readFileSync(path.join(root, "src/app/api/leads/[id]/milestone/route.ts"), "utf8");
+  assert.doesNotMatch(source, /ensureWonAmount|won-amount/);
+});

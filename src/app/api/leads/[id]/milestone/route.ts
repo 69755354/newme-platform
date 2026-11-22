@@ -5,7 +5,6 @@ import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
 import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
-import { ensureWonAmount } from "@/lib/won-amount.mjs";
 import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 import {
   applyRequestAuthCookies,
@@ -40,7 +39,7 @@ export async function POST(
 
   const leadId = (await context.params).id;
   const body = await req.json();
-  const { milestoneKey, notes, amount } = body as { milestoneKey: string; notes?: string; amount?: unknown };
+  const { milestoneKey, notes } = body as { milestoneKey: string; notes?: string };
   const normalizedNotes = String(notes ?? "").trim();
 
   if (!milestoneKey) {
@@ -138,17 +137,6 @@ export async function POST(
       { error: "Milestone note is required" },
       { status: 400 },
     );
-  }
-
-  // A deal can only be won with an amount (contract, latest quotation, or one typed here); a typed one is stored first.
-  if (milestoneKey === "won") {
-    const won = await ensureWonAmount(supabaseAdmin, leadId, amount);
-    if (!won.ok) {
-      return respond(
-        { error: won.error, error_zh: won.error_zh, code: won.code },
-        { status: won.code === "won_amount_required" ? 409 : 500 },
-      );
-    }
   }
 
   const existingMilestone = (existingMilestones ?? []).find(

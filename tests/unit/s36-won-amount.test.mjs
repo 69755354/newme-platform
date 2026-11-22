@@ -116,3 +116,14 @@ test("website Purchase is sent with the quotation amount when the won lead has n
   assert.equal(out, "queued");
   assert.equal(sent[0].data[0].custom_data.value, 70000);
 });
+
+test("review P3-3: the quoted amount ignores non-AED quotations, like the database trigger", async () => {
+  const { latestQuotationAmount } = await import("../../src/lib/quote-amount.mjs");
+  const db = (quotes, reported = null) => ({ from: (table) => { const q = { select: () => q, eq: () => q, not: () => q, order: () => q, limit: () => q,
+    maybeSingle: async () => ({ data: { quotation_value: reported }, error: null }),
+    then: (res, rej) => Promise.resolve({ data: table === "quotations" ? quotes : null, error: null }).then(res, rej) }; return q; } });
+  assert.equal(await latestQuotationAmount(db([{ total_amount: 5000, currency: "USD" }]), "l"), null);
+  assert.deepEqual(await latestQuotationAmount(db([{ total_amount: 5000, currency: "USD" }, { total_amount: 900, currency: "AED" }]), "l"), { value: 900, currency: "AED" });
+  assert.deepEqual(await latestQuotationAmount(db([{ total_amount: 7, currency: null }]), "l"), { value: 7, currency: "AED" });
+  assert.deepEqual(await latestQuotationAmount(db([{ total_amount: 5000, currency: "USD" }], 300), "l"), { value: 300, currency: "AED" });
+});

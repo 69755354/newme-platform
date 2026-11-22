@@ -9,6 +9,10 @@
 //                                      nobody owns the lead to every active admin and boss (bell only; WhatsApp too with
 //                                      NEWME_AD_LEAD_REMINDER_ADMIN_WHATSAPP=true). Switch: NEWME_AD_LEAD_REMINDER_ENABLED=true
 //                                      (default off, independent of the 24 hour switch). Once per lead and person.
+//   NEWME_WA_WAIT_ALERT_ENABLED=true   (S40, default off) in the same hourly run: ONE WhatsApp alert to the alert recipients (Sam + Tanya)
+//                                      when a customer message on a company WhatsApp channel has had no reply for
+//                                      NEWME_WA_WAIT_ALERT_HOURS working hours (default 2, 09:00-21:00 Dubai, Monday to Friday).
+//                                      Once per conversation per waiting episode; names and counts only, never customer phones.
 // Messages use the existing alert sender and its approved template; credentials stay in /etc/newme/alerts.env.
 // Usage: node scripts/daily-brief.mjs --mode brief|reminders [--execute]
 import { execFile } from "node:child_process";
@@ -21,6 +25,10 @@ import {
   adReminderNotificationRows, buildAdReminder, buildBrief, buildReminder, countNewLeads, planAdReminders, selectAdUncontacted, groupUncontactedForBrief, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
   summarizeSpend, yesterdayBounds, DEFAULT_MAX_LEAD_AGE_DAYS,
 } from "../src/lib/daily-brief.mjs";
+
+import {
+  WAIT_ALERT_KEY, WAIT_ALERT_MAX_AGE_DAYS, buildWaitAlert, channelOwnerMap, planWaitAlert, resolveWaitAlertHours, selectWaiting, summarizeFollowupWaits,
+} from "../src/lib/wa-wait.mjs";
 
 const SENDER = process.env.NEWME_ALERT_SENDER || "/usr/local/libexec/newme/newme-whatsapp-alert.sh";
 const stateDir = () => process.env.NEWME_BRIEF_STATE_DIR || "/var/lib/newme-daily-brief";
@@ -74,7 +82,22 @@ async function loadBriefExtras(db, data, now) {
     .or(`quotation_sent_date.gte.${dayBefore},raw_import_data->drive_sync->>quote_at.gte.${dayBefore}`).limit(2000));
   const leadsById = new Map([...data.leads, ...extraLeads, ...sheet].map((l) => [l.id, l]));
   const spendRows = must(await db.from("ad_spend").select("spend_date,amount").eq("spend_date", y.key));
-  return { quotations, sheetLeads: sheet, leadsById, spendRows };
+  const waits = await loadFollowupWaits(db, data, now);
+  return { quotations, sheetLeads: sheet, leadsById, spendRows, waits };
+}
+
+/** S40: customers waiting for a WhatsApp reply, per responsible person (live messages only: the monitor ignores backfilled history). */
+export async function loadFollowupWaits(db, data, now) {
+  try {
+    const states = must(await db.from("lead_followup_state").select("lead_id,state,first_inbound_at,first_reply_at,last_outbound_at").in("state", ["at_risk", "overdue"]).limit(2000));
+    if (!states.length) return [];
+    const ids = states.map((r) => r.lead_id);
+    const leads = await inChunks(ids, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
+    const conversations = await inChunks(ids, (part) => db.from("whatsapp_conversations").select("lead_id,phone_number_id,last_inbound_at").in("lead_id", part));
+    const channels = must(await db.from("whatsapp_pilot_channels").select("phone_number_id,owner_profile_id,enabled"));
+    return summarizeFollowupWaits({ states, leads: new Map(leads.map((l) => [l.id, l])), conversations, channelOwners: channelOwnerMap(channels, data.profiles),
+      profiles: data.profiles, excludedTestIds: data.excludedTestIds, now });
+  } catch { return []; } // the brief goes out without this section rather than not at all
 }
 
 function sendWhatsapp({ key, text, number }) {
@@ -113,9 +136,9 @@ export async function runBrief(db, { execute = false, now = new Date(), send = s
   const plan = planFrom(data, now);
   const quotes = summarizeQuotes({ quotations: extras.quotations, sheetLeads: extras.sheetLeads, leadsById: extras.leadsById, now, excludedTestIds: data.excludedTestIds });
   const spend = summarizeSpend(extras.spendRows, counts.adLeads, { now });
-  const text = buildBrief({ dateKey: data.y.key, leads: counts, people: plan.people, groups: plan.groups, missingPhone: plan.missingPhone, quotes, spend });
+  const text = buildBrief({ dateKey: data.y.key, leads: counts, people: plan.people, groups: plan.groups, missingPhone: plan.missingPhone, quotes, spend, waits: extras.waits });
   const summary = { job: "brief", mode: execute ? "execute" : "dry_run", date: data.y.key, new_leads: counts.total, uncontacted: plan.groups.reduce((s, g) => s + g.items.length, 0), unassigned: plan.groups.filter((g) => g.unassigned).reduce((s, g) => s + g.items.length, 0),
-    salespeople_with_uncontacted: plan.people.length, missing_phone: plan.missingPhone.length, quotes: quotes.count, spend_line: Boolean(spend), chars: [...text].length, sent: false };
+    salespeople_with_uncontacted: plan.people.length, missing_phone: plan.missingPhone.length, quotes: quotes.count, spend_line: Boolean(spend), wa_waiting_people: extras.waits.length, chars: [...text].length, sent: false };
   if (!execute) return summary;
   if (!isTrue(env.NEWME_DAILY_BRIEF_ENABLED)) return { ...summary, mode: "disabled" };
   const today = dubaiDateKey(now);
@@ -134,13 +157,49 @@ const adLedgerKeys = (now) => {
   return keys;
 };
 
+const WA_WAIT_LEDGER_DAYS = WAIT_ALERT_MAX_AGE_DAYS + 1; // an episode older than the max age is never selected, so these files cover every key
+const waLedgerKeys = (now) => {
+  const keys = new Set();
+  for (let k = 0; k < WA_WAIT_LEDGER_DAYS; k += 1) {
+    for (const key of readLedger("wa-wait", dubaiDateKey(new Date(now.getTime() - k * 86_400_000))).sent ?? []) keys.add(key);
+  }
+  return keys;
+};
+
+/** S40: read-only part of the daytime escalation: which conversations are due, grouped per responsible person. */
+export async function planWaitAlerts(db, data, now, env) {
+  const thresholdHours = resolveWaitAlertHours(env.NEWME_WA_WAIT_ALERT_HOURS);
+  const since = new Date(now.getTime() - WAIT_ALERT_MAX_AGE_DAYS * 86_400_000).toISOString();
+  const channels = must(await db.from("whatsapp_pilot_channels").select("phone_number_id,owner_profile_id,enabled"));
+  const channelIds = [...new Set(channels.filter((c) => c.enabled !== false).map((c) => c.phone_number_id))];
+  if (!channelIds.length) return { items: [], groups: [], text: "", thresholdHours };
+  const rows = must(await db.from("whatsapp_conversations").select("id,lead_id,phone_number_id,last_inbound_at,last_outbound_at")
+    .in("phone_number_id", channelIds).gte("last_inbound_at", since).order("last_inbound_at", { ascending: false }).limit(1000));
+  const open = rows.filter((c) => !c.last_outbound_at || Date.parse(c.last_outbound_at) < Date.parse(c.last_inbound_at)).slice(0, 300);
+  const leadIds = [...new Set(open.map((c) => c.lead_id).filter(Boolean))];
+  const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
+  const ignored = new Set(leads.filter((l) => l.archived || l.final_status || l.source === "synthetic_qa" || data.excludedTestIds.has(l.id)).map((l) => l.id));
+  const waitStarts = new Map();
+  for (const c of open) {
+    if (c.lead_id && ignored.has(c.lead_id)) continue;
+    let q = db.from("whatsapp_message_events").select("occurred_at").eq("conversation_id", c.id).eq("direction", "inbound").eq("backfilled", false);
+    if (c.last_outbound_at) q = q.gt("occurred_at", c.last_outbound_at);
+    const first = must(await q.order("occurred_at", { ascending: true }).limit(1))[0];
+    if (first) waitStarts.set(c.id, Date.parse(first.occurred_at));
+  }
+  const items = selectWaiting({ conversations: open, waitStarts, ignoredLeadIds: ignored, done: waLedgerKeys(now), now, thresholdHours });
+  const groups = planWaitAlert(items, { leadAssignee: new Map(leads.map((l) => [l.id, l.assigned_to])), channelOwners: channelOwnerMap(channels, data.profiles), profiles: data.profiles });
+  return { items, groups, text: items.length ? buildWaitAlert(groups, thresholdHours) : "", thresholdHours };
+}
+
 export async function runReminders(db, { execute = false, now = new Date(), send = sendWhatsapp, env = process.env } = {}) {
   // Switch and window first: a switched-off (or out-of-hours) hourly run does nothing at all, not even a read.
   // Two independent switches (both default off): the 24 hour reminder, and the S35 one-hour ad-lead reminder.
   const reminder24 = isTrue(env.NEWME_LEAD_REMINDER_ENABLED);
   const adReminder = isTrue(env.NEWME_AD_LEAD_REMINDER_ENABLED);
   const adAdminWhatsapp = isTrue(env.NEWME_AD_LEAD_REMINDER_ADMIN_WHATSAPP);
-  if (execute && !reminder24 && !adReminder) return { job: "reminders", mode: "disabled", sent: 0, failed: 0 };
+  const waAlert = isTrue(env.NEWME_WA_WAIT_ALERT_ENABLED);
+  if (execute && !reminder24 && !adReminder && !waAlert) return { job: "reminders", mode: "disabled", sent: 0, failed: 0 };
   if (execute && !inReminderWindow(now)) return { job: "reminders", mode: "outside_window", sent: 0, failed: 0 };
   const data = await loadData(db, now);
   const plan = planFrom(data, now);
@@ -154,7 +213,10 @@ export async function runReminders(db, { execute = false, now = new Date(), send
   const summary = { job: "reminders", mode: execute ? "execute" : "dry_run", date: today, salespeople_with_uncontacted: plan.people.length,
     uncontacted: plan.people.reduce((s, p) => s + p.items.length, 0), missing_phone: plan.missingPhone.length, already_reminded_today: plan.sendable.length - due.length, due: due.length, sent: 0, failed: 0,
     ad_overdue: adItems.length, ad_unassigned: adItems.filter((i) => !i.assigned_to).length, ad_people: adPlan.people.length,
-    ad_missing_phone: adPlan.missingPhone.length, ad_sent: 0, ad_failed: 0, ad_bell_failed: 0 };
+    ad_missing_phone: adPlan.missingPhone.length, ad_sent: 0, ad_failed: 0, ad_bell_failed: 0,
+    wa_wait_due: 0, wa_wait_sent: 0, wa_wait_failed: 0 };
+  let waPlan = null;
+  if (waAlert || !execute) try { waPlan = await planWaitAlerts(db, data, now, env); summary.wa_wait_due = waPlan.items.length; } catch { if (waAlert) summary.wa_wait_failed += 1; }
   if (!execute) return summary;
   if (!inReminderWindow(now)) return { ...summary, mode: "outside_window" };
   for (const person of reminder24 ? due : []) {
@@ -163,6 +225,15 @@ export async function runReminders(db, { execute = false, now = new Date(), send
       writeLedger("reminders", today, { sent: [...done] }); // after each delivery: a crash never double-sends
     } else summary.failed += 1;
   }
+  // S40: one alert for every conversation newly past the wait threshold; the ledger is written after delivery.
+  if (waAlert && waPlan?.items.length) {
+    if (await send({ key: WAIT_ALERT_KEY, text: waPlan.text })) {
+      summary.wa_wait_sent = waPlan.items.length;
+      const day = readLedger("wa-wait", today).sent ?? [];
+      writeLedger("wa-wait", today, { sent: [...new Set([...day, ...waPlan.items.map((i) => i.key)])] });
+    } else summary.wa_wait_failed += 1;
+  }
+  summary.failed += summary.wa_wait_failed;
   // Ad-lead reminders: the bell first (idempotent by event key, also reaches people without a phone number), then WhatsApp.
   // Owners get WhatsApp + bell. Admin/boss for ownerless leads get the bell only (sales still work in the Google sheet, so a
   // WhatsApp to the bosses would nag about a flow that is not theirs) unless NEWME_AD_LEAD_REMINDER_ADMIN_WHATSAPP=true.

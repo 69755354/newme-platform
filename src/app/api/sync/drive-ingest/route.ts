@@ -17,7 +17,7 @@ import { clientIdentifier, consumeRateLimit } from "@/lib/rate-limit";
 import { fetchAllRows } from "@/lib/fetch-all-rows.mjs";
 import { enqueueMetaCrmEventForLead, enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
 import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
-import { notifyNewLeadSafe } from "@/lib/lead-intake-notify.mjs";
+import { INTAKE_MAX_AGE_MS, notifyNewLeadSafe } from "@/lib/lead-intake-notify.mjs";
 import { SYNC_SOURCE, bearerToken, claimTag, maskId, mergeDriveSync, planBatch, resolveConfig, tokenMatches, validateChange, validateClaims, writeCost } from "@/lib/drive-sync.mjs";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +108,7 @@ export async function POST(request: NextRequest) {
     let stagesAdvanced = 0;
     let lateQuotes = 0;
     let pings = 0;
+    let pingsOverCap = 0;
     let notificationRows = 0;
     for (const { change, d } of plan.decisions) {
       const k = maskId(change.key);
@@ -130,9 +131,14 @@ export async function POST(request: NextRequest) {
           plan.claims[String(data.id)] = String(d.claim_tag ?? claimTag(change.key)); // a later batch matching this new lead is held
           applied.inserted += 1;
           log({ event: "insert", key: k, sheet: change.sheet, row: change.row, lead_id: data.id });
-          if (pings < MAX_NEW_LEAD_PINGS_PER_RUN) {
+          // Age first (history rows never count against the cap), then the cap; skipped ones are logged.
+          const createdAtIso = (row.created_at as string | undefined) ?? new Date().toISOString();
+          const createdMs = Date.parse(createdAtIso);
+          const isFresh = !Number.isFinite(createdMs) || Date.now() - createdMs <= INTAKE_MAX_AGE_MS;
+          if (isFresh && pings >= MAX_NEW_LEAD_PINGS_PER_RUN) { pingsOverCap += 1; log({ event: "notify_over_cap", key: k, skipped_so_far: pingsOverCap }); }
+          if (isFresh && pings < MAX_NEW_LEAD_PINGS_PER_RUN) {
             pings += 1;
-            const ping = await notifyNewLeadSafe(supabaseAdmin, { id: data.id, customer_name: row.customer_name as string | null, assigned_to: null, created_at: (row.created_at as string | undefined) ?? new Date().toISOString() }, {
+            const ping = await notifyNewLeadSafe(supabaseAdmin, { id: data.id, customer_name: row.customer_name as string | null, assigned_to: null, created_at: createdAtIso }, {
               onError: (code) => log({ event: "notify_error", key: k, error: code }),
             });
             notificationRows += ping.created;
@@ -202,7 +208,7 @@ export async function POST(request: NextRequest) {
     }
     const after = await sideEffectCounts();
     const sideEffectsChanged = SIDE_EFFECT_TABLES.filter((t) => { const grown = after[t] - before[t]; return grown < 0 || grown > (QUOTE_EVENT_ROWS[t] ?? 0) * quotesFired + (t === "meta_crm_stage_events" ? lateQuotes : 0) + (t === "notifications" ? notificationRows : 0); });
-    log({ event: "batch_end", applied, stages_advanced: stagesAdvanced, side_effects_changed: sideEffectsChanged });
+    log({ event: "batch_end", notify_over_cap: pingsOverCap, applied, stages_advanced: stagesAdvanced, side_effects_changed: sideEffectsChanged });
     return reply({ ok: applied.failed === 0 && sideEffectsChanged.length === 0, dry_run: false, counts: plan.counts, applied, stages_advanced: stagesAdvanced, side_effects: { before, after, changed: sideEffectsChanged }, decisions: summary, claims: plan.claims }, applied.failed ? 207 : 200);
   } catch (err) {
     logger.error({ error: err instanceof Error ? err.message : "unknown" }, "drive-sync ingest failed");

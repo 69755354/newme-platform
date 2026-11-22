@@ -451,9 +451,14 @@ export default function LeadSalesProcess({
                         setContactSaveError(null);
                         setContactSubmitting(true);
                         try {
+                          const contactTimeIso = dubaiInputToIso(contactTime);
+                          if (!contactTimeIso) {
+                            setContactSaveError(t("leadDetail.contactTimeInvalid"));
+                            return;
+                          }
                           const result = await onAddStructuredContact({
                             contact_method: contactMethod,
-                            contact_time: dubaiInputToIso(contactTime) ?? new Date().toISOString(),
+                            contact_time: contactTimeIso,
                             contact_result: contactResult.trim(),
                             summary: contactNotes.trim() || undefined,
                           });

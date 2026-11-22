@@ -207,3 +207,41 @@ test("backfill script pings only the leads it inserts", () => {
   const src = fs.readFileSync(new URL("../../scripts/meta-leads-pull.mjs", import.meta.url), "utf8");
   assert.match(src, /result\.outcome === "inserted"[\s\S]{0,120}notifyNewLeadSafe\(db,/);
 });
+
+test("Meta re-delivery for a lead that already has an owner does not notify the dispatchers again", async () => {
+  const PAGE = "770232832850803", LEADGEN = "1234567890123456";
+  const saved = { ...process.env };
+  const db = fakeDb({ leads: [lead({ created_at: new Date().toISOString(), assigned_to: SALES })] });
+  const lib = await import("../../src/lib/meta-lead-ads.mjs");
+  const route = loadRoute("../../src/app/api/meta/leadgen-webhook/route.ts", {
+    "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    "@/lib/supabase-admin": { supabaseAdmin: db },
+    "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "queued" },
+    "@/lib/meta-lead-ads.mjs": { ...lib, resolvePageAccessToken: async () => "t", storeMetaLead: async () => ({ outcome: "duplicate", id: LEAD }),
+      fetchMetaLead: async () => ({ id: LEADGEN, created_time: new Date().toISOString(), platform: "fb", form_id: "998877665544", field_data: [{ name: "full_name", values: ["Layla"] }, { name: "phone_number", values: ["+971501234567"] }] }) },
+    "@/lib/lead-intake-notify.mjs": await import("../../src/lib/lead-intake-notify.mjs"),
+    "@/lib/meta-leadgen-failure.mjs": await import("../../src/lib/meta-leadgen-failure.mjs"),
+    "@/lib/logger": { logger: { info() {}, warn() {}, error() {} } },
+  });
+  try {
+    Object.assign(process.env, { META_LEADGEN_ENABLED: "true", META_LEADGEN_VERIFY_TOKEN: "v", META_APP_SECRET: "secret", META_LEADS_ACCESS_TOKEN: "token", META_LEADGEN_PAGE_IDS: PAGE });
+    const raw = JSON.stringify({ object: "page", entry: [{ id: PAGE, changes: [{ field: "leadgen", value: { page_id: PAGE, leadgen_id: LEADGEN, form_id: "998877665544" } }] }] });
+    const res = await route.POST(new Request("https://example.test", { method: "POST",
+      headers: { "content-type": "application/json", "x-hub-signature-256": `sha256=${createHmac("sha256", "secret").update(raw).digest("hex")}` }, body: raw }));
+    assert.equal(res.status, 200);
+    assert.equal(db.notifications.length, 0, "an owned lead is not announced to the queue again");
+  } finally { process.env = saved; }
+});
+
+test("drive sync: age is checked before the per-run cap, and skipped-over-cap is logged; contact time is never silently replaced", () => {
+  const src = fs.readFileSync(new URL("../../src/app/api/sync/drive-ingest/route.ts", import.meta.url), "utf8");
+  assert.ok(src.indexOf("isFresh") < src.indexOf("pings < MAX_NEW_LEAD_PINGS_PER_RUN"));
+  assert.match(src, /isFresh && pings >= MAX_NEW_LEAD_PINGS_PER_RUN/);
+  assert.match(src, /notify_over_cap/);
+  const sales = fs.readFileSync(new URL("../../src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx", import.meta.url), "utf8");
+  assert.ok(!/dubaiInputToIso\(contactTime\) \?\? new Date/.test(sales));
+  assert.match(sales, /contactTimeInvalid/);
+  for (const lang of ["en", "zh"]) assert.ok(translations[lang].leadDetail.contactTimeInvalid);
+  assert.match(fs.readFileSync(new URL("../../src/app/(dashboard)/leads/_hooks/useLeadsFiltering.ts", import.meta.url), "utf8"), /dubaiDateKey\(\)/);
+  assert.match(fs.readFileSync(new URL("../../src/app/api/cron/check-overdue-installments/route.ts", import.meta.url), "utf8"), /const today = dubaiDateKey\(\)/);
+});

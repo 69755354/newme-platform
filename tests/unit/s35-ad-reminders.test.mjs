@@ -80,7 +80,8 @@ test("wording: manager and owner versions, one line, at most 400 characters, no 
   const items = Array.from({ length: 7 }, (_, i) => item({ lead_id: `l${i}`, first_name: `客户${i}`, overdue_minutes: 90 + i * 60 }));
   const manager = buildAdReminder({ name: "Sam", manager: true, items });
   assert.match(manager, /^Sam，有7条广告线索未分配且超1小时无人联系：客户0·FB表单·超时2小时/);
-  assert.match(manager, /派单页分配/);
+  assert.match(manager, /未分配，请尽快安排跟进/);
+  assert.ok(!manager.includes("派单"), "the dispatch page is not today's flow");
   const owner = buildAdReminder({ name: "Sales One", manager: false, items: items.slice(0, 2) });
   assert.match(owner, /^Sales One，您有2条广告线索超1小时未联系/);
   for (const text of [manager, owner]) assert.ok([...text].length <= 400 && !text.includes("\n") && !/\d{7,}/.test(text));
@@ -102,30 +103,63 @@ const makeDb = (leads) => {
   return { bell, from: (name) => new Query(tables[name] ?? []), rpc: async (name, args) => { bell.push(...args.p_notifications); return { data: { created: args.p_notifications.length, skipped: 0 }, error: null }; } };
 };
 
-test("runner: an unassigned ad lead is reminded hourly-run once to admins and bosses and shows on the bell; nothing repeats", async () => {
+test("runner: an unassigned ad lead reaches admin and boss on the BELL only; WhatsApp to them needs its own flag; nothing repeats", async () => {
   process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/s35-`);
   const { runReminders } = await import("../../scripts/daily-brief.mjs");
   const sent = [];
   const send = async (m) => { sent.push(m); return true; };
-  const env = { NEWME_LEAD_REMINDER_ENABLED: "true" };
+  const env = { NEWME_AD_LEAD_REMINDER_ENABLED: "true" };
   const noon = new Date("2026-11-21T08:00:00Z"); // 12:00 Dubai; the lead arrived 10:00 Dubai
   const db = makeDb([lead()]);
   const dry = await runReminders(db, { now: noon, send, env });
   assert.deepEqual([dry.mode, dry.ad_overdue, dry.ad_unassigned, dry.ad_people, dry.ad_missing_phone, dry.ad_sent], ["dry_run", 1, 1, 3, 1, 0]);
   assert.deepEqual([sent.length, db.bell.length], [0, 0], "a dry run sends and writes nothing");
   const first = await runReminders(db, { execute: true, now: noon, send, env });
-  assert.deepEqual([first.ad_sent, first.ad_failed, first.failed, first.sent], [2, 0, 0, 0]);
-  assert.deepEqual(sent.map((m) => m.number).sort(), ["971501110001", "971501110002"], "admin and boss, not operator; the admin without a phone is only on the bell");
-  assert.ok(sent.every((m) => m.key === "newme-lead-reminder" && /未分配且超1小时无人联系/.test(m.text)));
+  assert.deepEqual([first.ad_sent, first.ad_failed, first.failed, first.sent], [0, 0, 0, 0]);
+  assert.deepEqual(sent, [], "no WhatsApp to the bosses by default");
   assert.deepEqual(db.bell.map((r) => r.user_id).sort(), ["ad", "bo", "nb"]);
-  const later = await runReminders(db, { execute: true, now: new Date("2026-11-21T09:00:00Z"), send, env });
+  // with the admin WhatsApp flag: admin and boss (not operator); the admin without a phone stays bell only
+  const on = { ...env, NEWME_AD_LEAD_REMINDER_ADMIN_WHATSAPP: "true" };
+  const second = await runReminders(db, { execute: true, now: new Date("2026-11-21T09:00:00Z"), send, env: on });
+  assert.equal(second.ad_sent, 2);
+  assert.deepEqual(sent.map((m) => m.number).sort(), ["971501110001", "971501110002"]);
+  assert.ok(sent.every((m) => /未分配，请尽快安排跟进/.test(m.text) && !m.text.includes("派单")));
+  const later = await runReminders(db, { execute: true, now: new Date("2026-11-21T10:00:00Z"), send, env: on });
   assert.deepEqual([later.ad_sent, sent.length], [0, 2], "one reminder per lead per threshold");
+});
+
+test("runner: the ad reminder has its own switch (default off) independent of the 24 hour one", async () => {
+  process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/s35-`);
+  const { runReminders } = await import("../../scripts/daily-brief.mjs");
+  const noon = new Date("2026-11-21T08:00:00Z");
+  const sent = [];
+  const send = async (m) => { sent.push(m); return true; };
+  const db = makeDb([lead({ assigned_to: "s1" })]);
+  const only24 = await runReminders(db, { execute: true, now: noon, send, env: { NEWME_LEAD_REMINDER_ENABLED: "true" } });
+  assert.deepEqual([only24.ad_sent, db.bell.length], [0, 0], "the old switch alone no longer starts the ad reminder");
+  const adOnly = await runReminders(db, { execute: true, now: noon, send, env: { NEWME_AD_LEAD_REMINDER_ENABLED: "true" } });
+  assert.deepEqual([adOnly.mode, adOnly.ad_sent, adOnly.sent], ["execute", 1, 0], "owner gets WhatsApp; the 24 hour job stays off");
+  assert.equal(db.bell.length, 1);
+});
+
+test("runner: more than 64 bell rows go out in chunks of 64", async () => {
+  process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/s35-`);
+  const { runReminders } = await import("../../scripts/daily-brief.mjs");
+  const leads = Array.from({ length: 70 }, (_, i) => lead({ id: `m${i}`, created_at: iso("2026-11-21T06:00:00Z") }));
+  const db = makeDb(leads);
+  const calls = [];
+  const base = db.rpc;
+  db.rpc = async (name, args) => { calls.push(args.p_notifications.length); return base(name, args); };
+  const r = await runReminders(db, { execute: true, now: new Date("2026-11-21T08:00:00Z"), send: async () => true, env: { NEWME_AD_LEAD_REMINDER_ENABLED: "true" } });
+  assert.equal(r.ad_bell_failed, 0);
+  assert.ok(calls.length >= 6 && calls.every((n) => n <= 64), calls.join(","));
+  assert.equal(db.bell.length, 70 * 3);
 });
 
 test("runner: a failed ad reminder is retried next hour; an assigned lead goes to its owner only; contacted leads stop", async () => {
   process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/s35-`);
   const { runReminders } = await import("../../scripts/daily-brief.mjs");
-  const env = { NEWME_LEAD_REMINDER_ENABLED: "true" };
+  const env = { NEWME_AD_LEAD_REMINDER_ENABLED: "true" };
   const noon = new Date("2026-11-21T08:00:00Z");
   const owned = makeDb([lead({ assigned_to: "s1" })]);
   const failed = await runReminders(owned, { execute: true, now: noon, send: async () => false, env });
@@ -143,5 +177,5 @@ test("runner: outside the window or switched off the ad reminder does nothing ei
   const { runReminders } = await import("../../scripts/daily-brief.mjs");
   const exploding = { from() { throw new Error("database must not be read"); } };
   assert.equal((await runReminders(exploding, { execute: true, now: new Date("2026-11-21T08:00:00Z"), send: async () => true, env: {} })).mode, "disabled");
-  assert.equal((await runReminders(exploding, { execute: true, now: new Date("2026-11-21T20:00:00Z"), send: async () => true, env: { NEWME_LEAD_REMINDER_ENABLED: "true" } })).mode, "outside_window");
+  assert.equal((await runReminders(exploding, { execute: true, now: new Date("2026-11-21T20:00:00Z"), send: async () => true, env: { NEWME_AD_LEAD_REMINDER_ENABLED: "true" } })).mode, "outside_window");
 });

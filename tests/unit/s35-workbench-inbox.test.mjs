@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
-import { INBOX_LIMIT, inboxDayKeys, mergeInbox } from "../../src/lib/workbench-inbox.mjs";
+import { INBOX_LIMIT, INBOX_NEW_CAP, inboxDayKeys, mergeInbox } from "../../src/lib/workbench-inbox.mjs";
 
 const require = createRequire(import.meta.url);
 const ME = "c0000000-0000-4000-8000-000000000001";
@@ -106,4 +106,16 @@ test("a lead contacted but not yet advanced is not 'new'; mergeInbox caps at the
   const merged = mergeInbox({ new: [{ id: "a" }], due_today: [{ id: "a" }, { id: "b" }], overdue: Array.from({ length: 30 }, (_, i) => ({ id: `o${i}` })) }, 5);
   assert.deepEqual(merged.map((m) => m.id), ["a", "b", "o0", "o1", "o2"]);
   assert.deepEqual(merged.map((m) => m.inbox_group), ["new", "due_today", "overdue", "overdue", "overdue"]);
+});
+
+test("25 new leads cannot hide a lead due today (new is capped at 8); slack goes back to new leads", async () => {
+  const fresh = Array.from({ length: 25 }, (_, i) => lead(`n${String(i).padStart(2, "0")}`, { stage: "new", last_contact_date: null, updated_at: `2026-11-22T07:${String(59 - i).padStart(2, "0")}:00Z` }));
+  const inbox = await inboxFor([...fresh, lead("today", { next_followup_date: today })]);
+  assert.equal(inbox.length, INBOX_LIMIT);
+  assert.ok(inbox.some((i) => i.id === "today"), "the due-today lead is in the list");
+  assert.equal(inbox.filter((i) => i.inbox_group === "new").length, INBOX_LIMIT - 1, "only one other group has rows, so new takes the slack");
+  const crowded = mergeInbox({ new: Array.from({ length: 25 }, (_, i) => ({ id: `n${i}` })), due_today: [{ id: "d" }], overdue: Array.from({ length: 30 }, (_, i) => ({ id: `o${i}` })) });
+  assert.equal(INBOX_NEW_CAP, 8);
+  assert.deepEqual([crowded.filter((r) => r.inbox_group === "new").length, crowded.filter((r) => r.inbox_group === "due_today").length, crowded.filter((r) => r.inbox_group === "overdue").length], [8, 1, 11]);
+  assert.equal(crowded[0].inbox_group, "new");
 });

@@ -72,7 +72,7 @@ test("formatted display numbers match, while same-second sends do not prove a re
 
 const require = createRequire(import.meta.url);
 // S35: the webhook now logs a refused pilot write (logger) and flags degraded intake (health). Defaults for every route load;
-// tests/unit/s35-whatsapp-intake-gate.test.mjs asserts on them.
+// the S35 pilot-failure test below asserts on them.
 const loggedErrors = [];
 const degradedMarks = [];
 const DEFAULT_MOCKS = {
@@ -281,7 +281,7 @@ test("pilot write failure still creates the ad lead (without message text), logs
     assert.equal(JSON.stringify(loggedErrors).includes("PRIVATE"), false);
     assert.deepEqual(degradedMarks.slice(-2), ["whatsapp", "whatsapp"], "/api/health shows the degraded intake");
     rpcs.length = 0;
-failPilot = false;
+    failPilot = false;
     assert.equal((await post(real)).status, 200); assert.equal(rpcs.length, 1);
   } finally { process.env = saved; Date.now = savedClock; }
 });

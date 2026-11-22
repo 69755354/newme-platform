@@ -43,6 +43,7 @@ import { useMemo } from "react";
 import { Lead } from "./useLeadsData";
 import { PIPELINE_STAGES } from "../_utils/constants";
 import { daysSince } from "../_utils/format";
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { WHATSAPP_AD_FILTER, isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 
 export type StageTotal = { count: number; value: number };
@@ -109,7 +110,7 @@ export function useLeadsFiltering({
     if (assignedToFilter !== "all")
       result = result.filter((l) => l.assigned_to === assignedToFilter);
     if (followupFilter) {
-      const todayStr = new Date().toISOString().split("T")[0];
+      const todayStr = dubaiDateKey() ?? new Date().toISOString().split("T")[0];
       result = result.filter((l) => {
         if (!l.next_followup_date) return false;
         if (l.final_status) return false;

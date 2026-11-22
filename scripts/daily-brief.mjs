@@ -6,7 +6,9 @@
 //   NEWME_LEAD_REMINDER_ENABLED=true   hourly 09:00-21:00 Dubai reminders (profiles.phone): (1) each salesperson with leads assigned
 //                                      over 24h ago and not contacted; (2) S35 ad leads (Meta form, WhatsApp click-to-chat, website)
 //                                      not contacted within 1 hour (outside 09:00-20:00 arrival: by 10:00), to the owner, or when
-//                                      nobody owns the lead to every active admin and boss. Once per lead and person.
+//                                      nobody owns the lead to every active admin and boss (bell only; WhatsApp too with
+//                                      NEWME_AD_LEAD_REMINDER_ADMIN_WHATSAPP=true). Switch: NEWME_AD_LEAD_REMINDER_ENABLED=true
+//                                      (default off, independent of the 24 hour switch). Once per lead and person.
 // Messages use the existing alert sender and its approved template; credentials stay in /etc/newme/alerts.env.
 // Usage: node scripts/daily-brief.mjs --mode brief|reminders [--execute]
 import { execFile } from "node:child_process";
@@ -134,7 +136,11 @@ const adLedgerKeys = (now) => {
 
 export async function runReminders(db, { execute = false, now = new Date(), send = sendWhatsapp, env = process.env } = {}) {
   // Switch and window first: a switched-off (or out-of-hours) hourly run does nothing at all, not even a read.
-  if (execute && !isTrue(env.NEWME_LEAD_REMINDER_ENABLED)) return { job: "reminders", mode: "disabled", sent: 0, failed: 0 };
+  // Two independent switches (both default off): the 24 hour reminder, and the S35 one-hour ad-lead reminder.
+  const reminder24 = isTrue(env.NEWME_LEAD_REMINDER_ENABLED);
+  const adReminder = isTrue(env.NEWME_AD_LEAD_REMINDER_ENABLED);
+  const adAdminWhatsapp = isTrue(env.NEWME_AD_LEAD_REMINDER_ADMIN_WHATSAPP);
+  if (execute && !reminder24 && !adReminder) return { job: "reminders", mode: "disabled", sent: 0, failed: 0 };
   if (execute && !inReminderWindow(now)) return { job: "reminders", mode: "outside_window", sent: 0, failed: 0 };
   const data = await loadData(db, now);
   const plan = planFrom(data, now);
@@ -150,23 +156,28 @@ export async function runReminders(db, { execute = false, now = new Date(), send
     ad_overdue: adItems.length, ad_unassigned: adItems.filter((i) => !i.assigned_to).length, ad_people: adPlan.people.length,
     ad_missing_phone: adPlan.missingPhone.length, ad_sent: 0, ad_failed: 0, ad_bell_failed: 0 };
   if (!execute) return summary;
-  if (!isTrue(env.NEWME_LEAD_REMINDER_ENABLED)) return { ...summary, mode: "disabled" };
   if (!inReminderWindow(now)) return { ...summary, mode: "outside_window" };
-  for (const person of due) {
+  for (const person of reminder24 ? due : []) {
     if (await send({ key: "newme-lead-reminder", text: buildReminder(person), number: person.number })) {
       summary.sent += 1; done.add(person.id);
       writeLedger("reminders", today, { sent: [...done] }); // after each delivery: a crash never double-sends
     } else summary.failed += 1;
   }
   // Ad-lead reminders: the bell first (idempotent by event key, also reaches people without a phone number), then WhatsApp.
+  // Owners get WhatsApp + bell. Admin/boss for ownerless leads get the bell only (sales still work in the Google sheet, so a
+  // WhatsApp to the bosses would nag about a flow that is not theirs) unless NEWME_AD_LEAD_REMINDER_ADMIN_WHATSAPP=true.
+  if (!adReminder) return summary;
   for (const person of adPlan.people) {
-    try {
-      const { error } = await db.rpc("insert_notifications_atomic", { p_notifications: adReminderNotificationRows(person) });
-      if (error) throw new Error("bell_failed");
-    } catch { summary.ad_bell_failed += 1; }
+    const rows = adReminderNotificationRows(person);
+    for (let i = 0; i < rows.length; i += 64) { // the database function takes at most 64 rows per call
+      try {
+        const { error } = await db.rpc("insert_notifications_atomic", { p_notifications: rows.slice(i, i + 64) });
+        if (error) throw new Error("bell_failed");
+      } catch { summary.ad_bell_failed += 1; }
+    }
   }
   const adSent = readLedger("ad-reminders", today).sent ?? [];
-  for (const person of adPlan.sendable) {
+  for (const person of adPlan.sendable.filter((p) => !p.manager || adAdminWhatsapp)) {
     if (await send({ key: "newme-lead-reminder", text: buildAdReminder(person), number: person.number })) {
       summary.ad_sent += 1;
       for (const item of person.items) adSent.push(`${person.id}:${item.lead_id}`);

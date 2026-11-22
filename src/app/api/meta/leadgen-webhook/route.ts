@@ -96,7 +96,15 @@ export async function POST(request: Request) {
       }
       // S35: tell the dispatchers at once. Same event key on every retry, so a re-delivery repairs a lost
       // notification without sending a second one. A failed ping never fails the intake (lead is stored).
-      if (stored.outcome === "inserted" || stored.outcome === "duplicate") {
+      // A re-delivery for a lead somebody already owns is skipped: assignment notified the owner (read failure = skip too).
+      let ownerless = true;
+      if (stored.outcome === "duplicate") {
+        try {
+          const current = await supabaseAdmin.from("leads").select("assigned_to").eq("id", stored.id).maybeSingle();
+          ownerless = !current.error && !current.data?.assigned_to;
+        } catch { ownerless = false; }
+      }
+      if (stored.outcome === "inserted" || (stored.outcome === "duplicate" && ownerless)) {
         await notifyNewLeadSafe(supabaseAdmin, { id: stored.id, customer_name: row.customer_name, assigned_to: null, created_at: row.created_at }, {
           onError: (code) => logger.error({ operation: "meta_leadgen_webhook", code }, "meta leadgen new-lead notification failed"),
         });

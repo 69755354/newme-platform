@@ -57,7 +57,7 @@ test("the screens use the Dubai helpers; no UTC-clock datetime default is left i
   const sales = read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
   assert.ok(!/toISOString\(\)\.slice\(0, 16\)/.test(sales));
   assert.match(sales, /useState\(\(\) => dubaiInputValue\(\)\)/);
-  assert.match(sales, /contact_time: dubaiInputToIso\(contactTime\)/);
+  assert.match(sales, /const contactTimeIso = dubaiInputToIso\(contactTime\)/);
   assert.match(sales, /max=\{dubaiInputValue\(\)\}/);
   const timeline = read("src/app/(dashboard)/leads/[id]/LeadTimeline.tsx");
   assert.ok(!/toISOString\(\)\.slice\(0, 16\)/.test(timeline) && /dubaiInputToIso\(editContact\.contact_time\)/.test(timeline));

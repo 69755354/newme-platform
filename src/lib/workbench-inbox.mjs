@@ -16,17 +16,31 @@ export function inboxDayKeys(now = new Date()) {
   return { today, tomorrow: addDaysToDateKey(today, 1) };
 }
 
-/** Merge the four group results (arrays of rows, already ordered) into one list of at most `limit`, no lead twice, each row tagged. */
-export function mergeInbox(groups, limit = INBOX_LIMIT) {
+export const INBOX_NEW_CAP = 8;
+
+/**
+ * Merge the four group results (arrays of rows, already ordered) into one list of at most `limit`, no lead twice, each row
+ * tagged. "New" is capped at INBOX_NEW_CAP so a burst of new leads cannot hide today's and overdue follow-ups; the other
+ * groups fill the rest in order, and any slack (a group with fewer rows) goes back to more new leads. Output order is
+ * always new, due_today, overdue, later.
+ */
+export function mergeInbox(groups, limit = INBOX_LIMIT, newCap = INBOX_NEW_CAP) {
   const seen = new Set();
-  const out = [];
+  const lists = {};
   for (const name of INBOX_GROUPS) {
+    lists[name] = [];
     for (const row of groups?.[name] ?? []) {
-      if (out.length >= limit) return out;
       if (!row?.id || seen.has(row.id)) continue;
       seen.add(row.id);
-      out.push({ ...row, inbox_group: name });
+      lists[name].push({ ...row, inbox_group: name });
     }
   }
-  return out;
+  const taken = { new: Math.min(lists.new.length, newCap, limit) };
+  let room = limit - taken.new;
+  for (const name of INBOX_GROUPS.slice(1)) {
+    taken[name] = Math.min(lists[name].length, room);
+    room -= taken[name];
+  }
+  taken.new = Math.min(lists.new.length, taken.new + room); // slack goes back to new leads
+  return INBOX_GROUPS.flatMap((name) => lists[name].slice(0, taken[name]));
 }

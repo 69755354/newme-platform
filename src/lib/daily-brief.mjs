@@ -366,7 +366,7 @@ export function buildAdReminder(person) {
   const shown = person.items.slice(0, 5).map((i) => `${i.first_name}·${channelLabel(i.channel)}·超时${ageLabel(Math.max(1, Math.ceil(i.overdue_minutes / 60)))}`);
   const more = person.items.length > shown.length ? `等共${person.items.length}条` : "";
   const text_ = person.manager
-    ? `${person.name}，有${person.items.length}条广告线索未分配且超1小时无人联系：${shown.join("，")}${more}。请尽快在OS派单页分配给销售。`
+    ? `${person.name}，有${person.items.length}条广告线索未分配且超1小时无人联系：${shown.join("，")}${more}。未分配，请尽快安排跟进。`
     : `${person.name}，您有${person.items.length}条广告线索超1小时未联系：${shown.join("，")}${more}。请尽快联系，并在OS里记录首次联系。`;
   return clip(text_);
 }

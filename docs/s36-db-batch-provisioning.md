@@ -36,8 +36,13 @@ Refuses unless:
     three triggers sit on their exact tables, call their exact routines, are not internal and are enabled (`O`);
     `derive_lead_status()` is SECURITY DEFINER with the pinned search_path and carries the `48 hours` marker.
 
-  A half state is refused: S36 applied but not S37 (recorded or not), S37 applied before S36, either one applied but not
-  recorded, a record without the objects, or `derive_lead_status()` missing altogether.
+  plus one resumable prefix: **S36 provisioned and recorded, S37 absent and unrecorded**. The wrapper applies each file in
+  its own transaction, so a provision that fails after S36 committed leaves exactly this state; `s36-db-plan` then lists
+  only `20261122300000` and `s36-db-provision` applies only S37.
+
+  Every other half state is refused: S37 recorded or applied before S36, either file applied but not recorded, a record
+  without the objects, an S36 object that does not match (wrong table, routine, mode or search_path, trigger disabled), or
+  `derive_lead_status()` missing altogether.
 
 The wrapper additionally re-verifies the live deferred phase, the canonical main SHA and a fresh CI gate, like the other
 suffixes.
@@ -46,13 +51,15 @@ suffixes.
 
 Same two releases as S31 (#563 then #564), S32 (#576 then #580) and S33:
 
-1. Release the switch on its own (the manifest has no S36 / S37 entry and the tree has no S36 / S37 migration file) through
-   the normal `contract_verified` flow, no database operation.
-2. Merge the S37 branch (`fix/os-s37-numbers`, which already carries the S36 branch: both migration files, both manifest
-   entries and rule checks, the database tests and the application changes). From that main commit run
-   `newme-deploy db-transition <sha> <run-id> s36-db-plan`, check that the plan lists exactly `20261122200000` then
-   `20261122300000`, then `s36-db-provision`. (`tools/release_lite.sh ... --dbop s36` runs exactly this pair.)
-3. Release the application with `contract_verified` and the full required list.
+1. Release the switch on its own through the lite lane, no database operation:
+   `release_lite.sh <logdir> "<title>" 602`. The manifest then has no S36 / S37 entry and the tree has no S36 / S37
+   migration file.
+2. Merge the S37 branch (`fix/os-s37-numbers`, #600, which already carries the S36 branch #601: both migration files, both
+   manifest entries and rule checks, the database tests and the application changes), then release it through the lite lane
+   with the database operation: `release_lite.sh <logdir> "<title>" 600 --dbop s36`. That runs the database backup, then
+   `newme-deploy db-transition <sha> <run-id> s36-db-plan` (the plan must list exactly `20261122200000` then
+   `20261122300000`, or only `20261122300000` when resuming after a failure past S36), then `s36-db-provision`, then the
+   application release.
 
 The switch accepts the two migrations only as the LAST deferred entries. If another deferred migration merges before the
 batch is provisioned, ship a new switch version.

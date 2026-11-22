@@ -182,9 +182,15 @@ for(const [label,change] of [
   ['a half-applied database that also looks present',x=>{x.priorMatches=[true,true];x.bodyMatches=[true,true];}],
   ['S36 applied but S37 not, nothing recorded',x=>{x.priorMatches=[false,true];x.bodyMatches=[true,false];}],
   ['S37 applied but S36 not, nothing recorded',x=>{x.priorMatches=[true,false];x.bodyMatches=[false,true];}],
-  ['S36 applied and recorded but S37 not (a partial batch)',x=>{x.recorded=[true,false];x.priorMatches=[false,true];x.bodyMatches=[true,false];}],
   ['S37 applied and recorded but S36 not',x=>{x.recorded=[false,true];x.priorMatches=[true,false];x.bodyMatches=[false,true];}],
   ['both applied but only S36 recorded',x=>{x.recorded=[true,false];x.priorMatches=[false,false];x.bodyMatches=[true,true];}],
+  // near misses of the resumable prefix (S36 recorded and present, S37 absent and unrecorded)
+  ['S36 recorded but its objects missing, S37 absent',x=>{x.recorded=[true,false];x.priorMatches=[true,true];x.bodyMatches=[false,false];}],
+  ['S36 recorded but its objects mismatched (neither prior nor present), S37 absent',x=>{x.recorded=[true,false];x.priorMatches=[false,true];x.bodyMatches=[false,false];}],
+  ['S36 recorded and present, S37 applied but unrecorded',x=>{x.recorded=[true,false];x.priorMatches=[false,false];x.bodyMatches=[true,true];}],
+  ['S36 recorded and present, derive_lead_status missing',x=>{x.recorded=[true,false];x.priorMatches=[false,false];x.bodyMatches=[true,false];}],
+  ['S36 recorded and present, S37 looks both prior and present',x=>{x.recorded=[true,false];x.priorMatches=[false,true];x.bodyMatches=[true,true];}],
+  ['S36 recorded, present and still looking prior, S37 absent',x=>{x.recorded=[true,false];x.priorMatches=[true,true];x.bodyMatches=[true,false];}],
   ['complete but unrecorded',x=>{x.priorMatches=[false,false];x.bodyMatches=[true,true];}],
   ['recorded but absent',x=>{x.recorded=[true,true];}],
   ['recorded drift',x=>{x.recorded=[true,true];x.bodyMatches=[false,false];x.priorMatches=[false,false];}],
@@ -232,9 +238,14 @@ for(const [label,change] of [
   assert.ok(judge(state).problems.length>0);
 });
 
-test('a partial batch is named as such',()=>{
+test('a provision that failed after S36 committed is resumable: S36 recorded and present, S37 absent and unrecorded',()=>{
   const state={...input(),recorded:[true,false],priorMatches:[false,true],bodyMatches:[true,false],expectedSha256:reviewed.map(hashed)};
-  assert.deepEqual(judge(state).problems,['the S36 and S37 batch is partially provisioned']);
+  assert.deepEqual(judge(state),{problems:[],alreadyRecorded:false});
+});
+
+test('a batch recorded out of order is named as such',()=>{
+  const state={...input(),recorded:[false,true],priorMatches:[true,false],bodyMatches:[false,true],expectedSha256:reviewed.map(hashed)};
+  assert.deepEqual(judge(state).problems,['the S36 and S37 batch is recorded out of order']);
 });
 
 test('the deploy wrapper gates S36 provisioning like the other additive suffixes',()=>{

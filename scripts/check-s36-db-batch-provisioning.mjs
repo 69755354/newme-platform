@@ -11,9 +11,10 @@
  * file); the judge itself only ever sees live = the release in production and candidate = live plus exactly the two pinned
  * entries and two predicates, i.e. the state after the S37 branch (which carries S36) is merged.
  *
- * Database states: either both migrations are absent (the S36 objects do not exist and derive_lead_status still carries
- * the old body) or both are provisioned and recorded. One of the two applied, an application that is not recorded, or a
- * record without the objects is refused.
+ * Database states: both migrations absent (the S36 objects do not exist and derive_lead_status still carries the old
+ * body), both provisioned and recorded, or the one resumable prefix (S36 provisioned and recorded, S37 absent and
+ * unrecorded: a provision that failed after S36 committed; plan / provision then apply only S37). An application that is
+ * not recorded, a record without the objects, a mismatched object, or S37 recorded before S36 is refused.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -94,9 +95,12 @@ export function judgeS36DbBatchProvisioning({live,candidate,sql,phase,recorded,p
     for (let i=0;i<n;i+=1) {
       if (recorded[i] ? bodyMatches[i]!==true || priorMatches[i]!==false : priorMatches[i]!==true || bodyMatches[i]!==false) problems.push("unrecorded history drift or recorded mismatch");
     }
-    // The batch is one unit: either neither migration is recorded (the plan applies both, in order) or both are. A
-    // database with only the first one recorded is a half state the plan / provision operations do not finish.
-    if (recorded.some(Boolean) && !recorded.every(Boolean)) problems.push("the S36 and S37 batch is partially provisioned");
+    // The batch is applied in order, each file in its own transaction (db-phase-push.mjs), so a failure after S36 committed
+    // leaves S36 recorded and present with S37 unrecorded and still in its before-state. That exact prefix is resumable:
+    // plan / provision then apply only S37. Any other partial record (S37 recorded before S36) is refused; the per-file
+    // rule above already refuses an unrecorded application, a record without the objects, or a mismatched object.
+    const firstGap=recorded.indexOf(false);
+    if (firstGap>=0 && recorded.slice(firstGap).some(Boolean)) problems.push("the S36 and S37 batch is recorded out of order");
   }
   return {problems:[...new Set(problems)],alreadyRecorded:Array.isArray(recorded)&&recorded.length===n&&recorded.every(Boolean)};
 }

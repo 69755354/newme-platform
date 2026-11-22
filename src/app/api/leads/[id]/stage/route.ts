@@ -11,6 +11,7 @@ import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
+import { stageErrorZh, stageReasonsZh } from "@/lib/stage-error-zh.mjs";
 import { ensureWonAmount, revertWonAmount } from "@/lib/won-amount.mjs";
 import { enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
 import { enqueueWebsitePurchaseForLead, enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
@@ -20,6 +21,16 @@ const VALID_STAGES = new Set([
   "won",
   "lost",
 ]);
+
+// Every rejection also carries its Chinese wording (error_zh, reasons_zh) so the Chinese screens never show raw English.
+function withChineseError(body: Record<string, unknown>): Record<string, unknown> {
+  if (typeof body.error !== "string") return body;
+  return {
+    ...body,
+    error_zh: typeof body.error_zh === "string" ? body.error_zh : stageErrorZh(body.error),
+    ...(Array.isArray(body.reasons) ? { reasons_zh: stageReasonsZh(body.reasons) } : {}),
+  };
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -31,7 +42,7 @@ export async function PATCH(
     const context = await getRequestAuthContext(req);
     const { supabase } = context;
     const respond = (body: Record<string, unknown>, init?: ResponseInit) =>
-      applyRequestAuthCookies(context, NextResponse.json(body, init));
+      applyRequestAuthCookies(context, NextResponse.json(withChineseError(body), init));
 
     const body = await req.json();
     const stage = String(body?.stage ?? "").trim();
@@ -170,6 +181,6 @@ export async function PATCH(
       },
       "stage route error",
     );
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error", error_zh: stageErrorZh("Internal server error") }, { status: 500 });
   }
 }

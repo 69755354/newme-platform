@@ -6,21 +6,36 @@
 /** The amount field is shown when the lead has no amount yet, or after the server asked for one. */
 export const leadHasWonAmount = (lead) => Number(lead?.quotation_value) > 0;
 
+/** A dragged lead is closed (won or lost) only through the server route; lost needs a reason, which is the note. */
+export const DRAG_CLOSE_STAGES = Object.freeze(["won", "lost"]);
+
+/** The browser cannot tell whether a request that failed on the network was applied: the message says to refresh and check. */
+const NETWORK_UNCERTAIN = {
+  error: "Network error; the change may or may not have been saved. Refresh the page to confirm.",
+  error_zh: "网络出错，请刷新确认是否已保存。",
+};
+
 /**
  * Sends the Won request. `fetchImpl` is fetch. Returns { ok: true, lead } or
  * { ok: false, needsAmount, error, error_zh } (needsAmount = the server wants an amount typed).
  */
 export async function submitWonFromDrag(fetchImpl, leadId, { note, amount, idempotencyKey }) {
+  return submitStageFromDrag(fetchImpl, leadId, { stage: "won", note, amount, idempotencyKey });
+}
+
+/** Won (note + amount) or lost (reason as the note) through PATCH /api/leads/:id/stage. The same key may be resent on a retry. */
+export async function submitStageFromDrag(fetchImpl, leadId, { stage, note, amount, idempotencyKey }) {
+  if (!DRAG_CLOSE_STAGES.includes(stage)) throw new Error("submitStageFromDrag closes a lead as won or lost only");
   const trimmedAmount = typeof amount === "string" ? amount.trim() : "";
   let response;
   try {
     response = await fetchImpl(`/api/leads/${encodeURIComponent(leadId)}/stage`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage: "won", note: String(note ?? "").trim(), idempotencyKey, ...(trimmedAmount ? { amount: trimmedAmount } : {}) }),
+      body: JSON.stringify({ stage, note: String(note ?? "").trim(), idempotencyKey, ...(stage === "won" && trimmedAmount ? { amount: trimmedAmount } : {}) }),
     });
   } catch {
-    return { ok: false, needsAmount: false, error: "Network error; the lead was not changed.", error_zh: "网络出错，线索没有改动。" };
+    return { ok: false, needsAmount: false, ...NETWORK_UNCERTAIN };
   }
   let body = null;
   try { body = await response.json(); } catch { /* not JSON */ }
@@ -28,7 +43,7 @@ export async function submitWonFromDrag(fetchImpl, leadId, { note, amount, idemp
   return {
     ok: false,
     needsAmount: body?.code === "won_amount_required",
-    error: typeof body?.error === "string" ? body.error : "Could not mark the lead won.",
-    error_zh: typeof body?.error_zh === "string" ? body.error_zh : (typeof body?.error === "string" ? body.error : "没能标记赢单。"),
+    error: typeof body?.error === "string" ? body.error : (stage === "won" ? "Could not mark the lead won." : "Could not mark the lead lost."),
+    error_zh: typeof body?.error_zh === "string" ? body.error_zh : (stage === "won" ? "没能标记赢单。" : "没能标记丢单。"),
   };
 }

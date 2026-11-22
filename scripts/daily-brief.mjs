@@ -44,12 +44,29 @@ async function inChunks(ids, read) {
   return out;
 }
 
+/** Every row of a paged query (PostgREST caps one answer at 1000 rows); build(from, to, withCount) returns a fresh ordered query. */
+async function readAll(build) {
+  const r = await fetchAllRows(build);
+  if (r.error) throw new Error(r.error.message ?? "query failed");
+  return r.data;
+}
+/** inChunks, but each chunk is read in full pages: a chunk of leads can own more than 1000 log or transfer rows. */
+async function inChunksAll(ids, build) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const part = ids.slice(i, i + CHUNK);
+    out.push(...await readAll((from, to, withCount) => build(part, withCount).range(from, to)));
+  }
+  return out;
+}
+
 /** Everything both jobs need, read-only. */
 export async function loadData(db, now) {
   const y = yesterdayBounds(now);
   const maxAge = Number(process.env.NEWME_BRIEF_MAX_LEAD_AGE_DAYS) || DEFAULT_MAX_LEAD_AGE_DAYS;
   const since = new Date(Math.min(y.start.getTime() - 15 * 86_400_000, now.getTime() - maxAge * 86_400_000)).toISOString();
-  const excluded = must(await db.from("lead_dispatch_state").select("lead_id").eq("status", "excluded_test"));
+  const excluded = await readAll((from, to, withCount) => db.from("lead_dispatch_state").select("lead_id", withCount ? { count: "exact" } : undefined)
+    .eq("status", "excluded_test").order("lead_id").range(from, to));
   const excludedTestIds = new Set(excluded.map((r) => r.lead_id));
   const all = await fetchAllRows((from, to, withCount) => db.from("leads").select(LEAD_COLUMNS, withCount ? { count: "exact" } : undefined)
     .eq("archived", false).or("source.is.null,source.neq.synthetic_qa").gte("created_at", since).order("id").range(from, to));
@@ -58,8 +75,11 @@ export async function loadData(db, now) {
   // Leads with no OS owner stay in: the sales team works in the sheets, and the brief must show them (reminders skip them later).
   const candidates = leads.filter((l) => l.stage === "new" || l.stage === null);
   const ids = candidates.map((l) => l.id);
-  const logs = await inChunks(ids, (part) => db.from("follow_up_logs").select("lead_id").in("lead_id", part));
-  const transfers = await inChunks(ids, (part) => db.from("transfer_history").select("lead_id,to_user_id,created_at").in("lead_id", part));
+  // A note-only log (contact_type "note", e.g. the intake note written when a lead is created) is not a contact with the customer.
+  const logs = await inChunksAll(ids, (part, withCount) => db.from("follow_up_logs").select("id,lead_id", withCount ? { count: "exact" } : undefined)
+    .in("lead_id", part).or("contact_type.is.null,contact_type.neq.note").order("id"));
+  const transfers = await inChunksAll(ids, (part, withCount) => db.from("transfer_history").select("id,lead_id,to_user_id,created_at", withCount ? { count: "exact" } : undefined)
+    .in("lead_id", part).order("id"));
   const profiles = must(await db.from("profiles").select("id,full_name,phone,email,role,is_active").eq("is_active", true));
   return { leads, candidates, excludedTestIds, logLeadIds: new Set(logs.map((r) => r.lead_id)), transfers, profiles, y };
 }
@@ -73,15 +93,16 @@ export function planFrom(data, now) {
 async function loadBriefExtras(db, data, now) {
   const { y } = data;
   const dayBefore = new Date(y.start.getTime() - 86_400_000).toISOString().slice(0, 10);
-  const quotations = must(await db.from("quotations").select("lead_id,total_amount,currency,status,sent_at,created_at")
-    .or(`and(sent_at.gte.${y.start.toISOString()},sent_at.lt.${y.end.toISOString()}),and(sent_at.is.null,created_at.gte.${y.start.toISOString()},created_at.lt.${y.end.toISOString()})`));
+  const quotations = await readAll((from, to, withCount) => db.from("quotations").select("id,lead_id,total_amount,currency,status,sent_at,created_at", withCount ? { count: "exact" } : undefined)
+    .or(`and(sent_at.gte.${y.start.toISOString()},sent_at.lt.${y.end.toISOString()}),and(sent_at.is.null,created_at.gte.${y.start.toISOString()},created_at.lt.${y.end.toISOString()})`).order("id").range(from, to));
   const quoteLeadIds = [...new Set(quotations.map((q) => q.lead_id))].filter((id) => !data.leads.some((l) => l.id === id));
   const extraLeads = await inChunks(quoteLeadIds, (part) => db.from("leads").select(LEAD_COLUMNS).in("id", part));
   // Sheet-reported quotes: widened by a day on each side, summarizeQuotes keeps only the Dubai day itself.
   const sheet = must(await db.from("leads").select(LEAD_COLUMNS).eq("archived", false).gt("quotation_value", 0)
     .or(`quotation_sent_date.gte.${dayBefore},raw_import_data->drive_sync->>quote_at.gte.${dayBefore}`).limit(2000));
   const leadsById = new Map([...data.leads, ...extraLeads, ...sheet].map((l) => [l.id, l]));
-  const spendRows = must(await db.from("ad_spend").select("spend_date,amount").eq("spend_date", y.key));
+  const spendRows = await readAll((from, to, withCount) => db.from("ad_spend").select("id,spend_date,amount", withCount ? { count: "exact" } : undefined)
+    .eq("spend_date", y.key).order("id").range(from, to));
   const waits = await loadFollowupWaits(db, data, now);
   return { quotations, sheetLeads: sheet, leadsById, spendRows, waits };
 }

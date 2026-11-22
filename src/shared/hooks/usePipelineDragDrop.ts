@@ -3,9 +3,9 @@
 import { useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
-import { PIPELINE_STAGES, TERMINAL_STAGES } from "@/shared/kanban/types";
+import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { leadHasWonAmount, submitWonFromDrag } from "@/lib/won-drag.mjs";
+import { leadHasWonAmount, submitStageFromDrag } from "@/lib/won-drag.mjs";
 
 // ─── Types ───
 interface LeadBase {
@@ -23,7 +23,7 @@ interface UsePipelineDragDropReturn {
   onDrop: (e: React.DragEvent, targetStage: string) => Promise<void>;
   draggingLeadId: string | null;
   draggingOverStage: string | null;
-  /** Set while a lead dropped on Won waits for its note (and amount); render it with WonDropDialog. */
+  /** Set while a lead dropped on Won (note + amount) or Lost (reason) waits for its dialog; render it with WonDropDialog. */
   wonPrompt: WonPrompt | null;
   wonSaving: boolean;
   confirmWon: (note: string, amount: string) => Promise<void>;
@@ -31,6 +31,10 @@ interface UsePipelineDragDropReturn {
 }
 
 export interface WonPrompt {
+  /** Which closing stage the drop asked for; lost needs a reason (the note) and never an amount. */
+  stage: "won" | "lost";
+  /** Created once when the dialog opens and reused by every retry of this dialog, so a repeated confirm never applies twice. */
+  idempotencyKey: string;
   leadId: string;
   name: string;
   /** The lead has no amount yet (or the server asked for one): the dialog shows the amount field. */
@@ -112,13 +116,15 @@ export function usePipelineDragDrop<T extends LeadBase>(
       return;
     }
 
-    // Won is never written from the browser: it goes through the same server route as the lead page (amount required,
-    // audited stage change, Won / Purchase events queued). The drop opens the note + amount dialog; confirmWon sends it.
-    if (targetStage === "won") {
+    // Won and Lost are never written from the browser: they go through the same server route as the lead page (Won: amount
+    // required; Lost: reason required; audited stage change, Meta events queued). The drop opens the dialog; confirmWon sends it.
+    if (targetStage === "won" || targetStage === "lost") {
       setWonPrompt({
+        stage: targetStage,
+        idempotencyKey: crypto.randomUUID(),
         leadId,
         name: String(lead.customer_name ?? lead.name ?? ""),
-        needsAmount: !leadHasWonAmount(lead),
+        needsAmount: targetStage === "won" && !leadHasWonAmount(lead),
         error: null,
       });
       return;
@@ -128,28 +134,12 @@ export function usePipelineDragDrop<T extends LeadBase>(
     const oldStage = lead.stage;
     const oldFinal = lead.final_status;
 
-    setLeads(prev => prev.map(l => l.id === leadId ? {
-      ...l,
-      ...(targetStage === "won" || targetStage === "lost"
-        ? { final_status: targetStage }
-        : { stage: targetStage })
-    } : l));
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: targetStage } : l));
 
     // ─── Persist to Supabase ───
     const supabase = createClient();
     const now = new Date().toISOString();
-    const updates: import("@/types/database").Database["public"]["Tables"]["leads"]["Update"] = targetStage === "won" || targetStage === "lost"
-      ? { final_status: targetStage, updated_at: now, last_contact_date: now }
-      : { stage: targetStage, updated_at: now, last_contact_date: now };
-
-    if (TERMINAL_STAGES.has(targetStage)) {
-      updates.decision_date = now;
-      // Cascade: close related open quotes
-      await supabase.from("quotations")
-        .update({ status: targetStage === "lost" ? "draft" : undefined, updated_at: now })
-        .eq("lead_id", leadId)
-        .neq("status", "accepted");
-    }
+    const updates: import("@/types/database").Database["public"]["Tables"]["leads"]["Update"] = { stage: targetStage, updated_at: now, last_contact_date: now };
 
     const { error: updateErr } = await supabase.from("leads").update(updates).eq("id", leadId);
 
@@ -180,13 +170,13 @@ export function usePipelineDragDrop<T extends LeadBase>(
     toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === targetStage)?.label || targetStage}`);
   }, [leads, setLeads, currentUserId, lang]);
 
-  // ─── Won (through the server route) ───
+  // ─── Won / Lost (through the server route) ───
   const confirmWon = useCallback(async (note: string, amount: string) => {
     if (!wonPrompt || wonSaving) return;
-    const { leadId } = wonPrompt;
+    const { leadId, stage, idempotencyKey } = wonPrompt;
     setWonSaving(true);
     try {
-      const result = await submitWonFromDrag(fetch, leadId, { note, amount, idempotencyKey: crypto.randomUUID() });
+      const result = await submitStageFromDrag(fetch, leadId, { stage, note, amount, idempotencyKey });
       if (!result.ok) {
         const message = lang === "zh" ? result.error_zh : result.error;
         setWonPrompt(prev => prev && { ...prev, needsAmount: prev.needsAmount || result.needsAmount, error: message });
@@ -195,12 +185,12 @@ export function usePipelineDragDrop<T extends LeadBase>(
       const typed = Number(amount.replace(/,/g, "").trim());
       setLeads(prev => prev.map(l => l.id === leadId ? {
         ...l,
-        stage: result.lead?.stage ?? "won",
-        final_status: "won",
-        ...(!leadHasWonAmount(l) && typed > 0 ? { quotation_value: typed } : {}),
+        stage: result.lead?.stage ?? stage,
+        final_status: stage,
+        ...(stage === "won" && !leadHasWonAmount(l) && typed > 0 ? { quotation_value: typed } : {}),
       } : l));
       setWonPrompt(null);
-      toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === "won")?.label || "won"}`);
+      toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === stage)?.label || stage}`);
     } finally {
       setWonSaving(false);
     }

@@ -127,3 +127,14 @@ test("review P3-3: the quoted amount ignores non-AED quotations, like the databa
   assert.deepEqual(await latestQuotationAmount(db([{ total_amount: 7, currency: null }]), "l"), { value: 7, currency: "AED" });
   assert.deepEqual(await latestQuotationAmount(db([{ total_amount: 5000, currency: "USD" }], 300), "l"), { value: 300, currency: "AED" });
 });
+
+test("S40: the currency compare is exactly the trigger's coalesce(currency, 'AED') = 'AED' (no trimming, no case folding)", async () => {
+  const { latestQuotationAmount } = await import("../../src/lib/quote-amount.mjs");
+  const db = (quotes, reported = null) => ({ from: (table) => { const q = { select: () => q, eq: () => q, not: () => q, order: () => q, limit: () => q,
+    maybeSingle: async () => ({ data: { quotation_value: reported }, error: null }),
+    then: (res, rej) => Promise.resolve({ data: table === "quotations" ? quotes : null, error: null }).then(res, rej) }; return q; } });
+  for (const odd of ["aed", "Aed", " AED", "AED ", ""]) {
+    assert.equal(await latestQuotationAmount(db([{ total_amount: 5000, currency: odd }]), "l"), null, JSON.stringify(odd));
+  }
+  assert.deepEqual(await latestQuotationAmount(db([{ total_amount: 5000, currency: "aed" }, { total_amount: 800, currency: "AED" }]), "l"), { value: 800, currency: "AED" });
+});

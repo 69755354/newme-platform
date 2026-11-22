@@ -205,3 +205,12 @@ test("runner: the brief carries the follow-up waiting section from lead_followup
   assert.equal(r.wa_waiting_people, 1);
   assert.match(sent[0].text, /WhatsApp客户等回复：Ayana 超时1\(最久4小时\)/);
 });
+
+test("S24 follow-up (PR #587): the brief reads excluded tests, logs, transfers, quotations and spend in full pages and ignores note-only logs", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../scripts/daily-brief.mjs", import.meta.url), "utf8");
+  assert.match(src, /contact_type\.is\.null,contact_type\.neq\.note/);
+  for (const table of ["lead_dispatch_state", "follow_up_logs", "transfer_history", "quotations", "ad_spend"]) {
+    assert.match(src, new RegExp(`from\\("${table}"\\)\\.select\\("[^"]*", withCount`), table);
+  }
+});

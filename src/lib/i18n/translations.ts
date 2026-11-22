@@ -10,6 +10,9 @@ export const translations = {
         assignedToYouBody: "Lead \"{name}\" has been assigned to you",
         waitingBody: "Lead \"{name}\" is waiting for assignment",
         createdBody: "New lead \"{name}\" was created",
+        // S35 uncontacted ad lead reminder
+        uncontactedTitle: "Lead not contacted yet: {name}",
+        uncontactedBody: "Lead \"{name}\" has had no first contact for over 1 hour",
       },
       validation: {
         nameRequired: "Customer name is required (at least 2 characters)",
@@ -180,6 +183,12 @@ export const translations = {
       mgmtTeam: "Team",
       mgmtProjects: "Projects",
       mgmtSettings: "Settings",
+      // S35 nav entries for pages that already existed
+      mgmtDispatch: "Dispatch",
+      mgmtOpportunities: "Opportunities",
+      mgmtVisits: "Visits",
+      salesOpportunities: "Opportunities",
+      salesVisits: "Visits",
       // Sales nav items
       salesWorkbench: "Workbench",
       salesDashboard: "My Desk",
@@ -1127,6 +1136,7 @@ export const translations = {
       contactMethodPhone: "Phone",
       selectContactMethod: "-- Select --",
       contactTime: "Contact Time",
+      contactTimeInvalid: "Invalid contact time",
       contactResult: "Contact Result",
       contactResultPlaceholder: "e.g. Interested, No answer...",
       contactNotes: "Notes",
@@ -1925,6 +1935,8 @@ export const translations = {
         progress: "No leads",
         tomorrow: "No tasks for tomorrow",
       },
+      // S35: inbox group tags (new / due today / overdue)
+      group: { new: "New", due_today: "Due today", overdue: "Overdue" },
       week: {
         contacted: "Contacted Leads",
         qualityJudged: "Quality Judged",
@@ -2139,7 +2151,7 @@ export const translations = {
         missing_intake_data: "A required field is empty. Fill it in on the lead, or release it with a reason.",
         review_phone: "The number cannot be read or looks wrong. Correct it on the lead or confirm it.",
         duplicate_review: "An older lead looks like the same customer. Decide what to do.",
-        unassigned: "Complete and clean, but nobody owns it yet. Assign it on the lead.",
+        unassigned: "Complete and clean, but nobody owns it yet. Pick a salesperson below and assign it.",
         delivered: "Complete, checked and owned. Nothing to do.",
         duplicate_not_dispatched: "Decided as a duplicate or invalid. It is not worked as a new lead.",
         excluded_test: "A test record. It is left out of dispatch.",
@@ -2175,6 +2187,8 @@ export const translations = {
         notChecked: "Not checked yet",
         openWorkbench: "Open dispatch",
       },
+      // S35: assign an unassigned lead straight from the queue
+      assign: { label: "Assign to", pick: "Choose a salesperson", button: "Assign", done: "Lead assigned" },
     },
     // ── S37 老板数字可信 (2026-11-22) — separate block at the end ──
     s37: {
@@ -2244,6 +2258,9 @@ export const translations = {
         assignedToYouBody: "线索「{name}」已分配给你",
         waitingBody: "线索「{name}」等待分配",
         createdBody: "新建线索「{name}」",
+        // S35 广告线索超时未联系提醒
+        uncontactedTitle: "线索尚未联系：{name}",
+        uncontactedBody: "线索「{name}」已超过 1 小时没有首次联系",
       },
       validation: {
         nameRequired: "请填写客户姓名（至少 2 个字）",
@@ -2408,6 +2425,12 @@ export const translations = {
       mgmtTeam: "团队",
       mgmtProjects: "项目管理",
       mgmtSettings: "设置",
+      // S35 已有页面补上菜单入口
+      mgmtDispatch: "派单",
+      mgmtOpportunities: "商机",
+      mgmtVisits: "拜访",
+      salesOpportunities: "商机",
+      salesVisits: "拜访",
       // Sales nav items
       salesWorkbench: "工作台",
       salesDashboard: "我的工作台",
@@ -3347,6 +3370,7 @@ export const translations = {
       contactMethodPhone: "电话",
       selectContactMethod: "-- 请选择 --",
       contactTime: "联系时间",
+      contactTimeInvalid: "联系时间无效",
       contactResult: "联系结果",
       contactResultPlaceholder: "如：客户有兴趣、无人接听...",
       contactNotes: "备注",
@@ -4134,6 +4158,8 @@ export const translations = {
         progress: "暂无线索",
         tomorrow: "暂无明日任务",
       },
+      // S35: inbox 分组标签
+      group: { new: "新线索", due_today: "今天跟进", overdue: "已逾期" },
       week: {
         contacted: "已联系线索",
         qualityJudged: "已判质量",
@@ -4348,7 +4374,7 @@ export const translations = {
         missing_intake_data: "必填项为空。请在线索里补全，或写明理由后放行。",
         review_phone: "号码无法识别或看起来不对。请在线索里改正，或确认无误。",
         duplicate_review: "有一条更早的线索像是同一位客户。请决定如何处理。",
-        unassigned: "资料完整无误，但还没有负责人。请在线索里分配。",
+        unassigned: "资料完整无误，但还没有负责人。请在下面选一位销售直接分配。",
         delivered: "资料完整、已核对、已有负责人，无需处理。",
         duplicate_not_dispatched: "已判定为重复或无效，不再当作新线索跟进。",
         excluded_test: "测试记录，不参与派发。",
@@ -4384,6 +4410,8 @@ export const translations = {
         notChecked: "尚未检查",
         openWorkbench: "打开派发工作台",
       },
+      // S35: 在派单队列里直接分配未分配的线索
+      assign: { label: "分配给", pick: "选择销售", button: "分配", done: "线索已分配" },
     },
     // ── S37 老板数字可信 (2026-11-22) — 独立区块，放在末尾 ──
     s37: {

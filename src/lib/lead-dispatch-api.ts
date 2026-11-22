@@ -70,7 +70,7 @@ export function invalid(errors: Record<string, string>): never {
 }
 
 /** Only these lead columns reach the workbench: no free-text notes, no raw import data. */
-export const LEAD_COLUMNS = "id, customer_name, phone, email, source, source_channel, assigned_to, created_at, archived";
+export const LEAD_COLUMNS = "id, customer_name, phone, email, source, source_channel, assigned_to, created_at, updated_at, archived";
 type LeadRow = { id: string } & Record<string, unknown>;
 
 export async function loadLeads(ids: string[]): Promise<Map<string, LeadRow>> {

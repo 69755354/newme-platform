@@ -13,6 +13,7 @@ import {
 } from "../src/lib/meta-lead-ads.mjs";
 import { enqueueMetaCrmStageEvent } from "../src/lib/meta-crm-events.ts";
 import { lookupTestForm } from "../src/lib/meta-lead-test-isolation.mjs";
+import { notifyNewLeadSafe } from "../src/lib/lead-intake-notify.mjs";
 
 const MAX_PAGES = 500; // safety stop only; reaching it with pages left is a failure, never a silent truncation
 
@@ -112,6 +113,11 @@ export async function pullMetaLeads(db, fetchImpl, { version, token, pageIds, si
       if (result.outcome === "isolated") { summary.isolated++; continue; }
       if (!result.id) throw new Error("lead_id_unavailable");
       await queueLead(result.id, row);
+      // S35: a lead the webhook missed is still a new arrival if it is recent; old ones are history (24h cap in the helper).
+      if (result.outcome === "inserted") {
+        const note = await notifyNewLeadSafe(db, { id: result.id, customer_name: row.customer_name, assigned_to: null, created_at: row.created_at }, { now: nowMs });
+        if (note.reason === "error") summary.notify_failed = (summary.notify_failed ?? 0) + 1;
+      }
       summary[result.outcome]++;
     } catch { summary.failed++; }
   }

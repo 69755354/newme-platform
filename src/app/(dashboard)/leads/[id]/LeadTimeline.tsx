@@ -26,6 +26,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { MILESTONE_DESCRIPTIONS } from "@/lib/milestones";
+import { dubaiInputToIso, dubaiInputValue } from "@/lib/dubai-time.mjs";
 import type {
   Activity,
   BusinessEvent,
@@ -89,7 +90,7 @@ export default function LeadTimeline({
     setEditingContactId(log.id);
     setEditContact({
       contact_method: log.contact_type || "other",
-      contact_time: new Date(log.contact_time || log.created_at).toISOString().slice(0, 16),
+      contact_time: dubaiInputValue(log.contact_time || log.created_at),
       contact_result: log.contact_result || "",
       summary: log.summary || "",
     });
@@ -100,6 +101,13 @@ export default function LeadTimeline({
     if (!editingContactId || contactSaving) return;
     setContactSaving(true);
     setContactError(null);
+    // S35 F05: the edit field is Dubai time; an unreadable value must not be saved as "now" or shifted by the browser zone.
+    const contactTimeIso = dubaiInputToIso(editContact.contact_time);
+    if (!contactTimeIso) {
+      setContactError(lang === "zh" ? "联系时间无效" : "Invalid contact time");
+      setContactSaving(false);
+      return;
+    }
     try {
       const response = await fetch(
         `/api/leads/${leadId}/contacts/${editingContactId}`,
@@ -108,7 +116,7 @@ export default function LeadTimeline({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...editContact,
-            contact_time: new Date(editContact.contact_time).toISOString(),
+            contact_time: contactTimeIso,
           }),
         },
       );
@@ -348,7 +356,7 @@ export default function LeadTimeline({
                       <input
                         type="datetime-local"
                         value={editContact.contact_time}
-                        max={new Date().toISOString().slice(0, 16)}
+                        max={dubaiInputValue()}
                         onChange={(event) => setEditContact((value) => ({ ...value, contact_time: event.target.value }))}
                         className="h-8 rounded border border-border bg-muted px-2 text-xs"
                       />

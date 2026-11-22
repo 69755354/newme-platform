@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn, fmtDubai } from "@/lib/utils";
+import { dubaiInputToIso, dubaiInputValue } from "@/lib/dubai-time.mjs";
 import {
   CheckCircle,
   AlertTriangle,
@@ -117,7 +118,8 @@ export default function LeadSalesProcess({
 }: Props) {
   // ── Inline workspace state for first_contact milestone ──
   const [contactMethod, setContactMethod] = useState("");
-  const [contactTime, setContactTime] = useState(new Date().toISOString().slice(0, 16));
+  // S35 F05: the field is Dubai time (never the UTC clock, never the browser zone).
+  const [contactTime, setContactTime] = useState(() => dubaiInputValue());
   const [contactResult, setContactResult] = useState("");
   const [contactNotes, setContactNotes] = useState("");
   const [contactFormOpen, setContactFormOpen] = useState(false);
@@ -453,9 +455,14 @@ export default function LeadSalesProcess({
                         setContactSaveError(null);
                         setContactSubmitting(true);
                         try {
+                          const contactTimeIso = dubaiInputToIso(contactTime);
+                          if (!contactTimeIso) {
+                            setContactSaveError(t("leadDetail.contactTimeInvalid"));
+                            return;
+                          }
                           const result = await onAddStructuredContact({
                             contact_method: contactMethod,
-                            contact_time: new Date(contactTime).toISOString(),
+                            contact_time: contactTimeIso,
                             contact_result: contactResult.trim(),
                             summary: contactNotes.trim() || undefined,
                           });
@@ -466,7 +473,7 @@ export default function LeadSalesProcess({
                           }
                           // Reset form
                           setContactMethod("");
-                          setContactTime(new Date().toISOString().slice(0, 16));
+                          setContactTime(dubaiInputValue());
                           setContactResult("");
                           setContactNotes("");
                           setContactFormOpen(false);
@@ -531,7 +538,7 @@ export default function LeadSalesProcess({
                         {/* ── Add Structured Contact Record ── */}
                         {!contactFormOpen ? (
                           <button
-                            onClick={() => setContactFormOpen(true)}
+                            onClick={() => { setContactTime(dubaiInputValue()); setContactFormOpen(true); }}
                             className="flex items-center gap-1.5 text-[10px] text-copper-400 hover:text-copper-300 transition-colors w-full py-1"
                           >
                             <Plus className="h-3 w-3" />
@@ -565,7 +572,7 @@ export default function LeadSalesProcess({
                               <input
                                 type="datetime-local"
                                 value={contactTime}
-                                max={new Date().toISOString().slice(0, 16)}
+                                max={dubaiInputValue()}
                                 onChange={(e) => setContactTime(e.target.value)}
                                 disabled={contactSubmitting}
                                 className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"

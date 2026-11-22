@@ -42,6 +42,9 @@ import {
   BarChart3,
   Settings,
   Cable,
+  Send,
+  Target,
+  MapPin,
 } from "lucide-react";
 
 export interface NavItem {
@@ -56,6 +59,9 @@ export interface NavItem {
 export const MGMT_NAV: NavItem[] = [
   { href: "/dashboard", labelKey: "mgmtDashboard", icon: LayoutDashboard },
   { href: "/leads",     labelKey: "mgmtLeads", icon: Users },
+  // S35: the dispatch queue (assign new leads, review duplicates). proxy.ts and the page admit exactly admin, boss and
+  // operator, which is every role holding this array, so no `roles` narrowing is needed.
+  { href: "/dispatch",  labelKey: "mgmtDispatch", icon: Send },
   // operator reads every quotation and converts quotes to contracts (S2 option A),
   // and src/app/(dashboard)/quotes/page.tsx admits it, so the link is shown.
   { href: "/quotes",    labelKey: "mgmtQuotes", icon: Calculator },
@@ -67,6 +73,9 @@ export const MGMT_NAV: NavItem[] = [
   { href: "/cable-costing", labelKey: "cableCosting", icon: Cable },
   { href: "/contracts", labelKey: "mgmtContracts", icon: FileText },
   { href: "/pipeline",  labelKey: "mgmtPipeline", icon: Funnel },
+  // S35: opportunities and visits exist and are open to admin, boss, operator and sales (proxy.ts + page guards).
+  { href: "/opportunities", labelKey: "mgmtOpportunities", icon: Target },
+  { href: "/visits",    labelKey: "mgmtVisits", icon: MapPin },
   { href: "/analytics", labelKey: "mgmtAnalytics", icon: BarChart3 },
   { href: "/ads",       labelKey: "mgmtAds", icon: Megaphone },
   { href: "/products",  labelKey: "mgmtProducts", icon: Package },
@@ -82,6 +91,8 @@ export const MGMT_NAV: NavItem[] = [
 export const SALES_NAV: NavItem[] = [
   { href: "/workbench", labelKey: "salesWorkbench", icon: Briefcase },
   { href: "/leads",     labelKey: "salesLeads", icon: Users },
+  { href: "/opportunities", labelKey: "salesOpportunities", icon: Target },
+  { href: "/visits",    labelKey: "salesVisits", icon: MapPin },
   { href: "/quotes",    labelKey: "salesQuotes", icon: Calculator },
   { href: "/cable-costing", labelKey: "cableCosting", icon: Cable },
   { href: "/contracts", labelKey: "salesContracts", icon: FileText },

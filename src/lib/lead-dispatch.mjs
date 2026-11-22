@@ -102,3 +102,24 @@ export function mapDbError(error) {
   }
   return { status: 500, code: "internal" };
 }
+
+/**
+ * S35: can the dispatch queue hand this row to a salesperson right now? Only a lead that nobody owns, in the "unassigned"
+ * state (complete and clean). Leads still under duplicate review or missing data are fixed first, not assigned.
+ */
+export function canAssignFromQueue(row) {
+  return row?.status === "unassigned" && Boolean(row?.lead) && !row.lead.assigned_to;
+}
+
+/**
+ * S35: the request that assigns a queue row to a salesperson. It is the ordinary reassignment API
+ * (POST /api/leads/:id/assignment): the same role check (admin, boss, operator), the same compare-and-set on the lead's
+ * updated_at, the same bell notification to the new owner. The queue adds nothing of its own.
+ */
+export function buildQueueAssignRequest(row, assigneeId, idempotencyKey) {
+  if (!canAssignFromQueue(row) || !isUuid(assigneeId) || !isUuid(idempotencyKey)) return null;
+  return {
+    url: `/api/leads/${row.lead_id}/assignment`,
+    body: { assignedTo: assigneeId, expectedUpdatedAt: row.lead.updated_at ?? null, idempotencyKey, reason: "dispatch_queue_assign" },
+  };
+}

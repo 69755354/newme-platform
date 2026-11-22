@@ -28,6 +28,7 @@ import { fmtAED } from "@/shared/utils/format";
 import type { ContractListResponse, ContractListRow } from "@/types/contracts";
 import { contractActionPermissions } from "@/lib/contract-action-permissions.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 type Contract = ContractListRow;
 
@@ -89,7 +90,7 @@ export default function ContractsPage() {
   const getFirstPaymentBadge = (c: Contract) => {
     const status = c.first_payment_status;
     const dueDate = c.first_payment_due_date;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiDateKey() ?? new Date().toISOString().slice(0, 10);
 
     if (status === "paid") {
       return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: `✓ ${t("contracts.firstPaymentPaid")}`, icon: <CheckCircle className="w-3 h-3" /> };

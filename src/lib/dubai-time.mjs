@@ -196,3 +196,27 @@ export function inWeek(value, weekEntry) {
   const key = typeof value === "string" && DATE_KEY.test(value) ? value : dubaiDateKey(value);
   return key !== null && key >= weekEntry.startKey && key <= weekEntry.endKey;
 }
+
+// ── <input type="datetime-local"> in Dubai time (S35 F05) ───────────────────────────────────────────────────────────
+// A datetime-local value ("2026-11-22T00:31") carries no zone. The sales form used to fill it from the UTC clock
+// (`toISOString().slice(0, 16)`) and turn it back with `new Date(value)`, which reads it in the BROWSER's zone: a contact
+// logged at 00:31 Dubai showed 20:31 and was stored 4 hours early, and the `max` (also UTC) blocked the real "now".
+// These two functions are the only conversion: the field always shows and means Dubai wall-clock time.
+
+/** "YYYY-MM-DDTHH:mm" of `value` (default: now) on the Dubai wall clock, or "" for an invalid value. */
+export function dubaiInputValue(value = new Date()) {
+  const instant = toInstant(value);
+  if (Number.isNaN(instant.getTime())) return "";
+  return new Date(instant.getTime() + DUBAI_OFFSET_MS).toISOString().slice(0, 16);
+}
+
+/** A datetime-local value read as Dubai time, to an ISO instant (UTC). null when it is not a valid "YYYY-MM-DDTHH:mm". */
+export function dubaiInputToIso(value) {
+  const match = typeof value === "string" ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value) : null;
+  if (!match) return null;
+  const [, y, mo, d, h, mi, s] = match.map(Number);
+  const ms = Date.UTC(y, mo - 1, d, h, mi, s || 0) - DUBAI_OFFSET_MS;
+  const probe = new Date(ms + DUBAI_OFFSET_MS); // reject 2026-02-31 and 25:00, which Date.UTC silently rolls over
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== mo - 1 || probe.getUTCDate() !== d || probe.getUTCHours() !== h || probe.getUTCMinutes() !== mi) return null;
+  return new Date(ms).toISOString();
+}

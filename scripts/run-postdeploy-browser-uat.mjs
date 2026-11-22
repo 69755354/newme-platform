@@ -639,13 +639,14 @@ function semanticAssertion(id, value) {
  * sidebar entry breaks CI rather than a production acceptance run.
  */
 export const CANONICAL_NAV_BY_ROLE = Object.freeze({
+  // S35: /dispatch (admin, boss, operator) and /opportunities + /visits (admin, boss, operator, sales) joined the sidebar.
   admin: Object.freeze([
-    "/dashboard", "/leads", "/quotes", "/cable-costing", "/contracts",
-    "/pipeline", "/analytics", "/ads", "/products", "/team", "/projects", "/settings",
+    "/dashboard", "/leads", "/dispatch", "/quotes", "/cable-costing", "/contracts",
+    "/pipeline", "/opportunities", "/visits", "/analytics", "/ads", "/products", "/team", "/projects", "/settings",
   ]),
   boss: Object.freeze([
-    "/dashboard", "/leads", "/quotes", "/cable-costing", "/contracts",
-    "/pipeline", "/analytics", "/ads", "/products", "/team", "/projects", "/settings",
+    "/dashboard", "/leads", "/dispatch", "/quotes", "/cable-costing", "/contracts",
+    "/pipeline", "/opportunities", "/visits", "/analytics", "/ads", "/products", "/team", "/projects", "/settings",
   ]),
   // No /team: src/app/actions/team.ts refuses operator, so the sidebar does not
   // offer the link. Keyed per role rather than "sales vs everyone else" because
@@ -653,11 +654,11 @@ export const CANONICAL_NAV_BY_ROLE = Object.freeze({
   // /quotes is shown: the page admits operator, who converts quotes to
   // contracts (OS fix S2, option A).
   operator: Object.freeze([
-    "/dashboard", "/leads", "/quotes", "/cable-costing", "/contracts",
-    "/pipeline", "/analytics", "/ads", "/products", "/projects", "/settings",
+    "/dashboard", "/leads", "/dispatch", "/quotes", "/cable-costing", "/contracts",
+    "/pipeline", "/opportunities", "/visits", "/analytics", "/ads", "/products", "/projects", "/settings",
   ]),
   sales: Object.freeze([
-    "/workbench", "/leads", "/quotes", "/cable-costing", "/contracts",
+    "/workbench", "/leads", "/opportunities", "/visits", "/quotes", "/cable-costing", "/contracts",
     "/payments", "/pipeline", "/analytics", "/products",
   ]),
 });

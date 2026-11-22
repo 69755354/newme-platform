@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
 import { logger } from "@/lib/logger";
 import { leadgenFailureReason } from "@/lib/meta-leadgen-failure.mjs";
+import { notifyNewLeadSafe } from "@/lib/lead-intake-notify.mjs";
 import {
   MAX_LEADGEN_WEBHOOK_BYTES, extractLeadgenNotifications, fetchMetaLead, isCrmEventDeliverable, mapMetaLeadToRow,
   resolvePageAccessToken, storeMetaLead, verifyMetaSignature,
@@ -92,6 +93,21 @@ export async function POST(request: Request) {
       if (isCrmEventDeliverable(eventTime)) {
         const queued = await enqueueMetaCrmStageEvent(supabaseAdmin, { id: stored.id, meta_leadgen_id: row.meta_leadgen_id }, "new", eventTime);
         if (queued !== "queued") throw new Error("lead_event_not_queued");
+      }
+      // S35: tell the dispatchers at once. Same event key on every retry, so a re-delivery repairs a lost
+      // notification without sending a second one. A failed ping never fails the intake (lead is stored).
+      // A re-delivery for a lead somebody already owns is skipped: assignment notified the owner (read failure = skip too).
+      let ownerless = true;
+      if (stored.outcome === "duplicate") {
+        try {
+          const current = await supabaseAdmin.from("leads").select("assigned_to").eq("id", stored.id).maybeSingle();
+          ownerless = !current.error && !current.data?.assigned_to;
+        } catch { ownerless = false; }
+      }
+      if (stored.outcome === "inserted" || (stored.outcome === "duplicate" && ownerless)) {
+        await notifyNewLeadSafe(supabaseAdmin, { id: stored.id, customer_name: row.customer_name, assigned_to: null, created_at: row.created_at }, {
+          onError: (code) => logger.error({ operation: "meta_leadgen_webhook", code }, "meta leadgen new-lead notification failed"),
+        });
       }
       counts[stored.outcome as keyof typeof counts] += 1;
     } catch (error) {

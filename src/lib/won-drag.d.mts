@@ -1,6 +1,6 @@
 export function leadHasWonAmount(lead: object | null | undefined): boolean;
 export function submitWonFromDrag(
-  fetchImpl: (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; json: () => Promise<any> }>,
+  fetchImpl: (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; json: () => Promise<unknown> }>,
   leadId: string,
   input: { note: string; amount?: string; idempotencyKey: string },
 ): Promise<

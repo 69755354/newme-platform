@@ -89,7 +89,10 @@ async function post(body, { lead = { stage: "new", contacts: [] }, role = "admin
     "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: record("form") },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: record("whatsapp"), enqueueWebsiteQuoteForProgress: record("website") },
   });
-  const env = { NEXT_PUBLIC_SUPABASE_URL: "https://example.invalid", SUPABASE_SERVICE_ROLE_KEY: "test-only" };
+  const env = {
+    NEXT_PUBLIC_SUPABASE_URL: "https://example.invalid",
+    SUPABASE_SERVICE_ROLE_KEY: "test-only",
+  };
   const previous = Object.fromEntries(Object.keys(env).map((n) => [n, process.env[n]]));
   Object.assign(process.env, env);
   try {

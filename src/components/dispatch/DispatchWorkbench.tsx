@@ -7,9 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ATTENTION_STATUSES, DISPATCH_STATUSES, DUPLICATE_DECISIONS, buildQueueAssignRequest, canAssignFromQueue } from "@/lib/lead-dispatch.mjs";
-import { filterLeadTransferCandidateQuery } from "@/lib/lead-transfer-candidates.mjs";
 import { reassignFailureKey } from "@/lib/lead-reassign-feedback.mjs";
-import { createClient } from "@/lib/supabase";
 import { buttonClass, callApi, errorText, inputClass, STATUS_TONE, textareaClass, type Translate } from "./shared";
 
 interface LeadFacts { id: string; customer_name: string | null; phone: string | null; email: string | null; source: string | null; source_channel: string | null; assigned_to: string | null; created_at: string | null; updated_at?: string | null }
@@ -57,12 +55,11 @@ export default function DispatchWorkbench({ t }: { t: Translate }) {
   const [pick, setPick] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
-    const query = createClient().from("profiles").select("id,full_name,email,role,is_active");
-    const filtered = filterLeadTransferCandidateQuery(query as never, { hideSystemAccounts: true }) as typeof query;
-    filtered.then(({ data }) => {
-      if (cancelled || !data) return;
-      setReps(data.map((p) => ({ id: p.id, name: p.full_name || p.email || p.id })).sort((a, b) => a.name.localeCompare(b.name)));
-    });
+    (async () => {
+      const result = await callApi<{ data?: Array<{ id: string; full_name: string | null; email: string | null }> }>("/api/dispatch/reps");
+      if (cancelled || !result.ok || !result.body.data) return;
+      setReps(result.body.data.map((p) => ({ id: p.id, name: p.full_name || p.email || p.id })).sort((a, b) => a.name.localeCompare(b.name)));
+    })();
     return () => { cancelled = true; };
   }, []);
 

@@ -59,7 +59,11 @@ async function generate(lead, total = 1050) {
     "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: record("form") },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: record("whatsapp"), enqueueWebsiteQuoteForProgress: record("website") },
   });
-  const env = { NEXT_PUBLIC_SUPABASE_URL: "https://example.invalid", NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-only", SUPABASE_SERVICE_ROLE_KEY: "test-only" };
+  const env = {
+    NEXT_PUBLIC_SUPABASE_URL: "https://example.invalid",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-only",
+    SUPABASE_SERVICE_ROLE_KEY: "test-only",
+  };
   const previous = Object.fromEntries(Object.keys(env).map((n) => [n, process.env[n]]));
   Object.assign(process.env, env);
   try {

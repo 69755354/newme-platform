@@ -8,6 +8,7 @@ import QuickCreateLeadDialog from "@/components/QuickCreateLeadDialog";
 import { LEAD_CREATE_ROLES, LEAD_IMPORT_ROLES } from "@/lib/lead-create-roles.mjs";
 import ExcelImportDialog from "@/components/leads/ExcelImportDialog";
 import { usePipelineDragDrop } from "@/shared/hooks/usePipelineDragDrop";
+import { WonDropDialog } from "@/shared/kanban/WonDropDialog";
 import { useStageGuard } from "@/shared/hooks/useStageGuard";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { useLeadsData } from "./_hooks/useLeadsData";
@@ -142,7 +143,7 @@ function LeadsContent() {
   // ─── Infrastructure hooks ───
   const showEmptyStages = true;
   const { isValidTransition, getValidTransitions } = useStageGuard();
-  const { onDragStart, onDragOver, onDragLeave, onDragEnter, onDrop, draggingLeadId, draggingOverStage } = usePipelineDragDrop(leads, setLeads, currentUserId);
+  const { onDragStart, onDragOver, onDragLeave, onDragEnter, onDrop, draggingLeadId, draggingOverStage, wonPrompt, wonSaving, confirmWon, cancelWon } = usePipelineDragDrop(leads, setLeads, currentUserId);
 
   const toggleSelect = (id: string) => {
     setSelectedLeadIds(prev => {
@@ -342,6 +343,7 @@ function LeadsContent() {
           t={t}
         />
       )}
+      <WonDropDialog prompt={wonPrompt} saving={wonSaving} onConfirm={confirmWon} onCancel={cancelWon} />
       {/* T3-3 step 10: bulk-transfer-bar sticky extracted to LeadsBulkTransferBar.
           Visibility gate (selectedCount > 0 AND role admin/boss) is now inside
           the component, matching the original conditional. All handlers

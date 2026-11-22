@@ -60,7 +60,7 @@ function makeWorld(lead) {
       const chain = { table, ops: [] };
       const result = () => {
         if (table === "quotations") return { data: { id: QUOTE_ID, quote_no: "NM-2026-0042" }, error: null };
-        if (table === "leads" && chain.ops.some(([op]) => op === "select")) return { data: { id: LEAD_ID, customer_name: "Quote Test" }, error: null };
+        if (table === "leads" && chain.ops.some(([op]) => op === "select")) return { data: { id: LEAD_ID, customer_name: "Quote Test", stage: state.stage, final_status: lead.final_status ?? null, archived: lead.archived ?? false }, error: null };
         if (table === "leads" && chain.ops.some(([op]) => op === "update")) {
           const patch = chain.ops.find(([op]) => op === "update")[1];
           if (patch.stage !== undefined) {
@@ -116,6 +116,7 @@ function makeWorld(lead) {
 const quotationRules = await import("../../src/lib/quotation-rules.mjs");
 const stageAdvance = await import("../../src/lib/milestone-stage-advance.mjs");
 const firstContactGate = await import("../../src/lib/first-contact-gate.mjs");
+const quoteFeedback = await import("../../src/lib/quote-feedback.mjs");
 
 async function generate(lead) {
   const world = makeWorld(lead);
@@ -141,6 +142,7 @@ async function generate(lead) {
     "@/lib/quotation-labour-basis.mjs": { formatInstallLabourNote: () => "" },
     "@/lib/milestone-stage-advance.mjs": stageAdvance,
     "@/lib/first-contact-gate.mjs": firstContactGate,
+    "@/lib/quote-feedback.mjs": quoteFeedback,
     "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: record("form") },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: record("whatsapp"), enqueueWebsiteQuoteForProgress: record("website") },
   });
@@ -192,7 +194,8 @@ test("a lead the first-contact gate holds back still gets its quotation, stays p
   assert.equal(state.stage, "new");
   assert.equal(response.body.stage_advanced, false);
   assert.equal(response.body.stage_advance_reason, "first_contact_gate");
-  assert.deepEqual(metaFeedback, [], "no Meta quote feedback while the lead has not reached quotation_submitted");
+  // S36: the quote amount goes to Meta whenever a quotation is saved, even while the stage is held back.
+  assert.deepEqual(metaFeedback, ["form:quotation_submitted", "whatsapp:quotation_submitted", "website:quotation_submitted"]);
   assert.deepEqual(noErrors(logs), []);
   assert.ok(logs.some(([level]) => level === "info"), "recorded at info level");
 });
@@ -200,7 +203,10 @@ test("a lead the first-contact gate holds back still gets its quotation, stays p
 test("a lead already past quotation_submitted (or finished) is left alone without a backwards write or an error", async () => {
   for (const [stage, final_status] of [["quotation_submitted", null], ["negotiation", null], ["pending_decision", null], ["won", "won"], ["lost", "lost"]]) {
     const { response, state, logs, metaFeedback } = await generate({ stage, final_status, ...READY });
-    assert.deepEqual(metaFeedback, [], stage);
+    // S36: feedback is queued for every saved quotation of an open lead (each queue dedupes per lead); a won / lost lead
+    // is final, so a late quotation must not report Quoted to Meta again.
+    const final = final_status !== null;
+    assert.deepEqual(metaFeedback, final ? [] : ["form:quotation_submitted", "whatsapp:quotation_submitted", "website:quotation_submitted"], stage);
     assert.equal(response.status, 200, stage);
     assert.deepEqual(state.adminStageWrites, [], stage);
     assert.deepEqual(state.rpcCalls, [], stage);
@@ -208,6 +214,12 @@ test("a lead already past quotation_submitted (or finished) is left alone withou
     assert.deepEqual(noErrors(logs), [], stage);
     assert.equal(response.body.stage_advanced, false, stage);
   }
+});
+
+test("an archived lead gets its quotation but no Quoted feedback", async () => {
+  const { response, metaFeedback } = await generate({ stage: "negotiation", archived: true, ...READY });
+  assert.equal(response.status, 200);
+  assert.deepEqual(metaFeedback, []);
 });
 
 test("a lead in the stage right before quotation_submitted moves one step", async () => {

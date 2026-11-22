@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { realpathSync as realpathOf } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { activeContractAmount } from "../src/lib/whatsapp-capi.mjs";
+import { wonAmountForLead } from "../src/lib/won-amount.mjs";
 import { latestQuotationAmount } from "../src/lib/quote-amount.mjs";
 import { buildMetaCrmPayload, hashedContactKeys, normalizeLeadgenId, sendMetaCrmPayload } from "../src/lib/meta-crm-events.ts";
 import { META_CRM_EVENT_MAX_AGE_SECONDS } from "../src/lib/meta-lead-ads.mjs";
@@ -26,8 +26,8 @@ async function enrichment(db, row, env) {
   const extra = {};
   try {
     if ((row.event_name === "Won" || row.event_name === "Quoted") && row.lead_id) {
-      // Quoted reports the quoted amount (main signal); Won the signed contract amount.
-      const amount = row.event_name === "Won" ? await activeContractAmount(db, row.lead_id) : await latestQuotationAmount(db, row.lead_id);
+      // Quoted reports the quoted amount (main signal); Won the contract amount, else the amount the lead was won with.
+      const amount = row.event_name === "Won" ? await wonAmountForLead(db, row.lead_id) : await latestQuotationAmount(db, row.lead_id);
       if (amount) { extra.value = amount.value; extra.currency = amount.currency; }
     }
     if (env.META_CRM_SEND_HASHED_CONTACT === "true" && row.lead_id) {

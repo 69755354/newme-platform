@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase";
 import { toast } from "sonner";
 import { PIPELINE_STAGES, TERMINAL_STAGES } from "@/shared/kanban/types";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { leadHasWonAmount, submitWonFromDrag } from "@/lib/won-drag.mjs";
 
 // ─── Types ───
 interface LeadBase {
@@ -22,6 +23,19 @@ interface UsePipelineDragDropReturn {
   onDrop: (e: React.DragEvent, targetStage: string) => Promise<void>;
   draggingLeadId: string | null;
   draggingOverStage: string | null;
+  /** Set while a lead dropped on Won waits for its note (and amount); render it with WonDropDialog. */
+  wonPrompt: WonPrompt | null;
+  wonSaving: boolean;
+  confirmWon: (note: string, amount: string) => Promise<void>;
+  cancelWon: () => void;
+}
+
+export interface WonPrompt {
+  leadId: string;
+  name: string;
+  /** The lead has no amount yet (or the server asked for one): the dialog shows the amount field. */
+  needsAmount: boolean;
+  error: string | null;
 }
 
 const STAGE_INDEX: Record<string, number> = {};
@@ -39,6 +53,8 @@ export function usePipelineDragDrop<T extends LeadBase>(
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null);
   const [draggingOverStage, setDraggingOverStage] = useState<string | null>(null);
   const dragCounter = useRef<Record<string, number>>({});
+  const [wonPrompt, setWonPrompt] = useState<WonPrompt | null>(null);
+  const [wonSaving, setWonSaving] = useState(false);
 
   // ─── Drag Start ───
   const onDragStart = useCallback((e: React.DragEvent, leadId: string) => {
@@ -93,6 +109,18 @@ export function usePipelineDragDrop<T extends LeadBase>(
     // Terminal leads can't be moved (won/lost in final_status)
     if (lead.final_status === "won" || lead.final_status === "lost") {
       toast.error(lang === "zh" ? "无法移动已关闭的客户" : "Cannot move closed leads");
+      return;
+    }
+
+    // Won is never written from the browser: it goes through the same server route as the lead page (amount required,
+    // audited stage change, Won / Purchase events queued). The drop opens the note + amount dialog; confirmWon sends it.
+    if (targetStage === "won") {
+      setWonPrompt({
+        leadId,
+        name: String(lead.customer_name ?? lead.name ?? ""),
+        needsAmount: !leadHasWonAmount(lead),
+        error: null,
+      });
       return;
     }
 
@@ -152,6 +180,34 @@ export function usePipelineDragDrop<T extends LeadBase>(
     toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === targetStage)?.label || targetStage}`);
   }, [leads, setLeads, currentUserId, lang]);
 
+  // ─── Won (through the server route) ───
+  const confirmWon = useCallback(async (note: string, amount: string) => {
+    if (!wonPrompt || wonSaving) return;
+    const { leadId } = wonPrompt;
+    setWonSaving(true);
+    try {
+      const result = await submitWonFromDrag(fetch, leadId, { note, amount, idempotencyKey: crypto.randomUUID() });
+      if (!result.ok) {
+        const message = lang === "zh" ? result.error_zh : result.error;
+        setWonPrompt(prev => prev && { ...prev, needsAmount: prev.needsAmount || result.needsAmount, error: message });
+        return;
+      }
+      const typed = Number(amount.replace(/,/g, "").trim());
+      setLeads(prev => prev.map(l => l.id === leadId ? {
+        ...l,
+        stage: result.lead?.stage ?? "won",
+        final_status: "won",
+        ...(!leadHasWonAmount(l) && typed > 0 ? { quotation_value: typed } : {}),
+      } : l));
+      setWonPrompt(null);
+      toast.success(`${lang === "zh" ? "已移动到" : "Moved to"} ${PIPELINE_STAGES.find(s => s.key === "won")?.label || "won"}`);
+    } finally {
+      setWonSaving(false);
+    }
+  }, [wonPrompt, wonSaving, setLeads, lang]);
+
+  const cancelWon = useCallback(() => { if (!wonSaving) setWonPrompt(null); }, [wonSaving]);
+
   return {
     onDragStart,
     onDragOver,
@@ -160,5 +216,9 @@ export function usePipelineDragDrop<T extends LeadBase>(
     onDrop,
     draggingLeadId,
     draggingOverStage,
+    wonPrompt,
+    wonSaving,
+    confirmWon,
+    cancelWon,
   };
 }

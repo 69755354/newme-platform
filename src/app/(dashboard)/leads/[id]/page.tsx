@@ -22,6 +22,7 @@ import { cn, fmtDubai } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
+import QuickQuoteDialog from "@/app/(dashboard)/quotes/quick-quote-dialog";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
@@ -240,6 +241,7 @@ export default function LeadDetailPage() {
   const [noteText, setNoteText] = useState("");
   const [openPanel, setOpenPanel] = useState<string | null>(null);
   const [showQuoteCalculator, setShowQuoteCalculator] = useState(false);
+  const [showQuickQuote, setShowQuickQuote] = useState(false);
 
   // LeadTimeline expects `onAddNote: () => void`. The hook accepts noteText as
   // a callback argument; we close over `noteText` here so the LeadTimeline call
@@ -630,6 +632,7 @@ export default function LeadDetailPage() {
             onWon={handleWon}
             onLost={handleLost}
             onOpenQuoteCalculator={openQuoteCalculator}
+            onOpenQuickQuote={() => setShowQuickQuote(true)}
             onCreateContract={handleCreateContract}
             canCreateContract={salesRole === "admin" || salesRole === "boss" || salesRole === "operator" || salesRole === "sales"}
             onGenerateKnx={handleGenerateKnx}
@@ -695,6 +698,12 @@ export default function LeadDetailPage() {
           onSaved={() => { fetchData(); }}
         />
       )}
+      <QuickQuoteDialog
+        open={showQuickQuote}
+        onOpenChange={setShowQuickQuote}
+        leadId={id as string}
+        onSaved={() => { fetchData(); }}
+      />
       {/* T2-4: toast 层级约定 — z-toast z-50
           sonner Toaster 已固定 z-50，作为最高优先级反馈层，
           覆盖 page-title / modal / dropdown。 */}

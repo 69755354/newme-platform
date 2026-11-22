@@ -29,6 +29,7 @@ import QuoteDetailDialog from "./quote-detail-dialog";
 import { fmtAED } from "@/shared/utils/format";
 import { clampDiscountRate, discountRateError } from "@/lib/quotation-rules.mjs";
 import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
+import { saveQuoteViaServer } from "@/lib/quote-save-client";
 
 /* ─── Types ─── */
 interface Lead {
@@ -228,40 +229,33 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       toast.error(t("quotes.invalidAmounts"));
       return;
     }
+    if ((createForm.subtotal || 0) <= 0) {
+      toast.error(lang === "zh" ? "请填写大于 0 的报价金额" : "Enter a quotation amount greater than zero");
+      return;
+    }
     setCreating(true);
     try {
-      const subtotal = createForm.subtotal || 0;
-      const discountRate = createForm.discountRate || 0;
-      const discountAmount = subtotal * (discountRate / 100);
-      const taxRate = createForm.taxRate || 0;
-      const taxableBase = subtotal - discountAmount;
-      const taxAmount = taxableBase * (taxRate / 100);
-      const totalAmount = taxableBase + taxAmount;
-
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const { data: quote, error: err } = await supabase.from("quotations").insert({
+      // The server works out discount, tax and total and gives the quotation the same timeline entry, stage step, lead
+      // amount and Meta feedback as every other quotation; the browser never writes the quotations table itself.
+      const saved = await saveQuoteViaServer({
         lead_id: createForm.leadId,
-        quote_no: "ALLOCATED_BY_DATABASE",
-        version: 1,
-        subtotal, discount_rate: discountRate, discount_amount: discountAmount,
-        tax_rate: taxRate, tax_amount: taxAmount,
-        total_amount: totalAmount,
-        currency: createForm.currency,
-        valid_until: createForm.validUntil || undefined,
-        payment_terms: createForm.paymentTerms || null,
-        delivery_terms: createForm.deliveryTerms || null,
-        notes: createForm.notes || null,
-        status: "draft",
-        created_by: user?.id || undefined,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).select("id, quote_no").single();
-      if (err || !quote?.quote_no) { logFetchFailure("Create quote error:", err); toast.error(t("quotes.createFailed")); return; }
+        manual: {
+          subtotal: createForm.subtotal || 0,
+          discount_rate: createForm.discountRate || 0,
+          tax_rate: createForm.taxRate || 0,
+          currency: createForm.currency,
+          valid_until: createForm.validUntil || undefined,
+          payment_terms: createForm.paymentTerms || undefined,
+          delivery_terms: createForm.deliveryTerms || undefined,
+        },
+        notes: createForm.notes || undefined,
+      }, lang);
+      if (!saved.ok) { logFetchFailure("Create quote error:", new Error(saved.message)); toast.error(saved.message || t("quotes.createFailed")); return; }
       // Notify about new quotation
       void import("@/lib/notify")
-        .then(({ notify }) => notify({ type: "quote_created", quote_id: quote.id, lead_id: createForm.leadId, quote_no: quote.quote_no }))
+        .then(({ notify }) => notify({ type: "quote_created", quote_id: saved.quoteId, lead_id: createForm.leadId, quote_no: saved.quoteNo }))
         .catch((notifyError) => logFetchFailure("quote_notification_failed", notifyError));
+      toast.success(lang === "zh" ? `报价已保存 #${saved.quoteNo}` : `Quotation saved #${saved.quoteNo}`);
       setCreateOpen(false);
       resetCreateForm();
       fetchQuotes();
@@ -408,6 +402,11 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             title={t("quotes.refresh")}>
             <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={openCreateDialog}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-copper-500/40 text-copper-400 rounded-lg hover:bg-copper-500/10 transition-colors">
+            <DollarSign className="w-3.5 h-3.5" />
+            {lang === "zh" ? "只填金额报价" : "Quick quote (amount only)"}
           </button>
           <button onClick={() => setCalculatorOpen(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-copper-500 text-foreground rounded-lg hover:bg-copper-600 transition-colors">
@@ -624,8 +623,8 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) resetCreateForm(); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t("quotes.createQuote")}</DialogTitle>
-            <DialogDescription>{t("quotes.selectLeadAndAmounts")}</DialogDescription>
+            <DialogTitle>{lang === "zh" ? "只填金额报价" : "Quick quote (amount only)"}</DialogTitle>
+            <DialogDescription>{lang === "zh" ? "没有设备清单时，选择客户并填写报价金额即可；系统同样会记入时间线并回传 Meta。" : "No device list needed: pick the customer and enter the amount. It is logged on the timeline and reported to Meta like any other quotation."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>

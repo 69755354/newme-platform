@@ -172,12 +172,12 @@ export async function activeContractAmount(db, leadId) {
   return Number.isFinite(value) && value > 0 ? { value, currency: typeof row.currency === "string" && /^[A-Za-z]{3}$/.test(row.currency) ? row.currency.toUpperCase() : "AED" } : null;
 }
 
-/** Purchase once the lead is committed as won; the value is the active contract's amount. */
+/** Purchase once the lead is committed as won; the value is the active contract's amount, else the amount it was won with (latest quotation / entered at win time). */
 export async function enqueueWhatsAppPurchaseForLead(db, leadId) {
   try {
     const { data: lead, error } = await db.from("leads").select("final_status").eq("id", leadId).maybeSingle();
     if (error || lead?.final_status !== "won") return "skipped";
-    const amount = await activeContractAmount(db, leadId);
+    const amount = (await activeContractAmount(db, leadId)) ?? (await latestQuotationAmount(db, leadId));
     return amount ? await enqueueWhatsAppCapiEvent(db, leadId, "Purchase", amount) : "skipped";
   } catch {
     return "skipped";

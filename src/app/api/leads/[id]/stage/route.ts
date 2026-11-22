@@ -11,6 +11,7 @@ import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
+import { ensureWonAmount } from "@/lib/won-amount.mjs";
 import { enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
 import { enqueueWebsitePurchaseForLead, enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
@@ -51,7 +52,7 @@ export async function PATCH(
 
     const { data: lead, error: leadError } = await supabase
       .from("leads")
-      .select("id, assigned_to, stage, quality")
+      .select("id, assigned_to, stage, quality, quotation_value")
       .eq("id", leadId)
       .single();
 
@@ -87,6 +88,21 @@ export async function PATCH(
       );
     }
 
+    // A deal can only be won with an amount: the active contract's, else the latest quotation's, else the one typed in
+    // the same dialog (body.amount). A typed amount is stored first, so the contract the won trigger creates, the KPIs
+    // and the Won / Purchase events to Meta all carry it. An idempotent replay of an already-won lead has one already.
+    let wroteAmount = false;
+    if (stage === "won") {
+      const won = await ensureWonAmount(supabaseAdmin, leadId, body?.amount);
+      if (!won.ok) {
+        return respond(
+          { error: won.error, error_zh: won.error_zh, code: won.code },
+          { status: won.code === "won_amount_required" ? 409 : 500 },
+        );
+      }
+      wroteAmount = won.wrote;
+    }
+
     const { data: updated, error: updateError } = await supabase.rpc("transition_lead_stage", {
       p_lead_id: leadId,
       p_expected_stage: lead.stage,
@@ -96,6 +112,10 @@ export async function PATCH(
     });
 
     if (updateError || !updated) {
+      // The lead did not become won: take the typed amount back out so nothing half-saved is left behind.
+      if (wroteAmount) {
+        try { await supabaseAdmin.from("leads").update({ quotation_value: lead.quotation_value ?? null }).eq("id", leadId); } catch { /* best effort */ }
+      }
       const message = updateError?.message ?? "Stage update failed";
       const status = message.includes("concurrently") ? 409
         : message.includes("First Contact requirements") ? 409

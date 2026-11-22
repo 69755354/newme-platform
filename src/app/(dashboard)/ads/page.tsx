@@ -14,6 +14,7 @@ import { attributionGroup, buildAdNameMap } from "@/lib/ads-leads.mjs";
 import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { formatAED } from "@/lib/display-format.mjs";
 
 interface Lead {
   id: string; customer_name: string | null;
@@ -48,10 +49,8 @@ interface RoiData {
 
 const WINDOW_OPTIONS = [7, 30, 90, 0] as const; // 0 = all time (leads only; spend follows 90 days)
 
-function fmtAED(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return `AED ${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-}
+// S37: whole dirhams with thousands separators.
+const fmtAED = formatAED;
 
 export default function AdsPage() {
   // operator included: /api/ads/leads answers every non-sales role, and the
@@ -151,12 +150,16 @@ export default function AdsPage() {
   }, [windowedLeads, adNames, viewMode, search]);
 
   const totalStats = useMemo(() => {
-    let total = 0, valid = 0;
-    for (const r of grouped) { total += r.g.total; valid += r.g.valid; }
-    return { total, valid };
+    let total = 0, valid = 0, rated = 0, unrated = 0, waAd = 0;
+    for (const r of grouped) { total += r.g.total; valid += r.g.valid; rated += r.g.rated; unrated += r.g.unrated; waAd += r.g.waAd; }
+    return { total, valid, rated, unrated, waAd };
   }, [grouped]);
 
   if (roleLoading || blocked) return null;
+
+  // No spend rows at all in the window: say so once, instead of an empty cost column.
+  const spendMissing = roi !== null && roi.summary?.total_spend == null;
+  const pctOfRated = (valid: number, rated: number) => (rated > 0 ? `${Math.round((valid / rated) * 100)}%` : "—");
 
   const viewLabels: Record<string, string> = {
     source: t("ads.bySource"), campaign: t("ads.byCampaign"), adset: t("ads.byAdSet"), ad: t("ads.byAd"),
@@ -167,7 +170,6 @@ export default function AdsPage() {
   if (role === "sales") {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <div className="text-6xl mb-4">🚫</div>
         <h2 className="text-xl font-semibold text-foreground mb-2">{t("ads.noAccess")}</h2>
         <p className="text-muted-foreground text-sm">{t("ads.noAccessDesc")}</p>
       </div>
@@ -189,11 +191,15 @@ export default function AdsPage() {
       </div>
 
       {/* Spend freshness: the Meta sync is what moves it */}
-      {roi?.spend_stale && (
+      {spendMissing && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-300" data-testid="spend-not-connected">
+          <p className="font-medium">{t("ads.spendNotConnected")}</p>
+          <p className="text-xs text-amber-300/80 mt-0.5">{t("ads.spendNotConnectedHint")}</p>
+        </div>
+      )}
+      {roi?.spend_stale && roi.data_last_updated && (
         <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-400">
-          {roi.data_last_updated
-            ? t("ads.staleBanner").replace("{date}", roi.data_last_updated).replace("{n}", String(roi.spend_days_old ?? ""))
-            : t("ads.noSpendBanner")}
+          {t("ads.staleBanner").replace("{date}", roi.data_last_updated).replace("{n}", String(roi.spend_days_old ?? ""))}
         </div>
       )}
       {roiLoading && <p className="text-xs text-muted-foreground">{t("common.loading")}</p>}
@@ -205,7 +211,7 @@ export default function AdsPage() {
       {roi && days === 0 && <p className="text-xs text-amber-400" data-testid="roi-period-90">{t("ads.roiPeriod90")}</p>}
 
       {/* Summary: leads, cost per lead - the return stops at leads */}
-      <div className={cn("grid grid-cols-2 gap-3", roi?.summary ? "md:grid-cols-5" : "md:grid-cols-2")}>
+      <div className={cn("grid grid-cols-2 gap-3", roi?.summary && !spendMissing ? "md:grid-cols-5" : "md:grid-cols-2")}>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-blue-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.totalLeads")}</p>
           <p className="text-2xl font-bold text-foreground">{totalStats.total}</p>
@@ -213,9 +219,12 @@ export default function AdsPage() {
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-emerald-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.validLeads")}</p>
           <p className="text-2xl font-bold text-emerald-400">{totalStats.valid}</p>
-          <p className="text-[10px] text-muted-foreground">{totalStats.total > 0 ? `${Math.round((totalStats.valid / totalStats.total) * 100)}%` : ""}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("ads.validOfRated").replace("{valid}", String(totalStats.valid)).replace("{rated}", String(totalStats.rated)).replace("{unrated}", String(totalStats.unrated))}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{t("ads.validNote")}</p>
         </div>
-        {roi?.summary && (
+        {roi?.summary && !spendMissing && (
           <>
             <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-purple-500/5 to-transparent">
               <p className="text-xs text-muted-foreground">{t("ads.spend")}</p>
@@ -269,36 +278,44 @@ export default function AdsPage() {
               <tr className="border-b border-border/50 bg-muted/30">
                 <th className="text-left py-3 px-4 text-muted-foreground font-medium">{viewLabels[viewMode]}</th>
                 <th className="text-right py-3 px-3 text-muted-foreground font-medium">{t("ads.totalLeads")}</th>
+                <th className="text-right py-3 px-3 text-muted-foreground font-medium">{t("ads.ratedLeads")}</th>
+                <th className="text-right py-3 px-3 text-muted-foreground font-medium">{t("ads.notYetRated")}</th>
                 <th className="text-right py-3 px-3 text-muted-foreground font-medium">{t("ads.validLeads")}</th>
-                <th className="text-right py-3 px-3 text-muted-foreground font-medium">{t("ads.validLeads")} %</th>
+                <th className="text-right py-3 px-3 text-muted-foreground font-medium">{t("ads.validLeads")} / {t("ads.ratedLeads")}</th>
+                <th className="text-right py-3 px-3 text-muted-foreground font-medium">{t("ads.lastTouch")}</th>
               </tr>
             </thead>
             <tbody>
               {grouped.map(({ key, label, g }) => {
-                const validRate = g.total > 0 ? Math.round((g.valid / g.total) * 100) : 0;
+                const validRate = g.rated > 0 ? Math.round((g.valid / g.rated) * 100) : null;
                 return (
                   <tr key={key} className="border-b border-border/20 hover:bg-accent/30 transition-colors">
                     <td className="py-3 px-4 font-medium">{viewMode === "source" ? translatedOrRaw(t, `sourceLabels.${key}`, key) : label}</td>
                     <td className="text-right py-3 px-3 font-semibold">{g.total}</td>
+                    <td className="text-right py-3 px-3">{g.rated}</td>
+                    <td className="text-right py-3 px-3 text-muted-foreground">{g.unrated}</td>
                     <td className="text-right py-3 px-3">{g.valid}</td>
                     <td className="text-right py-3 px-3">
-                      <span className={cn(validRate >= 50 ? "text-emerald-400" : validRate >= 20 ? "text-amber-400" : "text-muted-foreground")}>
-                        {validRate}%
+                      <span className={cn(validRate === null ? "text-muted-foreground" : validRate >= 50 ? "text-emerald-400" : validRate >= 20 ? "text-amber-400" : "text-muted-foreground")}>
+                        {pctOfRated(g.valid, g.rated)}
                       </span>
                     </td>
+                    <td className="text-right py-3 px-3">{g.waAd > 0 ? g.waAd : "—"}</td>
                   </tr>
                 );
               })}
               {grouped.length === 0 && (
-                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">{t("common.noResults")}</td></tr>
+                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">{t("common.noResults")}</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
+      <p className="text-xs text-muted-foreground">{t("ads.lastTouchNote")}</p>
+
       {/* Cost per lead per week and per ad (boss/admin only: spend is not shown to operator) */}
-      {roi && (
+      {roi && !spendMissing && (
         <div className="grid gap-4 md:grid-cols-2">
           {days === 0 && <p className="md:col-span-2 text-xs text-amber-400">{t("ads.roiPeriod90")}</p>}
           <div className="rounded-xl border border-border/50 overflow-hidden">

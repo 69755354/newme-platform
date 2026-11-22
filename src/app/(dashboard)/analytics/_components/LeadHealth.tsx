@@ -218,7 +218,7 @@ function OverdueTable({ items, stageLabels, t }: {
             {items.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                  🎉 {t("analytics.noOverdueCEO")}
+                  {t("analytics.noOverdueCEO")}
                 </td>
               </tr>
             )}
@@ -292,7 +292,7 @@ function SalesOverdueList({ items, stageLabels, t }: {
         ))}
         {items.length === 0 && (
           <div className="py-8 text-center text-muted-foreground text-sm">
-            🎉 {t("analytics.noOverdue")}
+            {t("analytics.noOverdue")}
           </div>
         )}
       </div>
@@ -350,7 +350,7 @@ export default function LeadHealth() {
   if (isCEO) {
     return (
       <div className="space-y-4">
-        <h2 className="text-base font-semibold text-foreground">📊 {t("analytics.leadHealth")}</h2>
+        <h2 className="text-base font-semibold text-foreground">{t("analytics.leadHealth")}</h2>
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -396,7 +396,7 @@ export default function LeadHealth() {
   // ── Sales view ──
   return (
     <div className="space-y-4">
-      <h2 className="text-base font-semibold text-foreground">📊 {t("analytics.myLeadHealth")}</h2>
+      <h2 className="text-base font-semibold text-foreground">{t("analytics.myLeadHealth")}</h2>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3">

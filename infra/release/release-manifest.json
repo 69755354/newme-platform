@@ -282,6 +282,12 @@
       "version": "20261121100000",
       "file": "20261121100000_sync_advance_lead_stage_from_sheet.sql",
       "sha256": "4e19cf64d411cfcbe4e77e8da16c3475ca36244f9947f8ece17f220d754a25b2"
+    },
+    {
+      "$comment": "S37 (OS fix S37): trigger routine public.derive_lead_status() replaced in place: a never-contacted lead created in the last 48 hours is 'hot' (it was 'dormant', overriding the hot the intake writes); older never-contacted leads stay 'dormant'; contacted leads keep the 7/14/30 day rule. Same signature, security definer and pinned search_path; no table, column, policy or grant changes.",
+      "version": "20261122300000",
+      "file": "20261122300000_s37_new_lead_not_dormant.sql",
+      "sha256": "f0235899c6c9b84ccf30a80808dc85bdf03efc65ab6d61fec8d2745638fe828b"
     }
   ],
   "companions": [
@@ -657,6 +663,11 @@
           "name": "s33-sync-advance-lead-stage-from-sheet-present",
           "expect": true,
           "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%system:drive_sync%') AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_advance_lead_stage_from_sheet(uuid,text,text)')),false)"
+        },
+        {
+          "name": "s37-new-lead-not-dormant",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%48 hours%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.derive_lead_status()')),false)"
         }
       ]
     }

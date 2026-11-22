@@ -74,6 +74,9 @@ export async function GET(request: Request) {
       // back to reassign_lead_atomic(). Without it on this read the screen has
       // nothing to compare against and the routine's check cannot fire.
       .select("id,customer_name,phone,stage,final_status,assigned_to,owner,sales_manager,location,source,quotation_value,updated_at")
+      // S37: archived leads are history, not stock: this screen's totals must equal the
+      // dashboard's (src/lib/lead-metrics.mjs isCountedLead), so they are not read at all.
+      .eq("archived", false)
       .order("updated_at", { ascending: false })
       .limit(1000),
     eligibleProfilesQuery,

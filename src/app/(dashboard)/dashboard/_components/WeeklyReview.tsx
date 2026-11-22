@@ -4,6 +4,7 @@ import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { formatAED, formatShortDate } from "@/lib/display-format.mjs";
 
 // ─── API-mode response types (PRD §五.3 / GET /api/dashboard/weekly-review) ───
 type Period = "today" | "this_week" | "last_week" | "this_month" | "custom";
@@ -81,7 +82,8 @@ interface WeeklyReviewProps {
   l3_by_user?: Record<string, PeriodL3Row[]>;
 }
 
-const money = (value?: number) => `AED ${(value ?? 0).toLocaleString()}`;
+// S37: one money format, whole dirhams: "AED 12,345".
+const money = (value?: number) => formatAED(value ?? 0);
 
 export default function WeeklyReview(props: WeeklyReviewProps) {
   // PRD §五.3 period mode — caller-supplied L1/L2/l3_by_user. Renders the new
@@ -125,7 +127,7 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
       red: { zh: "红色预警线索", en: "Red leads" }, yellow: { zh: "黄色预警线索", en: "Yellow leads" },
       highProbStale: { zh: "高概率停滞", en: "High-prob stale" }, pendingStale: { zh: "长期挂起", en: "Long-pending" },
       noData: { zh: "暂无数据", en: "No data yet" }, loading: { zh: "加载中…", en: "Loading…" },
-      riskPool: { zh: "风险池待办", en: "Risk pool tasks" }, todayFollowups: { zh: "今日跟进", en: "Today's follow-ups" },
+      riskPool: { zh: "风险池（没有下次跟进或已逾期的活跃线索）", en: "Risk pool (active leads with no next follow-up, or overdue)" }, todayFollowups: { zh: "今日跟进", en: "Today's follow-ups" },
       topActions: { zh: "优先动作", en: "Top actions" }, leadQuality: { zh: "本月新线索质量", en: "MTD lead quality" }, qGood: { zh: "优质", en: "good" }, qNormal: { zh: "一般", en: "normal" }, qPending: { zh: "待评估", en: "pending" },
       noTarget: { zh: "暂无月度目标，无法判定", en: "No monthly target set" }, leading: { zh: "进度领先", en: "On track" },
       oneSideLeading: { zh: "单边领先", en: "One-sided lead" }, lagging: { zh: "进度滞后", en: "Lagging" },
@@ -193,7 +195,7 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
     <div className="rounded-xl border border-border/50 bg-card/50 p-4">
       {title(i18n("actionTitle"))}
       {isLoading ? bars : <div className="space-y-3 text-sm">
-        {riskPoolCount !== null && <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-emerald-400">📋 {i18n("riskPool")}: {riskPoolCount ?? 0} · {locale === "zh" ? "逾期跟进" : "Overdue follow-ups"}: {overdueFollowups.length}</div>}
+        {riskPoolCount !== null && <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-emerald-400">{i18n("riskPool")}: {riskPoolCount ?? 0} · {locale === "zh" ? "逾期跟进" : "Overdue follow-ups"}: {overdueFollowups.length}</div>}
         <div><p className="mb-1 font-medium">{i18n("todayFollowups")} ({todayFollowups.length})</p>
           {todayFollowups.length > 0 ? <ul className="space-y-1 text-muted-foreground">{todayFollowups.slice(0, 3).map((lead, index) => <li key={lead?.id ?? index}>{lead?.customer_name || (locale === "zh" ? "未命名客户" : "Unnamed customer")}</li>)}</ul>
             : <p className="text-muted-foreground">{locale === "zh" ? "今天无跟进" : "No follow-ups today"}</p>}</div>
@@ -372,7 +374,7 @@ function WeeklyReviewApi({ language }: { language: string }) {
                 <span className="text-muted-foreground">
                   · {t("负责人", "owner")}: {row.movedBy || "—"}
                   · {t("阶段", "stage")}: {row.currentStage ?? row.movedTo ?? "—"}
-                  {row.lastContact && ` · ${t("上次联系", "last contact")}: ${new Date(row.lastContact).toLocaleDateString()}`}
+                  {row.lastContact && ` · ${t("上次联系", "last contact")}: ${formatShortDate(row.lastContact, locale)}`}
                   {row.quality && ` · ${t("质量", "quality")}: ${row.quality}`}
                 </span>
               </li>
@@ -427,17 +429,8 @@ function WeeklyReviewPeriod({
   const l1Empty = !l1 || (l1.new_leads === 0 && l1.contacted_leads === 0
     && l1.quality_judged === 0 && l1.stage_advanced === 0 && l1.won === 0 && l1.lost === 0);
   const l2Empty = l2.length === 0;
-  const formatDubaiDate = (iso?: string | null) => {
-    if (!iso) return "";
-    const parts = new Intl.DateTimeFormat("en", {
-      timeZone: "Asia/Dubai",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date(iso));
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value ?? "";
-    return `${part("year")}-${part("month")}-${part("day")}`;
-  };
+  // "22 Nov" / "11月22日", Dubai calendar day; a date-only value never shifts or shows a time.
+  const formatDubaiDate = (iso?: string | null) => (iso ? formatShortDate(iso, locale) : "");
   const endExclusive = periodEnd
     ? new Date(new Date(periodEnd).getTime() - 1).toISOString()
     : null;
@@ -467,6 +460,13 @@ function WeeklyReviewPeriod({
     return value[locale === "zh" ? 0 : 1];
   };
 
+  // Every L1 tile says which period it counts (the cockpit's "won this month" is a month, this is the selected range).
+  const periodNames: Record<string, [string, string]> = {
+    today: ["今日", "Today"], this_week: ["本周", "This week"], last_week: ["上周", "Last week"],
+    this_month: ["本月", "This month"], custom: ["自选时间", "Custom range"],
+  };
+  const periodName = (periodNames[range] ?? periodNames.today)[locale === "zh" ? 0 : 1];
+  const periodTag = locale === "zh" ? `统计期：${periodName}` : `Period: ${periodName}`;
   const metric = (label: string, value: number | string, mk?: MetricKey) => {
     const isActive = mk != null && metricFilter === mk;
     return (
@@ -489,6 +489,7 @@ function WeeklyReviewPeriod({
       >
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-2xl font-bold">{value}</p>
+        <p className="text-[11px] text-muted-foreground">{periodTag}</p>
       </div>
     );
   };

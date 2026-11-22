@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import type { Database } from "@/types/database";
+import { effectiveLeadStatus } from "@/lib/lead-metrics.mjs";
 
 type LeadListRow = Pick<Database["public"]["Tables"]["leads"]["Row"], "id" | "customer_name" | "phone" | "source" | "stage" | "final_status" | "quotation_value" | "location" | "property_type" | "project_type" | "project_status" | "property_size_sqm" | "ai_quality" | "lead_status" | "assigned_to" | "win_probability" | "last_contact_date" | "next_followup_date" | "next_action" | "followup_count" | "created_at" | "updated_at" | "recovery_candidate" | "transfer_candidate" | "sales_manager_review" | "hold_since" | "lost_reason" | "decision_maker" | "decision_date" | "competitor" | "campaign_name" | "source_platform" | "quality" | "poor_reason" | "source_channel" | "ctwa_clid">;
 type SalesUserRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "id" | "email" | "role" | "full_name" | "is_active">;
@@ -92,7 +93,13 @@ export async function GET(request: Request) {
     ownerProfiles = data || [];
   }
 
-  const visibleLeads: LeadListRow[] = leads ?? [];
+  // S37: the stored lead_status only changes on update and used to say "dormant" for every
+  // brand-new lead. The list shows the temperature as of now (same rule as the database trigger).
+  const readAt = new Date();
+  const visibleLeads: LeadListRow[] = (leads ?? []).map((lead) => ({
+    ...lead,
+    lead_status: effectiveLeadStatus(lead, readAt) ?? lead.lead_status,
+  }));
   const visibleSalesUsers: SalesUserRow[] = salesUsers ?? [];
   const result = {
     userId,

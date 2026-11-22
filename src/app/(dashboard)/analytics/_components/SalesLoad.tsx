@@ -177,7 +177,7 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-base font-semibold text-foreground">⚖️ {t('analytics.salesLoad')}</h2>
+      <h2 className="text-base font-semibold text-foreground">{t('analytics.salesLoad')}</h2>
 
       {/* Imbalance warning */}
       {data.imbalanceDetected && (
@@ -282,7 +282,7 @@ function SalesView({ data, t }: { data: SalesMyData; t: (path: string) => string
 
   return (
     <div className="space-y-4">
-      <h2 className="text-base font-semibold text-foreground">⚖️ {t('analytics.mySalesLoad')}</h2>
+      <h2 className="text-base font-semibold text-foreground">{t('analytics.mySalesLoad')}</h2>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard

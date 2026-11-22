@@ -16,6 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
+import { formatAED } from "@/lib/display-format.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { onFetchFailure } from "@/lib/fetch-interruption";
 
@@ -38,14 +40,6 @@ interface WeekRow { week_start: string; week_end: string; spend: number | null; 
 
 const WINDOWS = [7, 30, 90] as const;
 
-const SOURCE_LABEL: Record<string, string> = {
-  ins: "ins",
-  fb: "fb",
-  show_room: "show_room",
-  meta_ads: "ins",
-  instagram: "ins",
-};
-
 interface SourceQualityRow {
   source: string;
   total: number;
@@ -60,20 +54,15 @@ function finite(value: number | null | undefined): number | null {
   return Number.isFinite(value) ? Number(value) : null;
 }
 
+// S37: whole dirhams with thousands separators ("AED 12,345"), never "12K".
 function fmtAED(value: number | null | undefined): string {
-  const v = finite(value);
-  if (v === null) return "—";
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toFixed(2)}`;
+  return formatAED(finite(value));
 }
 
 function fmtNum(value: number | null | undefined): string {
   const v = finite(value);
   if (v === null) return "—";
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
-  return String(v);
+  return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 /* ─── Component ─── */
@@ -180,7 +169,7 @@ export default function AdsROI() {
       <div className="grid grid-cols-3 gap-2">
         {[
           { label: t("analytics.totalSpend"), value: fmtAED(summary.total_spend) },
-          { label: t("analytics.totalLeads"), value: fmtNum(summary.total_leads) },
+          { label: t("analytics.adLeadsWindow").replace("{n}", String(days)), value: fmtNum(summary.total_leads) },
           { label: t("analytics.cpl"), value: fmtAED(summary.cpl) },
         ].map((card) => (
           <div key={card.label} className="p-3 rounded-lg border border-border/50 bg-card/50">
@@ -189,6 +178,10 @@ export default function AdsROI() {
           </div>
         ))}
       </div>
+      <p className="text-[11px] text-muted-foreground">
+        {t("analytics.adLeadsWindowNote").replace("{n}", String(days))}
+        {summary.total_spend === null && <> {t("ads.spendNotConnected")}</>}
+      </p>
 
       {/* Per week */}
       <div>
@@ -310,7 +303,7 @@ export default function AdsROI() {
             <TableBody>
               {source_quality.map((row) => (
                 <TableRow key={row.source}>
-                  <TableCell className="font-medium">{SOURCE_LABEL[row.source] || row.source}</TableCell>
+                  <TableCell className="font-medium">{translatedOrRaw(t, `sourceLabels.${row.source}`, row.source)}</TableCell>
                   <TableCell className="text-right">{row.total}</TableCell>
                   <TableCell className="text-right text-emerald-400">
                     {row.good}

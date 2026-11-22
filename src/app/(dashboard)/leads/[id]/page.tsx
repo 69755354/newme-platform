@@ -25,6 +25,7 @@ import QuoteCalculator from "@/app/(dashboard)/quotes/quote-calculator";
 import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
+import LeadWaitingBadge from "./LeadWaitingBadge";
 import LeadAiNoteCard from "./LeadAiNoteCard";
 import LeadFollowupCard from "./LeadFollowupCard";
 
@@ -37,6 +38,8 @@ import LeadFoldingPanel from "./LeadFoldingPanel";
 import { useLeadDetailData } from "./useLeadDetailData";
 import { useLeadDetailMutations } from "./useLeadDetailMutations";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { effectiveLeadStatus, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 import type {
   RenderInlineEdit,
   RenderDateEdit,
@@ -500,6 +503,9 @@ export default function LeadDetailPage() {
     );
   }
 
+  // S37: temperature as of now (a new lead is hot for 48h, not "dormant"), and a click-to-WhatsApp
+  // lead whose customer is still waiting for the first reply says for how long (LeadWaitingBadge).
+  const shownStatus = effectiveLeadStatus(lead as unknown as MetricLead) ?? lead.lead_status;
   return (
     <DashboardScrollContainer className="mx-auto max-w-[1600px] space-y-5 pb-8">
       {/* T2-4: 锚定 Header — 整页滚动时返回按钮/客户名/状态徽章/delete 永远可见
@@ -520,15 +526,23 @@ export default function LeadDetailPage() {
             <h1 className="min-w-0 break-anywhere text-lg font-bold text-foreground line-clamp-2 md:text-2xl">
               {lead.customer_name || lead.phone || t("leadDetail.unnamed")}
             </h1>
-            {lead.lead_status && (
+            {shownStatus && (
               <span className={cn("text-xs px-2 py-0.5 rounded font-medium",
-                lead.lead_status === "hot" ? "bg-rose-500/10 text-rose-400" :
-                lead.lead_status === "warm" ? "bg-amber-500/10 text-amber-400" :
-                lead.lead_status === "cold" ? "bg-sky-500/10 text-sky-400" :
+                shownStatus === "hot" ? "bg-rose-500/10 text-rose-400" :
+                shownStatus === "warm" ? "bg-amber-500/10 text-amber-400" :
+                shownStatus === "cold" ? "bg-sky-500/10 text-sky-400" :
                 "bg-gray-500/10 text-muted-foreground")}>
-                {lead.lead_status === "hot" ? "🔥 " : lead.lead_status === "warm" ? "☀️ " : lead.lead_status === "cold" ? "❄️ " : "💤 "}
-                {t(`statusLabels.${lead.lead_status}`)}
+                {shownStatus === "hot" ? "🔥 " : shownStatus === "warm" ? "☀️ " : shownStatus === "cold" ? "❄️ " : "💤 "}
+                {t(`statusLabels.${shownStatus}`)}
               </span>
+            )}
+            {isWhatsAppAdLead(lead) && (
+              <span data-testid="whatsapp-ad-badge" className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-400">
+                {t("s37.wa.badge")}
+              </span>
+            )}
+            {isWhatsAppAdLead(lead) && lead.wa_first_inbound_at && !lead.wa_first_reply_at && !lead.final_status && (
+              <LeadWaitingBadge inboundAt={lead.wa_first_inbound_at} t={t} />
             )}
             {lead.quality === 'poor' && (
               <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400">

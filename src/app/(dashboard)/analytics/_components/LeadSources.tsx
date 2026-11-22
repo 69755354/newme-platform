@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Users, Gauge } from "lucide-react";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { onFetchFailure } from "@/lib/fetch-interruption";
 
@@ -43,17 +44,6 @@ const SOURCE_COLORS: Record<string, string> = {
   referral: "#EC4899",
   other: "#6B7280",
 };
-const SOURCE_LABEL: Record<string, string> = {
-  ins: "ins",
-  fb: "fb",
-  show_room: "show_room",
-  whatsapp: "WhatsApp",
-  website: "Website",
-  offline: "Offline",
-  referral: "Referral",
-  other: "Other",
-};
-
 // Quality → (label, color). Lead quality uses the lead_status taxonomy.
 const QUALITY_META: { key: string; labelKey: string; color: string }[] = [
   { key: "hot", labelKey: "analytics.hot", color: "#F43F5E" },
@@ -198,12 +188,12 @@ export default function LeadSources() {
                   <div className="col-span-3 flex items-center gap-1.5 min-w-0">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
                     <span className="text-xs font-medium text-foreground truncate">
-                      {SOURCE_LABEL[s.source] || s.source}
+                      {translatedOrRaw(t, `sourceLabels.${s.source}`, s.source)}
                     </span>
                   </div>
                   <div className="col-span-2 text-right text-xs text-foreground">
                     {s.count}
-                    <span className="text-[10px] text-emerald-400 ml-1">{s.won}✓</span>
+                    <span className="text-[10px] text-emerald-400 ml-1">{s.won} {t("dashboard.won")}</span>
                   </div>
                   <div className="col-span-2 text-right">
                     <span className={cn(
@@ -254,7 +244,7 @@ export default function LeadSources() {
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground px-1">
             <TrendingUp className="w-3 h-3 text-emerald-400" />
             {t("analytics.bestSource")}{" "}
-            <span className="font-semibold text-foreground">{SOURCE_LABEL[best.source] || best.source}</span>{" "}
+            <span className="font-semibold text-foreground">{translatedOrRaw(t, `sourceLabels.${best.source}`, best.source)}</span>{" "}
             ({best.conversionRate}% {t("analytics.conversion")})
           </div>
         );

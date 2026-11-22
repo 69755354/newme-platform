@@ -5,6 +5,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Trophy, TrendingUp, Users, Target } from "lucide-react";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { onFetchFailure } from "@/lib/fetch-interruption";
 
@@ -55,17 +56,6 @@ const SOURCE_COLORS: Record<string, string> = {
   offline: "#C48A52",
   referral: "#EC4899",
   other: "#6B7280",
-};
-
-const SOURCE_LABEL: Record<string, string> = {
-  ins: "ins",
-  fb: "fb",
-  show_room: "show_room",
-  whatsapp: "WhatsApp",
-  website: "Website",
-  offline: "Offline",
-  referral: "Referral",
-  other: "Other",
 };
 
 function fmtAED(v: number): string {
@@ -170,7 +160,7 @@ export default function TeamPerformance() {
                 </div>
                 <div className="col-span-2 text-right text-xs text-foreground">
                   {rep.totalLeads}
-                  <span className="text-[10px] text-muted-foreground ml-1">({rep.wonLeads}✓)</span>
+                  <span className="text-[10px] text-muted-foreground ml-1">({rep.wonLeads} {t("dashboard.won")})</span>
                 </div>
                 <div className="col-span-2 text-right">
                   <span className={cn(
@@ -216,7 +206,7 @@ export default function TeamPerformance() {
               return (
                 <div key={s.source} className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground min-w-[80px] shrink-0">
-                    {SOURCE_LABEL[s.source] || s.source}
+                    {translatedOrRaw(t, `sourceLabels.${s.source}`, s.source)}
                   </span>
                   <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden">
                     <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: color }} />

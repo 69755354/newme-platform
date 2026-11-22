@@ -30,6 +30,7 @@ import {
 import { fetchAllRows, fetchCountedLeads } from "@/lib/fetch-all-rows.mjs";
 import {
   LEAD_METRIC_COLUMNS,
+  effectiveLeadStatus,
   isCountedLead,
   overdueDays,
   summarizeLeads,
@@ -201,31 +202,6 @@ export async function GET(request: Request) {
       return q;
     });
 
-  const buildRiskPoolQuery = async (): Promise<number> => {
-    if (isSales && userId) {
-      const { count } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("assignee_id", userId)
-        .eq("status", "pending")
-        .lt("due_at", new Date().toISOString());
-      return count || 0;
-    }
-    try {
-      const { count } = await supabase
-        .from("v_risk_pool")
-        .select("*", { count: "exact", head: true });
-      return count || 0;
-    } catch {
-      const { count } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending")
-        .lt("due_at", new Date().toISOString());
-      return count || 0;
-    }
-  };
-
   const buildTodayFollowupsQuery = () => {
     let q = supabase
       .from("tasks")
@@ -254,16 +230,20 @@ export async function GET(request: Request) {
     return q;
   };
 
+  // S37: the stored lead_status is only refreshed on update, and used to read "dormant" for
+  // every brand-new lead. Candidates are the stored-hot leads plus leads created in the last
+  // 48h that nobody has contacted yet (new ad leads); the final "hot" test is made on read
+  // with effectiveLeadStatus() below, so a stored value that has since gone stale drops out.
   const buildHotLeadsQuery = () => {
     let q = supabase
       .from("leads")
-      .select("id, customer_name, quotation_value, win_probability, stage, phone")
-      .eq("lead_status", "hot")
+      .select("id, customer_name, quotation_value, win_probability, stage, phone, lead_status, last_contact_date, created_at, final_status")
+      .or(`lead_status.eq.hot,and(last_contact_date.is.null,created_at.gte.${cutoff48h})`)
       .eq("archived", false)
       .or(EXCLUDE_SYNTHETIC_QA_FILTER)
       .is("final_status", null)
-      .order("quotation_value", { ascending: false })
-      .limit(3);
+      .order("quotation_value", { ascending: false, nullsFirst: false })
+      .limit(30);
     if (isSales && userId) q = q.eq("assigned_to", userId);
     return q;
   };
@@ -315,7 +295,6 @@ export async function GET(request: Request) {
     paymentsResult,
     overdueResult,
     dueResult,
-    riskPoolCount,
     { data: todayFollowupsRaw },
     { data: overdueFollowups },
     { data: hotLeads },
@@ -331,7 +310,6 @@ export async function GET(request: Request) {
     paymentsPromise,
     installmentsPromise("overdue"),
     installmentsPromise("due"),
-    buildRiskPoolQuery(),
     buildTodayFollowupsQuery(),
     buildOverdueFollowupsQuery(),
     buildHotLeadsQuery(),
@@ -405,6 +383,7 @@ export async function GET(request: Request) {
     overdue: Math.round(overdueAmount),
     dueNextWeek: Math.round(dueNextWeekAmount),
     contractCount: activeContracts.length,
+    dueNextWeekCount: (duePlans || []).length,
     ...(month
       ? {
           // "Signed" this month = what was won this month (leads.won_at, Dubai
@@ -467,8 +446,11 @@ export async function GET(request: Request) {
     });
   });
 
-  // 2. Hot leads
-  ((hotLeads as any[]) || []).forEach((l: any) => {
+  // 2. Hot leads (temperature decided on read, top 3 by value)
+  ((hotLeads as any[]) || [])
+    .filter((l: any) => effectiveLeadStatus(l, nowDate) === "hot")
+    .slice(0, 3)
+    .forEach((l: any) => {
     actions.push({
       type: "hot_lead",
       title: l.customer_name || "Unnamed",
@@ -557,7 +539,9 @@ export async function GET(request: Request) {
     leadStats,
     finance,
     kpiTargets: kpiTargets || [],
-    riskPoolCount,
+    // S37: the risk pool is a count of ACTIVE LEADS (no next follow-up date, or one that has
+    // passed), from the same summary as every other lead number, so it can never exceed them.
+    riskPoolCount: leadStats.riskPool,
     todayFollowups,
     topActions: sorted.slice(0, 5),
     // Include raw data needed for UI i18n

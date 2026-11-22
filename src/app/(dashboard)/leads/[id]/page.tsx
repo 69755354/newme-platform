@@ -116,7 +116,7 @@ export default function LeadDetailPage() {
     loading,
     notFound,
     error,
-    fetchData,
+    refreshData,
   } = useLeadDetailData(id as string);
 
   // ─── Page-local state for Meta Pixel effect + Mut block ──────────────────
@@ -229,7 +229,7 @@ export default function LeadDetailPage() {
     setLead,
     projectInfoDraft,
     setProjectInfoDraft,
-    fetchData,
+    fetchData: refreshData,
     salesRole,
     currentUserId,
     salesUsers,
@@ -664,7 +664,7 @@ export default function LeadDetailPage() {
             noteText={noteText}
             onNoteTextChange={setNoteText}
             onAddNote={handleAddNote}
-            onContactUpdated={fetchData}
+            onContactUpdated={refreshData}
             t={t}
             lang={lang}
           />
@@ -695,14 +695,14 @@ export default function LeadDetailPage() {
           open={showQuoteCalculator}
           onOpenChange={setShowQuoteCalculator}
           initialLeadId={id as string}
-          onSaved={() => { fetchData(); }}
+          onSaved={() => { void refreshData(); }}
         />
       )}
       <QuickQuoteDialog
         open={showQuickQuote}
         onOpenChange={setShowQuickQuote}
         leadId={id as string}
-        onSaved={() => { fetchData(); }}
+        onSaved={() => { void refreshData(); }}
       />
       {/* T2-4: toast 层级约定 — z-toast z-50
           sonner Toaster 已固定 z-50，作为最高优先级反馈层，

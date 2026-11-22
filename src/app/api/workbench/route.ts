@@ -136,7 +136,8 @@ export async function GET(request: Request) {
 
     // progress
     (() => {
-      let q = supabase.from("leads").select("current_milestone")
+      // Same population as /leads (and /api/leads/list): archived rows are history, not stock.
+      let q = supabase.from("leads").select("current_milestone").eq("archived", false)
       if (isSales) q = q.eq("assigned_to", user.id)
       return q
     })(),

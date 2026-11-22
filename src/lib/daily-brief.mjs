@@ -258,7 +258,7 @@ export function buildBrief({ dateKey, leads, people = [], groups = null, missing
   const unassignedCount = shownGroups.filter((g) => g.unassigned).reduce((s, g) => s + g.items.length, 0);
   const attention = [];
   if (unassignedCount > 0) attention.push(`未分配${unassignedCount}条无人认领`);
-  if (uncontactedTotal > ATTENTION_UNCONTACTED_OVER) attention.push(`未联系共${uncontactedTotal}条`);
+  if (uncontactedTotal > ATTENTION_UNCONTACTED_OVER) attention.push(`未记录联系共${uncontactedTotal}条`);
   const silent = NORMAL_CHANNELS.filter((c) => leads.byChannel[c] === 0 && leads.prior[c] >= NORMAL_CHANNEL_MIN_LEADS).map(channelLabel);
   if (silent.length) attention.push(`${silent.join("、")}昨日0条线索`);
   if (missingPhone.length) attention.push(`${missingPhone.map((p) => p.name).join("、")}无手机号，提醒未发`);
@@ -271,7 +271,7 @@ export function buildBrief({ dateKey, leads, people = [], groups = null, missing
     const who = shownGroups.length
       ? `${kept.map((p) => `${p.name}${p.items.length}条(最久${ageLabel(p.oldest_hours)})`).join("、")}${rest > 0 ? `等${shownGroups.length}人` : ""}`
       : "无";
-    const parts = [`${dateKey}日报`, `新线索${leads.total}条（${channels}）`, `24小时未联系：${who}`, `昨日报价${quotes.count}单，合计AED ${money(quotes.total)}`];
+    const parts = [`${dateKey}日报`, `新线索${leads.total}条（${channels}）`, `24小时未记录联系：${who}`, `昨日报价${quotes.count}单，合计AED ${money(quotes.total)}`];
     if (spend) parts.push(`广告花费AED ${money(spend.spend)}${spend.cpl === null ? "" : `，单条线索AED ${money(spend.cpl)}`}`);
     if (attention.length) parts.push(`需要注意：${attention.join("；")}`);
     return parts.join("；");

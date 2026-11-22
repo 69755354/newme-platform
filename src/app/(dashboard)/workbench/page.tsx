@@ -85,10 +85,13 @@ const milestoneColors: Record<string, string> = {
 }
 
 import { fmtDubai } from "@/lib/utils";
+import { formatShortDate, isDateOnly } from "@/lib/display-format.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption"
 
 function formatDate(value: string | undefined, locale: string) {
   if (!value) return "—"
+  // A date-only value (DATE column) is a calendar day: no clock time, no time-zone shift.
+  if (isDateOnly(value)) return formatShortDate(value, locale.toLowerCase().startsWith("zh") ? "zh" : "en")
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
   return fmtDubai(d, {

@@ -69,7 +69,14 @@ export interface UseLeadDetailDataReturn {
   notFound: boolean;
   error: string | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
-  fetchData: () => Promise<void>;
+  fetchData: (opts?: FetchDataOptions) => Promise<void>;
+  /** Re-read the lead without the loading skeleton: dialogs and typed text stay mounted. */
+  refreshData: () => Promise<void>;
+}
+
+export interface FetchDataOptions {
+  /** true = keep the page mounted: no skeleton, no loading flag (post-mutation refresh). */
+  silent?: boolean;
 }
 
 /* ─── Hook ─── */
@@ -106,11 +113,14 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
   //   "fetchData degraded" semantics from Q1 in the design §6.4 risk list).
   // Customers IIFE kept as a defensive no-op (all 49 leads have
   //   customer_id=NULL per §3A verification); preserves T1-8 maybeSingle=3.
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (opts?: FetchDataOptions) => {
     if (!leadId) return;
-    setLoading(true);
-    setError(null);
-    setNotFound(false);
+    const silent = opts?.silent === true;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+      setNotFound(false);
+    }
     const perfMark = typeof performance !== "undefined" ? performance.now() : 0;
     try {
       // Ensure auth session is set before any queries (fixes setSession race)
@@ -225,7 +235,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       if (leadRes.status === "rejected") {
         onFetchFailure(leadRes.reason, () => {
           console.error("[LeadDetail] fetch lead failed (rejected):", leadRes.reason);
-          setError(t("common.loadFailedRetry"));
+          if (!silent) setError(t("common.loadFailedRetry"));
         });
         return;
       }
@@ -234,14 +244,14 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
       // through to the error / empty paths below, and an id that is not a
       // valid uuid was treated as a failure to retry. Stop and say "not found".
       if (isLeadMissing(leadPayload)) {
-        setNotFound(true);
+        if (!silent) setNotFound(true);
         return;
       }
       if (leadPayload.error) {
         // supabase-js reports a request cut short by navigation as a result error.
         onFetchFailure(leadPayload.error, () => {
           console.error("[LeadDetail] fetch lead failed:", leadPayload.error);
-          setError(t("common.loadFailedRetry"));
+          if (!silent) setError(t("common.loadFailedRetry"));
         });
         return;
       }
@@ -390,12 +400,15 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
     } catch (err) {
       onFetchFailure(err, () => {
         console.warn("[LeadDetail] fetchData degraded:", err);
-        setError(t("common.loadFailedRetry"));
+        // A failed background refresh keeps the page (and any open dialog) as is.
+        if (!silent) setError(t("common.loadFailedRetry"));
       });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [leadId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refreshData = useCallback(() => fetchData({ silent: true }), [fetchData]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -437,5 +450,6 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
     error,
     setError,
     fetchData,
+    refreshData,
   };
 }

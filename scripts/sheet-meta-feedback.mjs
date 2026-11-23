@@ -86,7 +86,8 @@ if (isMainModule()) {
     process.exitCode = 2;
   } else {
     try {
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL; const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (!url || !key) throw new Error("database configuration unavailable");
       const saFile = process.env.GOOGLE_SA_FILE || (existsSync("/etc/newme/google-sheets-sa.json") ? "/etc/newme/google-sheets-sa.json" : `${homedir()}/.config/newme/google-sheets-sa.json`);
       const reader = createSheetsReader({ saFile });

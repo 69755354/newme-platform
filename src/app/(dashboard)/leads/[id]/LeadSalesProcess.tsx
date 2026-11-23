@@ -266,8 +266,9 @@ export default function LeadSalesProcess({
   const furthestDone = Math.max(-1, ...completedKeys.map((k) => COMPLETABLE_MILESTONES.indexOf(k)));
   const isLocked = (key: string): boolean => {
     if (completedKeys.includes(key)) return false;
+    if (furthestDone >= 0 && COMPLETABLE_MILESTONES.indexOf(key) < furthestDone) return true;
     if (key === nextPendingKey) return false;
-    return furthestDone < 0 || COMPLETABLE_MILESTONES.indexOf(key) < furthestDone;
+    return furthestDone < 0;
   };
 
   const hasContract = !!trace?.contract_id;

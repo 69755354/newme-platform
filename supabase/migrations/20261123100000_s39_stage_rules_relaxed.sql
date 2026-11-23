@@ -1,4 +1,4 @@
--- NO_ROLLBACK: six existing routines replaced in place (CREATE OR REPLACE, same signatures, same security mode and pinned search_path); no table, column, policy, trigger or data change. Manual undo: re-create the routines with the bodies from supabase/migrations/20261104110000_role_least_privilege.sql (transition_lead_stage), supabase/migrations/20261121100000_sync_advance_lead_stage_from_sheet.sql (the sheet routine) and supabase/replay/production-schema-baseline.sql (the other four).
+-- NO_ROLLBACK: seven existing routines replaced in place (CREATE OR REPLACE, same signatures, same security mode and pinned search_path); no table, column, policy, trigger or data change. Manual undo: re-create the routines with the bodies from supabase/migrations/20261104110000_role_least_privilege.sql (transition_lead_stage), supabase/migrations/20261121100000_sync_advance_lead_stage_from_sheet.sql (the sheet routine) and supabase/replay/production-schema-baseline.sql (the other five).
 -- ============================================================================
 -- OS fix S39 - lead stage rules relaxed (Sam-approved, UX report batch 5, decision 1)
 -- ============================================================================
@@ -14,6 +14,7 @@
 --   public.trg_check_first_contact_gate()    trigger, invoker, search_path pinned
 --   public.trg_enforce_first_contact_milestone()  trigger on lead_milestones, SECURITY DEFINER, search_path pinned
 --   public.sync_advance_lead_stage_from_sheet(uuid,text,text)  service role only, SECURITY DEFINER, search_path pinned
+--   public.recomplete_lead_milestone(uuid,text,text)  SECURITY DEFINER, search_path pinned: re-completing a reopened milestone needs any earlier one done
 --   public.check_milestone_order()           trigger, SECURITY DEFINER, search_path pinned
 --   public.transition_lead_stage(uuid,text,text,text,uuid)  SECURITY DEFINER, search_path pinned, same grants as before
 -- Not changed: the follow-up rule (trg_enforce_followup: next action + next follow-up date), the note rule inside
@@ -132,6 +133,127 @@ BEGIN
   END IF;
 
   RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.recomplete_lead_milestone(p_lead_id uuid, p_milestone_key text, p_notes text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  actor_id uuid := auth.uid();
+  actor_role text;
+  current_lead public.leads%ROWTYPE;
+  current_milestone public.lead_milestones%ROWTYPE;
+  recompleted public.lead_milestones%ROWTYPE;
+  target_order integer;
+  clean_notes text := btrim(COALESCE(p_notes, ''));
+BEGIN
+  perform public.assert_current_session_at_entry();
+  IF actor_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  SELECT role INTO actor_role
+  FROM public.profiles
+  WHERE id = actor_id;
+
+  IF actor_role IS NULL
+     OR actor_role NOT IN ('admin', 'boss', 'operator', 'sales', 'user', 'salesperson') THEN
+    RAISE EXCEPTION 'Forbidden: invalid CRM role';
+  END IF;
+
+  IF p_milestone_key IS NULL
+     OR p_milestone_key NOT IN (
+       'first_contact', 'basic_info', 'drawings', 'requirements',
+       'solution', 'quotation', 'meeting'
+     ) THEN
+    RAISE EXCEPTION 'Invalid milestone';
+  END IF;
+
+  IF clean_notes = '' THEN
+    RAISE EXCEPTION 'Milestone note is required';
+  END IF;
+  IF char_length(clean_notes) > 1000 THEN
+    RAISE EXCEPTION 'Milestone note must be 1000 characters or fewer';
+  END IF;
+
+  SELECT * INTO current_lead
+  FROM public.leads
+  WHERE id = p_lead_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Lead not found';
+  END IF;
+
+  IF actor_role NOT IN ('admin', 'boss', 'operator')
+     AND current_lead.assigned_to IS DISTINCT FROM actor_id THEN
+    RAISE EXCEPTION 'Forbidden: lead not assigned to you';
+  END IF;
+
+  SELECT * INTO current_milestone
+  FROM public.lead_milestones
+  WHERE lead_id = p_lead_id
+    AND milestone_key = p_milestone_key
+  FOR UPDATE;
+
+  IF NOT FOUND OR current_milestone.completed_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Milestone is not open for recompletion';
+  END IF;
+
+  target_order := public.milestone_order(p_milestone_key);
+  -- S39: a milestone may be skipped going forward, so re-completing one needs an EARLIER milestone done, not the one right before it.
+  IF target_order > 1 AND NOT EXISTS (
+    SELECT 1
+    FROM public.lead_milestones
+    WHERE lead_id = p_lead_id
+      AND completed_at IS NOT NULL
+      AND public.milestone_order(milestone_key) < target_order
+  ) THEN
+    RAISE EXCEPTION 'An earlier milestone must be completed first';
+  END IF;
+
+  UPDATE public.lead_milestones
+  SET notes = clean_notes,
+      completed_by = actor_id,
+      completed_at = NOW()
+  WHERE id = current_milestone.id
+  RETURNING * INTO recompleted;
+
+  UPDATE public.leads
+  SET current_milestone = p_milestone_key,
+      updated_at = recompleted.completed_at
+  WHERE id = p_lead_id;
+
+  INSERT INTO public.business_events (
+    lead_id,
+    user_id,
+    event_type,
+    description,
+    event_data,
+    created_at
+  )
+  VALUES (
+    p_lead_id,
+    actor_id,
+    'note_added',
+    format('Milestone %s completed again: %s', p_milestone_key, clean_notes),
+    jsonb_build_object(
+      'action', 'milestone_recompleted',
+      'milestone_key', p_milestone_key,
+      'notes', clean_notes
+    ),
+    recompleted.completed_at
+  );
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'milestone', to_jsonb(recompleted),
+    'recompleted', true
+  );
 END;
 $function$;
 

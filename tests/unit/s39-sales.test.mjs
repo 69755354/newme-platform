@@ -147,11 +147,11 @@ test("S39-3 notes are optional on milestones and funnel stages; won still needs 
   assert.ok(stage.includes("ensureWonAmount"), "won still needs an amount");
 });
 
-test("S39-3 the migration is one re-runnable file that changes exactly the six routines and nothing else", () => {
+test("S39-3 the migration is one re-runnable file that changes exactly the seven routines and nothing else", () => {
   const sql = read("supabase/migrations/20261123100000_s39_stage_rules_relaxed.sql");
   assert.ok(sql.startsWith("-- NO_ROLLBACK:"));
   const replaced = [...sql.matchAll(/CREATE OR REPLACE FUNCTION public\.(\w+)/gi)].map((m) => m[1].toLowerCase()).sort();
-  assert.deepEqual(replaced, ["check_milestone_order", "sync_advance_lead_stage_from_sheet", "transition_lead_stage", "trg_check_first_contact_gate", "trg_check_stage_sequence", "trg_enforce_first_contact_milestone"]);
+  assert.deepEqual(replaced, ["check_milestone_order", "recomplete_lead_milestone", "sync_advance_lead_stage_from_sheet", "transition_lead_stage", "trg_check_first_contact_gate", "trg_check_stage_sequence", "trg_enforce_first_contact_milestone"]);
   assert.equal(/\b(create|alter|drop)\s+(table|policy|trigger|index)\b/i.test(sql.replace(/--.*$/gm, "")), false, "no table, policy, trigger or index change");
   const manifest = JSON.parse(read("infra/release/release-manifest.json"));
   assert.ok(manifest.deferred_contract.some((e) => e.file === "20261123100000_s39_stage_rules_relaxed.sql"));

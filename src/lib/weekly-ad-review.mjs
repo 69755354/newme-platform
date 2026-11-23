@@ -173,11 +173,12 @@ export function buildReviewRows({ spendRows = [], metaRows = null, leads = [], q
   for (const lead of leads) {
     const key = leadKey(lead);
     if (!key) continue;
-    if (!extra.has(key)) extra.set(key, { good: 0, normal: 0, quotes: 0, value: 0, campaign: "", campaignAt: 0 });
+    if (!extra.has(key)) extra.set(key, { good: 0, normal: 0, assessed: 0, quotes: 0, value: 0, campaign: "", campaignAt: 0 });
     const e = extra.get(key);
     const bucket = qualityBucket(lead);
     if (bucket === "good") e.good += 1;
     else if (bucket === "normal") e.normal += 1;
+    if (bucket && bucket !== "pending" && bucket !== "unknown") e.assessed += 1;
     const amount = amounts.get(lead.id);
     if (amount) { e.quotes += 1; e.value += amount; }
     const at = Date.parse(lead.created_at ?? "") || 0;
@@ -197,6 +198,7 @@ export function buildReviewRows({ spendRows = [], metaRows = null, leads = [], q
       cpl: row.cpl,
       good_leads: good,
       normal_leads: e?.normal ?? 0,
+      assessed_leads: e?.assessed ?? 0,
       quotes,
       quote_value: e ? round2(e.value) : 0,
       cost_per_good: row.spend_ambiguous ? null : costPerLead(row.spend === null ? undefined : row.spend, good),
@@ -247,7 +249,7 @@ export function buildSuggestions(rows, { spendAvailable }) {
   }
 
   // No lead has a quality mark or a quote yet: "no good leads" says nothing about one ad, so judge by cost per lead only.
-  const noOutcomes = totalGood === 0 && withLeads.every((r) => r.quotes === 0);
+  const noOutcomes = withLeads.every((r) => (r.assessed_leads ?? 0) === 0 && r.quotes === 0);
   if (noOutcomes) {
     out.push("本周所有广告线索都还没有标好坏、也没有带金额报价，先不按质量判断哪条该停；请销售把跟进结果记上，下周再比。");
     const cheapest = priced.filter((r) => r.leads >= 3).sort((a, b) => a.cpl - b.cpl)[0];

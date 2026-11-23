@@ -8,10 +8,11 @@ test("milestone UI requires a real note instead of a generated template", async 
   const process = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
   const mutations = await read("src/app/(dashboard)/leads/[id]/useLeadDetailMutations.ts");
 
-  assert.ok(process.includes("推进备注（必填）"));
-  assert.ok(process.includes("请填写推进备注后再完成此阶段"));
+  // S39: the progress note and the quality rating are optional; one contact record is still required
+  assert.ok(process.includes("推进备注（选填）"));
+  assert.equal(process.includes("请填写推进备注后再完成此阶段"), false);
   assert.ok(process.includes("请先添加 1 条完整联系记录"));
-  assert.ok(process.includes("请先选择线索质量，再完成初次接触"));
+  assert.equal(process.includes("请先选择线索质量，再完成初次接触"), false);
   assert.ok(mutations.includes("const normalizedNotes = notes.trim()"));
   assert.ok(mutations.includes("notes: normalizedNotes"));
   assert.equal(mutations.includes("手动完成里程碑:"), false);

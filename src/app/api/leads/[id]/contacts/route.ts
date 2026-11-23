@@ -4,9 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger, genReqId } from "@/lib/logger";
 import { futureContactTimeBody, requestLanguage } from "@/lib/api-language.mjs";
 import { completeFirstContactAfterLog } from "@/lib/contact-first-contact.mjs";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
-import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
+import { enqueueFirstContactFeedback } from "@/lib/first-contact-feedback";
 import {
   applyRequestAuthCookies,
   getRequestAuthContext,
@@ -88,13 +86,7 @@ export async function POST(
 
     // S39: a logged contact is the first contact when the lead is still new. Never fails the record.
     const firstContact = await completeFirstContactAfterLog(supabase, { leadId, userId: context.user.id });
-    if (firstContact.milestone) {
-      try {
-        await enqueueMetaCrmEventForLead(supabaseAdmin, leadId, "first_contact");
-        await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, leadId, "first_contact");
-        await enqueueWebsiteQuoteForProgress(supabaseAdmin, leadId, "first_contact");
-      } catch { /* tracking must never fail a contact record */ }
-    }
+    if (firstContact.milestone) await enqueueFirstContactFeedback(leadId);
     return respond({ success: true, contact, stageAdvance: firstContact });
   } catch (error) {
     if (error instanceof RequestAuthError) return requestAuthErrorResponse(error);

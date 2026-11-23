@@ -21,5 +21,7 @@ export function fmtDubai(d: string | Date | null | undefined, opts?: Intl.DateTi
   const { locale = "en-US", ...fmtOpts } = opts || {};
   const lang = locale.toLowerCase().startsWith("zh") ? "zh" : "en";
   const wantsTime = fmtOpts.hour !== undefined || fmtOpts.minute !== undefined || fmtOpts.timeStyle !== undefined;
-  return wantsTime ? formatDateTime(d, lang) : formatShortDate(d, lang);
+  // a caller that explicitly asks for the year (contract / quotation documents) still gets it
+  const forceYear = fmtOpts.year === "numeric";
+  return wantsTime ? formatDateTime(d, lang, new Date(), forceYear) : formatShortDate(d, lang, new Date(), forceYear);
 }

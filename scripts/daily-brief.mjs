@@ -114,7 +114,7 @@ export async function loadFollowupWaits(db, data, now) {
     if (!states.length) return [];
     const ids = states.map((r) => r.lead_id);
     const leads = await inChunks(ids, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
-    const conversations = await inChunks(ids, (part) => db.from("whatsapp_conversations").select("lead_id,phone_number_id,last_inbound_at").in("lead_id", part));
+    const conversations = await inChunks(ids, (part) => db.from("whatsapp_conversations").select("lead_id,phone_number_id,last_inbound_at,last_outbound_at").in("lead_id", part));
     const channels = must(await db.from("whatsapp_pilot_channels").select("phone_number_id,owner_profile_id,enabled"));
     return summarizeFollowupWaits({ states, leads: new Map(leads.map((l) => [l.id, l])), conversations, channelOwners: channelOwnerMap(channels, data.profiles),
       profiles: data.profiles, excludedTestIds: data.excludedTestIds, now });
@@ -196,7 +196,11 @@ export async function planWaitAlerts(db, data, now, env) {
   if (!channelIds.length) return { items: [], groups: [], text: "", thresholdHours };
   const rows = must(await db.from("whatsapp_conversations").select("id,lead_id,phone_number_id,last_inbound_at,last_outbound_at")
     .in("phone_number_id", channelIds).gte("last_inbound_at", since).order("last_inbound_at", { ascending: false }).limit(1000));
-  const open = rows.filter((c) => !c.last_outbound_at || Date.parse(c.last_outbound_at) < Date.parse(c.last_inbound_at)).slice(0, 300);
+  // Unanswered and not alerted yet, oldest customer message first (the longest waits are the ones that matter), then capped.
+  const done = waLedgerKeys(now);
+  const open = rows.filter((c) => (!c.last_outbound_at || Date.parse(c.last_outbound_at) < Date.parse(c.last_inbound_at))
+    && !done.has(`${c.id}:${c.last_outbound_at ? Date.parse(c.last_outbound_at) : 0}`))
+    .sort((a, b) => Date.parse(a.last_inbound_at) - Date.parse(b.last_inbound_at)).slice(0, 300);
   const leadIds = [...new Set(open.map((c) => c.lead_id).filter(Boolean))];
   const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
   const ignored = new Set(leads.filter((l) => l.archived || l.final_status || l.source === "synthetic_qa" || data.excludedTestIds.has(l.id)).map((l) => l.id));
@@ -208,7 +212,7 @@ export async function planWaitAlerts(db, data, now, env) {
     const first = must(await q.order("occurred_at", { ascending: true }).limit(1))[0];
     if (first) waitStarts.set(c.id, Date.parse(first.occurred_at));
   }
-  const items = selectWaiting({ conversations: open, waitStarts, ignoredLeadIds: ignored, done: waLedgerKeys(now), now, thresholdHours });
+  const items = selectWaiting({ conversations: open, waitStarts, ignoredLeadIds: ignored, done, now, thresholdHours });
   const groups = planWaitAlert(items, { leadAssignee: new Map(leads.map((l) => [l.id, l.assigned_to])), channelOwners: channelOwnerMap(channels, data.profiles), profiles: data.profiles });
   return { items, groups, text: items.length ? buildWaitAlert(groups, thresholdHours) : "", thresholdHours };
 }

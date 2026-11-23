@@ -23,7 +23,9 @@ const channels = [
 
 test("channel owner: salesperson's channel wins, admin/boss channel falls to the assignee, then the company number", () => {
   const owners = channelOwnerMap(channels, profiles);
-  assert.deepEqual([...owners.keys()], ["11111"]); // admin-owned and disabled channels are not a salesperson's number
+  assert.deepEqual([...owners.keys()], ["11111"]);
+  const withSales = channelOwnerMap([{ phone_number_id: "44444", owner_profile_id: "p-sales", enabled: true }], [...profiles, { id: "p-sales", full_name: "Bilal", role: "sales", is_active: true }]);
+  assert.equal(withSales.get("44444").name, "Bilal"); // the "sales" role is a salesperson too // admin-owned and disabled channels are not a salesperson's number
   assert.equal(responsibleName({ phoneNumberId: "11111", assignedTo: "p-boss", channelOwners: owners, profiles }), "Ayana");
   assert.equal(responsibleName({ phoneNumberId: "22222", assignedTo: "p-ayana", channelOwners: owners, profiles }), "Ayana");
   assert.equal(responsibleName({ phoneNumberId: "22222", assignedTo: null, channelOwners: owners, profiles }), "公司号");
@@ -92,22 +94,25 @@ test("brief section: counts overdue and at-risk per person with the longest wait
     { lead_id: "l3", state: "at_risk", first_inbound_at: iso("2026-11-23T05:00:00Z"), first_reply_at: iso("2026-11-23T05:10:00Z"), last_outbound_at: iso("2026-11-22T04:00:00Z") },
     { lead_id: "l4", state: "overdue", first_inbound_at: iso("2026-11-23T04:00:00Z"), first_reply_at: null, last_outbound_at: null }, // archived
     { lead_id: "l5", state: "normal", first_inbound_at: iso("2026-11-23T04:00:00Z"), first_reply_at: null, last_outbound_at: null },
+    { lead_id: "l7", state: "at_risk", first_inbound_at: iso("2026-11-23T04:00:00Z"), first_reply_at: iso("2026-11-23T05:30:00Z"), last_outbound_at: iso("2026-11-23T05:30:00Z") }, // silence rule only: not waiting
     { lead_id: "l6", state: "overdue", first_inbound_at: iso("2026-11-23T04:00:00Z"), first_reply_at: null, last_outbound_at: null }, // excluded test
   ];
-  const leads = new Map(["l1", "l2", "l3", "l4", "l5", "l6"].map((id) => [id, { id, assigned_to: "p-boss", archived: id === "l4", final_status: null, source: "fb" }]));
+  const leads = new Map(["l1", "l2", "l3", "l4", "l5", "l6", "l7"].map((id) => [id, { id, assigned_to: "p-boss", archived: id === "l4", final_status: null, source: "fb" }]));
   leads.get("l3").assigned_to = "p-ayana";
   const conversations = [
     { lead_id: "l1", phone_number_id: "11111", last_inbound_at: iso("2026-11-23T04:00:00Z") },
     { lead_id: "l2", phone_number_id: "11111", last_inbound_at: iso("2026-11-23T06:00:00Z") },
+    { lead_id: "l3", phone_number_id: "99999", last_inbound_at: iso("2026-11-23T05:00:00Z"), last_outbound_at: iso("2026-11-22T04:00:00Z") },
+    { lead_id: "l7", phone_number_id: "11111", last_inbound_at: iso("2026-11-23T05:00:00Z"), last_outbound_at: iso("2026-11-23T05:30:00Z") }, // answered
   ];
   const waits = summarizeFollowupWaits({ states, leads, conversations, channelOwners: owners, profiles, excludedTestIds: new Set(["l6"]), now: MON_NOON });
   assert.equal(waits[0].name, "Ayana");
   assert.equal(waits[0].count, 3); // l1, l2 by channel owner, l3 by assignee
   assert.equal(waits[0].overdue, 1);
   assert.equal(waits[0].at_risk, 2);
-  assert.equal(waits[0].longest_hours, 12); // l3: last reply Sunday 08:00 Dubai; Sunday is not a working day, so only Monday 00:00-12:00 counts
+  assert.equal(waits[0].longest_hours, 4); // l1; l3 has waited since its customer message at 09:00 (3 h); l7 was answered and does not count
   assert.equal(waits.length, 1);
-  assert.equal(waitSectionText(waits), "WhatsApp客户等回复：Ayana 超时1风险2(最久12小时)");
+  assert.equal(waitSectionText(waits), "WhatsApp客户等回复：Ayana 超时1风险2(最久4小时)");
 });
 
 test("brief: the waiting section sits before the attention line and the whole text stays within 400 characters", () => {

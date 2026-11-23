@@ -15,6 +15,7 @@ export const WAIT_ALERT_FIRST_HOUR = 9;
 export const WAIT_ALERT_LAST_HOUR = 21;
 export const WAIT_ALERT_MAX_AGE_DAYS = 7; // an older unanswered message is stale history, never alerted
 export const WAIT_ALERT_KEY = "newme-wa-wait-alert";
+const SALES_ROLES = Object.freeze(["sales", "operator"]); // a salesperson's own number; admin and boss own the shared company number
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const DUBAI_OFFSET = 4 * HOUR;
@@ -54,7 +55,7 @@ export function channelOwnerMap(channels, profiles) {
   for (const channel of channels ?? []) {
     if (channel?.enabled === false) continue;
     const owner = byId.get(channel?.owner_profile_id);
-    if (!owner || owner.role !== "operator") continue;
+    if (!owner || !SALES_ROLES.includes(owner.role)) continue;
     map.set(String(channel.phone_number_id), { id: owner.id, name: text(owner.full_name) || "销售" });
   }
   return map;
@@ -81,12 +82,21 @@ export function summarizeFollowupWaits({ states = [], leads = new Map(), convers
     const seen = channelByLead.get(c.lead_id);
     if (!seen || (ms(c.last_inbound_at) || 0) > seen.at) channelByLead.set(c.lead_id, { at: ms(c.last_inbound_at) || 0, phone: c.phone_number_id });
   }
+  // A customer is waiting only while a conversation has a customer message newer than our last reply; a lead whose message was
+  // answered can still be "at risk" by the silence rule, which is not the customer waiting.
+  const unansweredAt = new Map();
+  for (const c of conversations) {
+    const lastIn = ms(c.last_inbound_at);
+    const lastOut = c.last_outbound_at ? ms(c.last_outbound_at) : -Infinity;
+    if (Number.isFinite(lastIn) && lastIn > lastOut) unansweredAt.set(c.lead_id, Math.max(unansweredAt.get(c.lead_id) ?? 0, lastIn));
+  }
   const groups = new Map();
   for (const s of states) {
     if (s.state !== "overdue" && s.state !== "at_risk") continue;
+    if (!unansweredAt.has(s.lead_id)) continue;
     const lead = leads.get(s.lead_id);
     if (!lead || lead.archived || lead.final_status || lead.source === "synthetic_qa" || excludedTestIds.has(s.lead_id)) continue;
-    const since = ms(s.first_reply_at ? s.last_outbound_at : s.first_inbound_at);
+    const since = s.first_reply_at ? unansweredAt.get(s.lead_id) : ms(s.first_inbound_at);
     if (!Number.isFinite(since)) continue;
     const hours = Math.max(0, Math.floor(workingElapsedMs(since, nowMs) / HOUR));
     const name = responsibleName({ phoneNumberId: channelByLead.get(s.lead_id)?.phone, assignedTo: lead.assigned_to, channelOwners, profiles });

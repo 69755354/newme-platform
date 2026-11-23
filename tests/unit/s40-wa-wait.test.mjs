@@ -293,3 +293,15 @@ test("P3-5: the dialog shows the specific first-contact reasons in the user's la
   const { readFileSync } = await import("node:fs");
   assert.match(readFileSync(new URL("../../src/shared/hooks/usePipelineDragDrop.ts", import.meta.url), "utf8"), /result\.reasons_zh/);
 });
+
+test("review: with two channels the waiting conversation's owner answers for the lead, not the newer answered one", () => {
+  const owners = channelOwnerMap([{ phone_number_id: "11111", owner_profile_id: "p-ayana", enabled: true }, { phone_number_id: "55555", owner_profile_id: "p-bilal", enabled: true }],
+    [...profiles, { id: "p-bilal", full_name: "Bilal", role: "operator", is_active: true }]);
+  const states = [{ lead_id: "l1", state: "overdue", first_inbound_at: iso("2026-11-23T04:00:00Z"), first_reply_at: null, last_outbound_at: null }];
+  const leads = new Map([["l1", { id: "l1", assigned_to: null, archived: false, final_status: null, source: "fb" }]]);
+  const conversations = [
+    { lead_id: "l1", phone_number_id: "11111", last_inbound_at: iso("2026-11-23T04:00:00Z"), last_outbound_at: null },
+    { lead_id: "l1", phone_number_id: "55555", last_inbound_at: iso("2026-11-23T06:00:00Z"), last_outbound_at: iso("2026-11-23T06:05:00Z") },
+  ];
+  assert.equal(summarizeFollowupWaits({ states, leads, conversations, channelOwners: owners, profiles, now: MON_NOON })[0].name, "Ayana");
+});

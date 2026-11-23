@@ -86,6 +86,7 @@ export function summarizeFollowupWaits({ states = [], leads = new Map(), convers
   const nowMs = ms(now);
   const channelByLead = new Map();
   for (const c of conversations) {
+    if (!isUnanswered(c)) continue; // the responsible person is the owner of a conversation that is actually waiting
     const seen = channelByLead.get(c.lead_id);
     if (!seen || (ms(c.last_inbound_at) || 0) > seen.at) channelByLead.set(c.lead_id, { at: ms(c.last_inbound_at) || 0, phone: c.phone_number_id });
   }

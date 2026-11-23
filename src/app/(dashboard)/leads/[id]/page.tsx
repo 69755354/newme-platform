@@ -28,6 +28,7 @@ import KnxDesignPanel from "@/components/knx-design-panel";
 import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
 import LeadWaitingBadge from "./LeadWaitingBadge";
+import LeadActionBar from "./LeadActionBar";
 import LeadAiNoteCard from "./LeadAiNoteCard";
 import LeadFollowupCard from "./LeadFollowupCard";
 
@@ -41,7 +42,7 @@ import { useLeadDetailData } from "./useLeadDetailData";
 import { useLeadDetailMutations } from "./useLeadDetailMutations";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import { effectiveLeadStatus, type MetricLead } from "@/lib/lead-metrics.mjs";
-import { isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
+import { isWaitingForReply, isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 import type {
   RenderInlineEdit,
   RenderDateEdit,
@@ -544,7 +545,7 @@ export default function LeadDetailPage() {
                 {t("s37.wa.badge")}
               </span>
             )}
-            {isWhatsAppAdLead(lead) && lead.wa_first_inbound_at && !lead.wa_first_reply_at && !lead.final_status && !lead.last_contact_date && lead.stage === "new" && (lead.followup_count ?? 0) === 0 && (
+            {isWaitingForReply(lead) && lead.wa_first_inbound_at && (
               <LeadWaitingBadge inboundAt={lead.wa_first_inbound_at} t={t} />
             )}
             {lead.quality === 'poor' && (
@@ -587,6 +588,16 @@ export default function LeadDetailPage() {
           </div>
         )}
       </div>
+
+      {!lead.final_status && (
+        <LeadActionBar
+          lead={lead}
+          repName={assignedToName}
+          canLog={["admin", "boss", "operator"].includes(salesRole ?? "") || (!!currentUserId && lead.assigned_to === currentUserId)}
+          onLogged={refreshData}
+          t={t}
+        />
+      )}
 
       {/* Deal Canvas: facts → focused action workspace → auditable activity ledger. */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)_minmax(0,1fr)]">

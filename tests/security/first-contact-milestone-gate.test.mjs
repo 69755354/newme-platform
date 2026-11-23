@@ -20,9 +20,10 @@ test("First Contact completion explains an unmet business gate", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
   assert.match(source, /setFirstContactBlockReason/);
   assert.match(source, /completeContactCount < 1/);
-  assert.match(source, /!isAssessedQuality\(lead\.quality\)/);
+  // S39: the quality rating is optional, one contact record is the whole business gate
+  assert.doesNotMatch(source, /!isAssessedQuality\(lead\.quality\)/);
   assert.match(source, /请先添加 1 条完整联系记录/);
-  assert.match(source, /请先选择线索质量，再完成初次接触/);
+  assert.doesNotMatch(source, /请先选择线索质量，再完成初次接触/);
 });
 
 test("First Contact workspace remains available after milestone completion", async () => {
@@ -96,15 +97,14 @@ test("milestone POST treats an existing milestone as idempotent success", async 
   assert.match(route, /duplicate: true/);
   assert.match(route, /existingMilestone/);
 });
-test("milestone POST rejects blank notes before inserting a new milestone", async () => {
+test("milestone POST never stores a blank note: S39 gives a blank one a plain default before the insert", async () => {
   const route = await read("src/app/api/leads/[id]/milestone/route.ts");
-  const validation = route.indexOf("if (!normalizedNotes)");
+  const fallback = route.indexOf("const normalizedNotes");
   const insert = route.indexOf(".insert({");
 
-  assert.match(route, /const normalizedNotes = String\(notes \?\? ""\)\.trim\(\);/);
-  assert.notEqual(validation, -1, "blank milestone notes must be rejected");
-  assert.ok(validation < insert, "note validation must run before milestone insert");
-  assert.match(route, /Milestone note is required/);
+  assert.match(route, /const normalizedNotes = String\(notes \?\? ""\)\.trim\(\) \|\| `Milestone completed: \$\{milestoneKey\}`;/);
+  assert.ok(fallback !== -1 && fallback < insert, "the default is applied before the milestone insert");
+  assert.doesNotMatch(route, /Milestone note is required/);
   assert.match(route, /notes: normalizedNotes/);
 });
 

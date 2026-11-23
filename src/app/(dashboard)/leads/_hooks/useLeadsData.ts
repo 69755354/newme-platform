@@ -38,6 +38,9 @@ export interface Lead {
   poor_reason: string | null;
   source_channel?: string | null;
   ctwa_clid?: string | null;
+  landing_page?: string | null;
+  wa_first_inbound_at?: string | null;
+  wa_first_reply_at?: string | null;
 }
 
 interface SalesUser {

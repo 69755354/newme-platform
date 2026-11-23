@@ -1328,6 +1328,14 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 - 看板赢单弹窗：`src/shared/kanban/WonDropDialog.tsx`（拖入赢单时填写金额与确认）。
 - 派发工作台改为通过接口取可转交销售名单：`src/app/api/dispatch/reps/route.ts`（管理员、老板、运营可读，规则与线索页一致，隐藏测试账号），浏览器端不再直接查询用户资料表。
 
+## 2026-11-23 S39 销售日常使用补充登记
+
+- 线索页三个大按钮：`src/app/(dashboard)/leads/[id]/LeadActionBar.tsx`（拨号 tel:、带问候语的 WhatsApp、记一笔）；纯函数 `src/lib/lead-actions.mjs`（按客户语言生成问候语、快捷记录请求体）。
+- 记一笔即首次联系：`src/lib/first-contact-feedback.ts`（首次联系的广告回传，服务端）、`src/lib/contact-first-contact.mjs`（新线索记一条联系后补首次联系里程碑并推进到已联系，自动补默认下一步与跟进日期）；接口 `src/app/api/leads/[id]/contacts/route.ts` 不再要求联系结果与时间。
+- 手机线索列表：`src/app/(dashboard)/leads/_components/LeadsMobileList.tsx`（紧凑可排序分页列表）、`src/app/(dashboard)/leads/_hooks/useNarrowViewport.ts`（窄屏判断）、`src/lib/leads-sort.mjs`（默认“未联系、逾期、最新”，排序选择记在本机）。
+- 阶段规则放宽：迁移 `supabase/migrations/20261123100000_s39_stage_rules_relaxed.sql`（可向前跳步、首次联系只需一条联系记录、线索质量选填；替换六个数据库例程），数据库测试 `tests/database/s39-stage-rules.sql`；备注选填、赢单仍要金额、输单仍要原因。
+- 统一电话读取：`src/lib/lead-contact.mjs` 的 `intakePhone` / `phoneIdentityKey`，Meta 表单、官网、WhatsApp、表格同步、手工新建共用。
+- WhatsApp 广告等待回复：`src/lib/whatsapp-ad-display.mjs` 的 `isWaitingForReply`（合并进旧线索的广告点击同样显示）。
 ## 2026-11-23 S40 WhatsApp 等回复监控进简报与白天升级提醒（默认关闭）
 
 - 公司号等回复的文字与选取逻辑：`src/lib/wa-wait.mjs`（简报小节、工作时间等待时长、渠道负责人、白天提醒文案）；运行入口仍是 `scripts/daily-brief.mjs`（08:05 简报加一节“WhatsApp客户等回复”；每小时提醒任务里加“等回复超过阈值”提醒，由 `NEWME_WA_WAIT_ALERT_ENABLED=true` 打开，默认关闭，阈值 `NEWME_WA_WAIT_ALERT_HOURS` 默认 2 个工作小时）。

@@ -277,10 +277,10 @@ test("P2: spend-not-connected only when there is no spend history at all; tables
   assert.doesNotMatch(page, /roi && !spendMissing && \(\s*<div className="grid gap-4 md:grid-cols-2"/);
 });
 
-test("P2: waiting badge only for a never-contacted new lead", () => {
+test("P2 (S39): waiting badge until someone answers the ad message, not only for a never-contacted new lead", () => {
   const page = read("src/app/(dashboard)/leads/[id]/page.tsx");
-  assert.match(page, /!lead\.last_contact_date && lead\.stage === "new"/);
-  assert.match(page, /followup_count \?\? 0\) === 0/);
+  assert.match(page, /isWaitingForReply\(lead\)/);
+  assert.doesNotMatch(page, /!lead\.last_contact_date && lead\.stage === "new"/);
 });
 
 test("P3: money parses thousands separators, dates show the year when not current", () => {

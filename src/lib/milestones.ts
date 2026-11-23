@@ -73,9 +73,7 @@ export function canCompleteMilestone(
     return { allowed: false, reason: MILESTONE_ERROR_REASONS.zh.cannotMoveBackward };
   }
 
-  if (targetOrder > maxCurrentOrder + 1) {
-    return { allowed: false, reason: MILESTONE_ERROR_REASONS.zh.completePreviousFirst };
-  }
+  // S39: skipping a step going forward is allowed (the DB trigger agrees).
 
   return { allowed: true };
 }

@@ -294,6 +294,12 @@
       "version": "20261122300000",
       "file": "20261122300000_s37_new_lead_not_dormant.sql",
       "sha256": "f0235899c6c9b84ccf30a80808dc85bdf03efc65ab6d61fec8d2745638fe828b"
+    },
+    {
+      "$comment": "S39 (OS fix S39): six existing routines replaced in place (stage sequence trigger, first-contact gate trigger, first-contact milestone trigger, milestone order trigger, transition_lead_stage, sync_advance_lead_stage_from_sheet): a stage or milestone may be skipped going forward, leaving 'new' needs one complete contact record and no quality rating. Same signatures, security modes and pinned search_path; no table, column, policy, trigger or grant changes.",
+      "version": "20261123100000",
+      "file": "20261123100000_s39_stage_rules_relaxed.sql",
+      "sha256": "f37603f9e7a0550b3795d6eb7e06a55220eef6c4caccb5b51ba7bf817415f435"
     }
   ],
   "companions": [
@@ -679,6 +685,11 @@
           "name": "s37-new-lead-not-dormant",
           "expect": true,
           "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%48 hours%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.derive_lead_status()')),false)"
+        },
+        {
+          "name": "s39-stage-rules-relaxed",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%S39: a stage may be skipped%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.transition_lead_stage(uuid,text,text,text,uuid)')) AND (SELECT count(*)=1 AND bool_and(p.prosrc LIKE '%Stage can only move forward%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.trg_check_stage_sequence()')) AND (SELECT count(*)=1 AND bool_and(p.prosrc NOT LIKE '%NEW.quality%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.trg_check_first_contact_gate()')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.prosrc LIKE '%skipping a milestone going forward%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.check_milestone_order()')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.prosrc NOT LIKE '%v_lead.quality%') AND bool_and(has_function_privilege('service_role',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_advance_lead_stage_from_sheet(uuid,text,text)')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%An earlier milestone must be completed first%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.recomplete_lead_milestone(uuid,text,text)')),false)"
         }
       ]
     }

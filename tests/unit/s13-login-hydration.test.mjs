@@ -60,6 +60,7 @@ test("browser storage and cookies are only read in the reviewed places", () => {
     "src/lib/i18n/LanguageContext.tsx", // external store + effect + setter
     "src/components/HtmlLangSync.tsx", // effect only
     "src/app/(dashboard)/analytics/_components/SalesLoad.tsx", // click handlers
+    "src/app/(dashboard)/leads/_components/LeadsMobileList.tsx", // S39: sort choice read at first render; the list mounts only after the leads have loaded in the browser, never server-rendered
     "src/lib/supabase.ts", // data-client factory, guarded by typeof document, token is never rendered
   ]);
   const hits = [];

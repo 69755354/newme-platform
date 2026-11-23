@@ -32,7 +32,20 @@ export const STAGE_ORDER = Object.freeze([
   "quotation_submitted",
 ]);
 
-const ASSESSED_QUALITY = new Set(["good", "normal", "poor"]);
+/**
+ * S39: the funnel stages a lead passes through when it moves from one stage to another (the old stage is
+ * excluded, the new one included), so a skip never loses the ad feedback of the steps in between.
+ * A target outside the funnel (won, lost, negotiation...) is reported on its own.
+ * @returns {string[]}
+ */
+export function funnelStagesBetween(fromStage, toStage) {
+  const to = STAGE_ORDER.indexOf(toStage);
+  const from = STAGE_ORDER.indexOf(fromStage);
+  if (to === -1) return typeof toStage === "string" && toStage ? [toStage] : [];
+  if (from === -1 || from >= to) return [toStage];
+  return STAGE_ORDER.slice(from + 1, to + 1);
+}
+
 const KEY_NAMESPACE = "b6c1f0a4-2d7e-4c39-8a51-3e9f0d2c7b18";
 
 /** Deterministic RFC 4122 v5 key for one (lead, milestone, step), so a retried request replays. */
@@ -60,12 +73,14 @@ export function planStageStep({ stage, finalStatus, milestoneKey, quality, hasCo
   const wanted = STAGE_ORDER.indexOf(target);
   // negotiation / pending_decision are already past; no_answered / fake are off-funnel.
   if (current === -1 || current >= wanted) return { next: null, reason: null };
-  if (stage === "new" && (!ASSESSED_QUALITY.has(quality) || !hasCompleteContact)) {
+  // S39: leaving "new" needs one complete contact record; the quality rating is optional.
+  if (stage === "new" && !hasCompleteContact) {
     return { next: null, reason: "first_contact_gate" };
   }
   // trg_enforce_followup rejects any lead update while these are empty.
   if (!nextAction || !nextFollowupDate) return { next: null, reason: "next_followup_required" };
-  return { next: STAGE_ORDER[current + 1] };
+  // S39: a stage may be skipped going forward; the lead moves straight to the stage the work reached.
+  return { next: target };
 }
 
 /**

@@ -17,7 +17,7 @@ import {
   PIPELINE_STAGES, STATUS_LABELS, isPlaceholder,
 } from "../_utils/constants";
 import { daysSince, fmtAED } from "../_utils/format";
-import { isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
+import { isWaitingForReply, isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 import type { Lead } from "../_hooks/useLeadsData";
 import type { SalesUser, UseLeadMutationsReturn } from "../_hooks/useLeadMutations";
 
@@ -201,6 +201,9 @@ export function LeadCard({
               {statusStyle && <span className={cn("text-xs px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{t(`statusLabels.${lead.lead_status || ""}`)}</span>}
               {isWhatsAppAdLead(lead) && (
                 <span data-testid="whatsapp-ad-badge" className="text-xs px-1 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-700">{t("s37.wa.badge")}</span>
+              )}
+              {isWaitingForReply(lead) && (
+                <span data-testid="whatsapp-waiting-badge" className="text-xs px-1 py-0.5 rounded font-medium bg-amber-500/10 text-amber-400">{t("s39.list.waitingReply")}</span>
               )}
             </div>
             {(!isPlaceholder(lead.property_type) || !isPlaceholder(lead.location)) && (

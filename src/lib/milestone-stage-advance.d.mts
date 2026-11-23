@@ -1,5 +1,6 @@
 export declare const MILESTONE_STAGE: Readonly<Record<string, string>>;
 export declare const STAGE_ORDER: readonly string[];
+export declare function funnelStagesBetween(fromStage: string | null | undefined, toStage: string | null | undefined): string[];
 export declare function stageStepKey(leadId: string, milestoneKey: string, nextStage: string): string;
 export declare function planStageStep(input: {
   stage: string | null;

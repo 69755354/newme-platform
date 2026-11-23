@@ -251,7 +251,7 @@ test('a batch recorded out of order is named as such',()=>{
 test('the deploy wrapper gates S36 provisioning like the other additive suffixes',()=>{
   const wrapper=fs.readFileSync(new URL('../../infra/systemd/newme-deploy.sh',import.meta.url),'utf8');
   assert.match(wrapper,/s36-db-plan\|s36-db-provision\) ;;/);
-  assert.match(wrapper,/\|s21-db-plan\|s21-db-provision(?:\|[a-z0-9-]+)*\|s33-db-plan\|s33-db-provision\|s36-db-plan\|s36-db-provision>" >&2/);
+  assert.match(wrapper,/\|s21-db-plan\|s21-db-provision(?:\|[a-z0-9-]+)*\|s33-db-plan\|s33-db-provision\|s36-db-plan\|s36-db-provision(?:\|[a-z0-9-]+)*>" >&2/);
   const start=wrapper.indexOf('= s36-db-plan ]');
   const block=wrapper.slice(start,wrapper.indexOf('case "$DB_TRANSITION_OPERATION" in',start));
   assert.match(block,/--phase deferred_contract --verify-only/);

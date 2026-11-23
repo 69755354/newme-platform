@@ -758,6 +758,12 @@ jobs:
           createdb --template history newme_s37_status_test
           PGDATABASE=newme_s37_status_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s37-new-lead-status.sql
 
+      # S39: stage and milestone rules relaxed (skip forward, one contact record, no quality rating). Rolled back.
+      - name: Stage rules relaxed (S39)
+        run: |
+          createdb --template history newme_s39_stage_test
+          PGDATABASE=newme_s39_stage_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s39-stage-rules.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

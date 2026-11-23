@@ -202,3 +202,20 @@ test("runner: --spend-file validation exits 2 before touching the database; argu
   assert.equal(await main(["--spend-file", good, "--print"], {}), 1);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("suggestions: no quality marks or quotes anywhere means no pause advice, cost per lead only", () => {
+  const leads = fixture.leads.map((l) => ({ ...l, quality: null, ai_quality: null, quotation_value: null }));
+  const r = buildWeeklyAdReview({ window, ...fixture, leads, quotations: [] });
+  const all = r.suggestions.join("\n");
+  assert.equal(r.totals.good_leads, 0);
+  assert.doesNotMatch(all, /建议暂停或减量：「(?!.*没有带来线索)/);
+  assert.match(all, /还没有标好坏/);
+});
+
+test("suggestions: leads explicitly marked bad still get pause advice (marks exist, none good)", () => {
+  const leads = fixture.leads.map((l) => ({ ...l, quality: "bad", ai_quality: null, quotation_value: null }));
+  const r = buildWeeklyAdReview({ window, ...fixture, leads, quotations: [] });
+  const all = r.suggestions.join("\n");
+  assert.doesNotMatch(all, /还没有标好坏/);
+  assert.match(all, /建议暂停或减量/);
+});

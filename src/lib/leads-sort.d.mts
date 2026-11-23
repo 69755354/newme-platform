@@ -1,0 +1,11 @@
+export type LeadSort = "smart" | "newest" | "overdue" | "last_contact";
+export declare const LEAD_SORTS: readonly LeadSort[];
+export declare const DEFAULT_LEAD_SORT: LeadSort;
+export declare const LEAD_SORT_STORAGE_KEY: string;
+export declare const MOBILE_PAGE_SIZE: number;
+export function parseLeadSort(value: unknown): LeadSort;
+type SortableLead = { id: string; stage?: string | null; final_status?: string | null; last_contact_date?: string | null; next_followup_date?: string | null; created_at?: string | null };
+export function neverContacted(lead: SortableLead): boolean;
+export function overdueFollowUp(lead: SortableLead, today: string): boolean;
+export function sortLeads<T extends SortableLead>(leads: T[], sort: string, now?: Date): T[];
+export function pageOf<T>(rows: T[], pages: number, size?: number): T[];

@@ -84,6 +84,71 @@ export function phoneMatchKey(raw) {
   return result.ok ? result.e164 : null;
 }
 
+/**
+ * S39: the ONE phone reader every entry point uses (Meta lead form, website form, WhatsApp, sheet sync, manual create).
+ * A number that reads as a UAE or international number is returned in E.164. A number that does not (a short or odd
+ * foreign number) is never dropped: an automatic intake must not lose a lead over formatting, so it keeps the digits
+ * (and a leading +) as written, 7-15 of them, exactly as the Meta intake always did. null only for "no number".
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function intakePhone(raw) {
+  const result = normalizePhone(raw);
+  if (result.ok) return result.e164;
+  if (raw === null || raw === undefined || (typeof raw !== "string" && typeof raw !== "number")) return null;
+  const compact = String(raw).replace(/[^0-9+]/g, "");
+  return /^\+?\d{7,15}$/.test(compact) ? compact : null;
+}
+
+/**
+ * Digits-only key of any phone spelling, built by exactly the rule of the database function public.wa_phone_key()
+ * (digits only, "00" dropped, 9710 + 9 digits loses the stray 0, local UAE spellings get 971), so the application and
+ * the database always agree on who is the same customer. null when it is not 7-15 digits.
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function waPhoneKey(raw) {
+  if (typeof raw !== "string" && typeof raw !== "number") return null;
+  let d = String(raw).replace(/\D/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("9710") && d.length === 13) d = `971${d.slice(4)}`;
+  else if (d.startsWith("0") && d.length >= 9 && d.length <= 10) d = `971${d.slice(1)}`;
+  else if (d.length === 9 && d.startsWith("5")) d = `971${d}`;
+  return d.length >= 7 && d.length <= 15 ? d : null;
+}
+
+/**
+ * A number that is one repeated digit (the last seven digits all equal) or a simple run (the whole number after the
+ * country code counting up or down: 1234567, 9876543210) says nothing about who the customer is, so it must never be
+ * used to match two leads.
+ * @param {string} digits
+ */
+export function isJunkDigits(digits) {
+  if (digits.length < 7) return true;
+  if (/^(\d)\1{6,}$/.test(digits.slice(-7))) return true;
+  const national = digits.startsWith("971") ? digits.slice(3) : digits;
+  if (national.length < 7) return false;
+  let up = true;
+  let down = true;
+  for (let i = 1; i < national.length; i += 1) {
+    const step = (Number(national[i]) - Number(national[i - 1]) + 10) % 10;
+    if (step !== 1) up = false;
+    if (step !== 9) down = false;
+  }
+  return up || down;
+}
+
+/**
+ * Duplicate key of any phone spelling ("971501234567"): the wa_phone_key() key, or null for a junk number.
+ * Use this to MATCH two leads; use waPhoneKey to mirror the database exactly.
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function phoneIdentityKey(raw) {
+  const key = waPhoneKey(raw);
+  return key && !isJunkDigits(key) ? key : null;
+}
+
 /** https://wa.me link for a stored phone in any accepted format, or null. */
 export function whatsappHref(raw) {
   const e164 = phoneMatchKey(raw);

@@ -23,6 +23,6 @@ export function evaluateFirstContactGate({
 
   const reasons = [];
   if (contactCount < 1) reasons.push("At least one complete contact record is required");
-  if (!isAssessedQuality(quality)) reasons.push("Lead Quality must be Good, Normal, or Poor");
+  // S39: the quality rating is optional; it no longer blocks leaving "new".
   return { allowed: reasons.length === 0, reasons };
 }

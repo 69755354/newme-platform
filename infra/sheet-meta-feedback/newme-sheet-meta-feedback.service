@@ -1,0 +1,22 @@
+[Unit]
+Description=Daily sales-sheet quality/quote outcome -> Meta feedback events (enqueue only)
+# STATUS: after-flag template, not installed. Does nothing unless SHEET_META_FEEDBACK_ENABLED=true in /etc/newme/sheet-meta-feedback.env.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/newme/current
+EnvironmentFile=/etc/newme/newme-runtime.env
+EnvironmentFile=-/etc/newme/capi-wa.env
+EnvironmentFile=-/etc/newme/sheet-meta-feedback.env
+Environment=GOOGLE_SA_FILE=/etc/newme/google-sheets-sa.json
+ExecStart=/usr/bin/node scripts/sheet-meta-feedback.mjs --execute
+TimeoutStartSec=240
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+Nice=10

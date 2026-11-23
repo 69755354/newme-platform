@@ -93,6 +93,7 @@ function route(w, role = "sales") {
     "@/lib/milestones": milestones,
     "@/lib/meta-crm-events": {
       enqueueMetaCrmEventForLead: async (_db, _id, key) => { w.state.meta.push(key); },
+      enqueueMetaCrmFunnelForLead: async (_db, _id, from, to) => { (w.state.funnel ??= []).push(`${from}->${to}`); return 1; },
     },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppCapiForProgress: async () => "skipped" },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped", enqueueWebsitePurchaseForLead: async () => "skipped" },
@@ -135,13 +136,14 @@ test("completing First Contact moves a ready lead from new to contacted via tran
   assert.deepEqual(w.state.meta, ["first_contact"], "only the milestone's Meta event, no second stage event");
 });
 
-test("a lead stuck at new walks one audited step at a time up to the milestone's stage", async () => {
+test("a lead stuck at new skips straight to the milestone's stage in one audited step (S39)", async () => {
   const w = world({ lead: ready, contacts: contact, milestonesDone: ["first_contact", "basic_info", "drawings"] });
   const response = await complete(w, "requirements");
   assert.equal(response.status, 200);
   assert.deepEqual(w.state.rpc.map(([, a]) => `${a.p_expected_stage}->${a.p_next_stage}`), [
-    "new->contacted", "contacted->requirement_confirmed",
+    "new->requirement_confirmed",
   ]);
+  assert.deepEqual(w.state.funnel, ["new->requirement_confirmed"], "the skip reports every funnel step passed to Meta");
 });
 
 test("milestones without a stage of their own and leads already further on are left alone", async () => {
@@ -172,7 +174,9 @@ test("a refused or failed stage change never fails the milestone save", async ()
 test("planning rules: gate, terminal, idempotent keys", () => {
   const base = { stage: "new", finalStatus: null, milestoneKey: "first_contact", quality: "good", hasCompleteContact: true, nextAction: "call", nextFollowupDate: "2026-11-10" };
   assert.deepEqual(advance.planStageStep(base), { next: "contacted" });
-  assert.deepEqual(advance.planStageStep({ ...base, quality: "pending" }), { next: null, reason: "first_contact_gate" });
+  // S39: the quality rating is optional
+  assert.deepEqual(advance.planStageStep({ ...base, quality: "pending" }), { next: "contacted" });
+  assert.deepEqual(advance.planStageStep({ ...base, quality: null, milestoneKey: "quotation" }), { next: "quotation_submitted" }, "skips forward");
   assert.deepEqual(advance.planStageStep({ ...base, hasCompleteContact: false }), { next: null, reason: "first_contact_gate" });
   assert.deepEqual(advance.planStageStep({ ...base, finalStatus: "lost" }), { next: null, reason: null });
   assert.deepEqual(advance.planStageStep({ ...base, stage: "won" }), { next: null, reason: null });

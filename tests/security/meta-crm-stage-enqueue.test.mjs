@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { funnelStagesBetween } from "../../src/lib/milestone-stage-advance.mjs";
 import test from "node:test";
 import fsSync from "node:fs";
 import path from "node:path";
@@ -75,7 +76,11 @@ function loadStageRoute({ rpcResult, enqueued }) {
     // S36: the won amount step is covered by tests/unit/s36-won-route.test.mjs; inert here.
     "@/lib/won-amount.mjs": { ensureWonAmount: async () => ({ ok: true, amount: { value: 1, currency: "AED" }, wrote: false }) },
     "@/lib/stage-error-zh.mjs": { stageErrorZh: (m) => `zh:${m}`, stageReasonsZh: (r) => r },
-    "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async (_db, lead, stage) => { enqueued.push([lead.id, stage]); return "queued"; } },
+    "@/lib/meta-crm-events": {
+      enqueueMetaCrmStageEvent: async (_db, lead, stage) => { enqueued.push([lead.id, stage]); return "queued"; },
+      // S39: a skip reports every funnel step between the old and the new stage.
+      enqueueMetaCrmFunnelBetween: async (_db, lead, from, to) => { for (const stage of funnelStagesBetween(from, to)) enqueued.push([lead.id, stage]); return 1; },
+    },
     "@/lib/whatsapp-capi.mjs": waStub,
     "@/lib/website-capi-valued": valuedStub,
     "@/lib/supabase-admin": { supabaseAdmin: admin },
@@ -151,7 +156,7 @@ function loadMilestoneRoute({ queued, insertError = null, existing = [] }) {
     },
     "@/lib/first-contact-gate.mjs": { isAssessedQuality: () => true, isCompleteContact: () => true },
     "@/lib/milestone-stage-advance.mjs": milestoneStageAdvance,
-    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async (db, leadId, key) => { queued.push([db.tag, leadId, key]); return "queued"; } },
+    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: async (db, leadId, key) => { queued.push([db.tag, leadId, key]); return "queued"; }, enqueueMetaCrmFunnelForLead: async () => 0 },
     "@/lib/whatsapp-capi.mjs": waStub,
     "@/lib/website-capi-valued": valuedStub,
     "next/server": nextServer,

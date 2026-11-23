@@ -123,6 +123,11 @@ function fakeDb(initial = []) {
       eq(k, v) { state.filters.push((r) => k.includes("->>") ? r[k.split("->>")[0]]?.[k.split("->>")[1]] === v : r[k] === v); return api; },
       is(k, v) { state.filters.push((r) => (r[k] ?? null) === v); return api; },
       in(k, vs) { state.filters.push((r) => vs.includes(r[k])); return api; },
+      ilike(k, pattern) {
+        const re = new RegExp(`^${String(pattern).split("%").map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "i");
+        state.filters.push((r) => re.test(String(r[k] ?? ""))); return api;
+      },
+      order() { return api; },
       or(expr) {
         const parts = expr.split(",").map((p) => p.split(".eq."));
         state.filters.push((r) => parts.some(([k, v]) => r[k] === v));
@@ -220,13 +225,13 @@ test("isolation: dry run and repeated backfill exclude tests from reconciliation
 });
 
 test("store: insert, idempotent replay, and merge into an untagged contact", async () => {
-  const db = fakeDb([{ id: "old-1", phone: "+971509999999", meta_leadgen_id: null, campaign_name: "kept" }]);
+  const db = fakeDb([{ id: "old-1", phone: "+971502468135", meta_leadgen_id: null, campaign_name: "kept" }]);
   const first = await storeMetaLead(db, mapMetaLeadToRow(graphLead()));
   assert.equal(first.outcome, "inserted");
   assert.equal((await storeMetaLead(db, mapMetaLeadToRow(graphLead()))).outcome, "duplicate");
   assert.equal(db.rows.filter((r) => r.meta_leadgen_id === LEAD).length, 1);
 
-  const other = mapMetaLeadToRow(graphLead("2234567890123456", { field_data: [{ name: "phone_number", values: ["+971509999999"] }] }));
+  const other = mapMetaLeadToRow(graphLead("2234567890123456", { field_data: [{ name: "phone_number", values: ["+971502468135"] }] }));
   const merged = await storeMetaLead(db, other);
   assert.equal(merged.outcome, "merged");
   const target = db.rows.find((r) => r.id === "old-1");

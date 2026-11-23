@@ -142,7 +142,7 @@ export function useLeadDetailData(leadId: string): UseLeadDetailDataReturn {
            decision_maker, decision_date, competitor, campaign_name,
            source_platform, source_channel, rep_name, quality, poor_reason,
            ad_id, ad_name, ctwa_clid, wa_first_inbound_at, wa_first_reply_at,
-           wa_ad_headline, wa_ad_source_url,
+           wa_ad_headline, wa_ad_source_url, landing_page,
            quotation_sent_date, circuit_diagrams, contact_result,
            smart_requirements, project_status, raw_import_data,
            creator:profiles!fk_leads_created_by(id, full_name, email, role),

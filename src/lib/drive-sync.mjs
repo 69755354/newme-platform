@@ -3,6 +3,7 @@
 // Parsing, phone normalisation and the import fingerprint are the ones of the one-time backfill (review/reimport/import_sheets.mjs)
 // so rows imported by the backfill are matched, not duplicated.
 import { createHash, timingSafeEqual } from "node:crypto";
+import { intakePhone } from "./lead-contact.mjs";
 import { planSheetQuote, shouldAdvanceStageForQuote } from "./sheet-quote.mjs";
 
 export const IMPORT_VERSION = "newme/sheet-reimport/v1"; // same value as the backfill: same fingerprint for the same Master Lead ID
@@ -24,6 +25,9 @@ export function maskId(v) {
 }
 
 export function normalizePhone(raw) {
+  // S39: the shared reader first; the sheet's own lenient rule stays as the fallback for numbers it refuses.
+  const shared = intakePhone(raw);
+  if (shared && /^\+\d{7,15}$/.test(shared)) return { e164: shared, digits: shared.replace(/\D/g, "") };
   let s = norm(raw).replace(/[\s().\-/]/g, "");
   if (!s) return null;
   if (s.startsWith("00")) s = `+${s.slice(2)}`;

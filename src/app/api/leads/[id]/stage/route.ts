@@ -10,7 +10,7 @@ import {
 import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
+import { enqueueMetaCrmFunnelBetween } from "@/lib/meta-crm-events";
 import { stageErrorZh, stageReasonsZh } from "@/lib/stage-error-zh.mjs";
 import { ensureWonAmount, revertWonAmount } from "@/lib/won-amount.mjs";
 import { enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
@@ -46,7 +46,7 @@ export async function PATCH(
 
     const body = await req.json();
     const stage = String(body?.stage ?? "").trim();
-    const note = String(body?.note ?? "").trim();
+    let note = String(body?.note ?? "").trim();
     const idempotencyKey = String(body?.idempotencyKey ?? "").trim();
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
       return respond({ error: "A valid idempotency key is required" }, { status: 400 });
@@ -54,12 +54,14 @@ export async function PATCH(
     if (note.length > 1000) {
       return respond({ error: "Stage note must be 1000 characters or fewer" }, { status: 400 });
     }
-    if (!note) {
-      return respond({ error: "Stage note is required" }, { status: 400 });
-    }
     if (!VALID_STAGES.has(stage)) {
       return respond({ error: "Invalid stage" }, { status: 400 });
     }
+    // S39: a note is optional for a move along the funnel; won (the amount's story) and lost (the reason) still need one.
+    if (!note && (stage === "won" || stage === "lost")) {
+      return respond({ error: "Stage note is required" }, { status: 400 });
+    }
+    if (!note) note = `Stage set to ${stage}`;
 
     const { data: lead, error: leadError } = await supabase
       .from("leads")
@@ -90,7 +92,7 @@ export async function PATCH(
       currentStage: lead.stage,
       nextStage: stage,
       contactCount: (contacts ?? []).filter(isCompleteContact).length,
-      quality: lead.quality,
+      quality: lead.quality, // S39: no longer part of the rule
     });
     if (!gate.allowed) {
       return respond(
@@ -160,7 +162,8 @@ export async function PATCH(
         && (committed.id === undefined || committed.id === leadId)
         && typeof committed.stage === "string" ? committed.stage : null;
       if (!tagError && tag?.meta_leadgen_id && committedStage === stage) {
-        await enqueueMetaCrmStageEvent(supabaseAdmin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, committedStage);
+        // S39: a skipped stage still reports every funnel step passed on the way.
+        await enqueueMetaCrmFunnelBetween(supabaseAdmin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, lead.stage, committedStage);
       }
       // Click-to-WhatsApp leads report to the business-messaging dataset instead.
       if (committedStage && committedStage === stage) {

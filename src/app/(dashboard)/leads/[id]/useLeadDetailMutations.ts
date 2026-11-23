@@ -541,11 +541,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     summary?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     if (updating) return { success: false };
-    if (!params.contact_result?.trim()) {
-      // The toast is the one message; the caller must not repeat it inline.
-      toast.error(t("leadDetail.contactResultRequired") || "Contact result is required");
-      return { success: false };
-    }
+    // S39: the result is optional (the server reads an empty one as "Contacted").
 
     setUpdating(true);
     try {
@@ -580,11 +576,8 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       return false;
     }
 
+    // S39: the progress note is optional; the server keeps a default one on the record.
     const normalizedNotes = notes.trim();
-    if (!normalizedNotes) {
-      toast.error(lang === "zh" ? "请填写推进备注" : "Progress note is required");
-      return false;
-    }
 
     setUpdating(true);
     try {

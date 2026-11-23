@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hashedContactKeys } from "./capi-hash.mjs";
+import { funnelStagesBetween } from "./milestone-stage-advance.mjs";
 export { hashedContactKeys };
 
 /**
@@ -119,6 +120,40 @@ export async function enqueueMetaCrmStageEvent(
     return error ? "skipped" : "queued";
   } catch {
     return "skipped";
+  }
+}
+
+/**
+ * S39: a stage may be skipped forward, so queue every funnel event from the step after the old stage up to and
+ * including the new one, in order. Idempotent per (lead, event); a step already reported is not sent twice.
+ */
+export async function enqueueMetaCrmFunnelBetween(
+  db: SupabaseClient, lead: { id: string; meta_leadgen_id?: string | null },
+  fromStage: string | null | undefined, toStage: string | null | undefined,
+): Promise<number> {
+  let queued = 0;
+  try {
+    const base = Math.floor(Date.now() / 1000);
+    const stages = funnelStagesBetween(fromStage, toStage);
+    // Earlier steps get earlier times so Meta sees them in funnel order.
+    for (let i = 0; i < stages.length; i += 1) {
+      const at = base - (stages.length - 1 - i);
+      if (await enqueueMetaCrmStageEvent(db, lead, stages[i], at) === "queued") queued += 1;
+    }
+  } catch { /* tracking must never fail a stage change */ }
+  return queued;
+}
+
+/** Same, reading the lead's Meta id with the server client. Never throws. */
+export async function enqueueMetaCrmFunnelForLead(
+  db: SupabaseClient, leadId: string, fromStage: string | null | undefined, toStage: string | null | undefined,
+): Promise<number> {
+  try {
+    const { data, error } = await db.from("leads").select("meta_leadgen_id").eq("id", leadId).maybeSingle();
+    if (error || !data?.meta_leadgen_id) return 0;
+    return await enqueueMetaCrmFunnelBetween(db, { id: leadId, meta_leadgen_id: data.meta_leadgen_id }, fromStage, toStage);
+  } catch {
+    return 0;
   }
 }
 

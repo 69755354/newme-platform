@@ -1,10 +1,19 @@
--- ⚠️ PENDING OPS DEBT — NOT APPLIED
--- Reason: Supabase PAT (sbp_bbaf...) lacks database:query scope
--- Risk: Extremely low probability concurrent duplicate contract creation
--- Mitigation: L1 frontend disabled + L2 API SELECT check → 409
--- Resolution: Apply this migration when database:query scope is available
---              Then verify: concurrent dual POST → only 1 succeeds
+-- Enforce one active contract per lead. Do not silently select or merge
+-- duplicates: an existing duplicate is a data incident that needs explicit review.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.contracts
+    WHERE status NOT IN ('archived', 'cancelled', 'terminated')
+    GROUP BY lead_id
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'Cannot create active-contract uniqueness index: duplicate active contracts exist';
+  END IF;
+END;
+$$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_one_active_per_lead 
-ON public.contracts (lead_id) 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_one_active_per_lead
+ON public.contracts (lead_id)
 WHERE status NOT IN ('archived', 'cancelled', 'terminated');

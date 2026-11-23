@@ -12,7 +12,7 @@
 
 DO $$
 BEGIN
-  IF EXISTS (
+  IF to_regclass('public.tasks') IS NOT NULL AND EXISTS (
     SELECT 1 FROM information_schema.table_constraints
     WHERE constraint_name = 'tasks_future_only'
       AND table_name = 'tasks'
@@ -24,7 +24,7 @@ END $$;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  IF to_regclass('public.tasks') IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM information_schema.table_constraints
     WHERE constraint_name = 'tasks_future_only'
       AND table_name = 'tasks'

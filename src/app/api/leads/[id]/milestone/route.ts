@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canCompleteMilestone } from "@/lib/milestones";
-import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueMetaCrmEventForLead, enqueueMetaCrmFunnelForLead } from "@/lib/meta-crm-events";
 import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 import {
   applyRequestAuthCookies,
@@ -67,7 +67,10 @@ export async function POST(
           .eq("lead_id", leadId);
         hasCompleteContact = (logs ?? []).some(isCompleteContact);
       }
-      return await advanceStageForMilestone(supabase, { leadId, milestoneKey, lead: current, hasCompleteContact });
+      const result = await advanceStageForMilestone(supabase, { leadId, milestoneKey, lead: current, hasCompleteContact });
+      // S39: a skip reports every funnel step passed (Contacted, Qualified, Solution Submitted, Quoted).
+      if (result.advanced && result.stage) await enqueueMetaCrmFunnelForLead(supabaseAdmin, leadId, current.stage, result.stage);
+      return result;
     } catch {
       return { advanced: false, stage: null, reason: "stage_update_failed" };
     }

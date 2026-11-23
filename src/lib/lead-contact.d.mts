@@ -7,6 +7,8 @@ export function normalizePhone(raw: unknown): PhoneResult;
 export function phoneMatchKey(raw: unknown): string | null;
 export function intakePhone(raw: unknown): string | null;
 export function phoneIdentityKey(raw: unknown): string | null;
+export function waPhoneKey(raw: unknown): string | null;
+export function isJunkDigits(digits: string): boolean;
 export function whatsappHref(raw: unknown): string | null;
 export function telHref(raw: unknown): string | null;
 export function normalizeEmail(raw: unknown): { ok: true; email: string } | { ok: false; code: "email_empty" | "invalid_email" };

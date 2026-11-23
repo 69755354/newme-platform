@@ -13,7 +13,8 @@ import { mapMetaLeadToRow, storeMetaLead } from "../../src/lib/meta-lead-ads.mjs
 import { leadGreetingLanguage, quickLogBody, whatsappGreeting, whatsappLinkWithGreeting } from "../../src/lib/lead-actions.mjs";
 import { DEFAULT_LEAD_SORT, MOBILE_PAGE_SIZE, pageOf, parseLeadSort, sortLeads } from "../../src/lib/leads-sort.mjs";
 import { completeFirstContactAfterLog } from "../../src/lib/contact-first-contact.mjs";
-import { planStageStep } from "../../src/lib/milestone-stage-advance.mjs";
+import { enqueueMetaCrmFunnelBetween } from "../../src/lib/meta-crm-events.ts";
+import { funnelStagesBetween, planStageStep } from "../../src/lib/milestone-stage-advance.mjs";
 import { evaluateFirstContactGate } from "../../src/lib/first-contact-gate.mjs";
 import { isWaitingForReply, isWhatsAppAdLead } from "../../src/lib/whatsapp-ad-display.mjs";
 import { INBOX_LIMIT, mergeInbox } from "../../src/lib/workbench-inbox.mjs";
@@ -251,7 +252,10 @@ function metaDb(rows) {
     const api = {
       select() { return api; }, insert(p) { op = "insert"; payload = p; return api; }, update(p) { op = "update"; payload = p; return api; },
       eq(k, v) { filters.push((r) => r[k] === v); return api; }, is(k, v) { filters.push((r) => (r[k] ?? null) === v); return api; },
-      ilike(k, pattern) { const tail = String(pattern).replace(/^%/, ""); filters.push((r) => String(r[k] ?? "").endsWith(tail)); return api; },
+      ilike(k, pattern) {
+        const re = new RegExp(`^${String(pattern).split("%").map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "i");
+        filters.push((r) => re.test(String(r[k] ?? ""))); return api;
+      },
       order() { return api; }, limit() { return api; },
       run() {
         if (op === "insert") { const row = { id: `new-${store.length}`, archived: false, ...payload }; store.push(row); return { data: [row], error: null }; }
@@ -278,6 +282,72 @@ test("S39-5 a Meta form lead merges into the same customer stored in another spe
   assert.equal(db.store.length, 2, "no new row");
 });
 
+const metaRow = (phone, email) => mapMetaLeadToRow({ id: "1234567890123456", field_data: [{ name: "phone_number", values: [phone] }, ...(email ? [{ name: "email", values: [email] }] : [])], ad_id: "123456789", form_id: "998877665544" });
+
+test("S39-5 a stored spelling with separators inside the last digits is still found", async () => {
+  const db = metaDb([{ id: "old", phone: "+971 50 123 45 67", created_at: "2026-10-01" }]);
+  assert.equal((await storeMetaLead(db, metaRow("0501234567"))).outcome, "merged");
+});
+
+test("S39-5 a closed (won or lost) or archived lead is never reopened by a phone or email match; a new lead is made", async () => {
+  for (const closed of [{ final_status: "won" }, { final_status: "lost" }, { archived: true }]) {
+    const db = metaDb([{ id: "old", phone: "050 123 4567", email: "a@x.com", created_at: "2026-10-01", ...closed }]);
+    assert.equal((await storeMetaLead(db, metaRow("0501234567", "a@x.com"))).outcome, "inserted", JSON.stringify(closed));
+    assert.equal(db.store.length, 2);
+  }
+});
+
+test("S39-5 two different emails on the same phone are two people: no merge; one side without email still merges", async () => {
+  const two = metaDb([{ id: "old", phone: "050 123 4567", email: "a@x.com", created_at: "2026-10-01" }]);
+  assert.equal((await storeMetaLead(two, metaRow("0501234567", "b@x.com"))).outcome, "inserted");
+  const same = metaDb([{ id: "old", phone: "050 123 4567", email: "A@x.com", created_at: "2026-10-01" }]);
+  assert.equal((await storeMetaLead(same, metaRow("0501234567", "a@x.com"))).outcome, "merged");
+  const noMail = metaDb([{ id: "old", phone: "050 123 4567", email: null, created_at: "2026-10-01" }]);
+  assert.equal((await storeMetaLead(noMail, metaRow("0501234567", "a@x.com"))).outcome, "merged");
+});
+
+test("S39-5 a junk number (one repeated digit or a simple run) never builds a merge key", async () => {
+  for (const junk of ["0500000000", "+971 55 555 5555", "1234567", "9876543210"]) {
+    assert.equal(phoneIdentityKey(junk), null, junk);
+  }
+  assert.equal(phoneIdentityKey("050 123 4567"), "971501234567");
+  const db = metaDb([{ id: "old", phone: "050 000 0000", created_at: "2026-10-01" }]);
+  assert.equal((await storeMetaLead(db, metaRow("0500000000"))).outcome, "inserted");
+});
+
+test("S39-5 the application phone key equals the database key for 9710-prefixed landlines too", () => {
+  const db = (raw) => { // public.wa_phone_key(), step by step
+    let d = raw.replace(/\D/g, ""); if (d.startsWith("00")) d = d.slice(2);
+    if (d.startsWith("9710") && d.length === 13) d = `971${d.slice(4)}`;
+    else if (d.startsWith("0") && d.length >= 9 && d.length <= 10) d = `971${d.slice(1)}`;
+    else if (d.length === 9 && d.startsWith("5")) d = `971${d}`;
+    return d.length >= 7 && d.length <= 15 ? d : null;
+  };
+  for (const raw of ["+971 04 234 5678", "0097104 2345678", "04 234 5678", "+971 4 234 5678", "+971 050 123 4567"]) {
+    assert.equal(normalizeWhatsAppPhoneKey(raw), db(raw), raw);
+  }
+});
+
+// ── Meta funnel on a skipped stage ────────────────────────────────────────────────────────────────────────────────
+test("S39-3 a skip reports every funnel step passed, in order", () => {
+  assert.deepEqual(funnelStagesBetween("new", "quotation_submitted"), ["contacted", "requirement_confirmed", "solution_submitted", "quotation_submitted"]);
+  assert.deepEqual(funnelStagesBetween("contacted", "solution_submitted"), ["requirement_confirmed", "solution_submitted"]);
+  assert.deepEqual(funnelStagesBetween("new", "contacted"), ["contacted"]);
+  assert.deepEqual(funnelStagesBetween("quotation_submitted", "won"), ["won"]);
+  assert.deepEqual(funnelStagesBetween("negotiation", "quotation_submitted"), ["quotation_submitted"]);
+});
+
+test("S39-3 new -> quotation_submitted queues Contacted, Qualified, Solution Submitted and Quoted; the stage route and both milestone callers use it", async () => {
+  const rows = [];
+  const db = { from: () => ({ upsert: async (r) => { rows.push(r.event_name); return { error: null }; },
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { meta_leadgen_id: "1234567890123456" }, error: null }) }) }) }) };
+  await enqueueMetaCrmFunnelBetween(db, { id: "l1", meta_leadgen_id: "1234567890123456" }, "new", "quotation_submitted");
+  assert.deepEqual(rows, ["Contacted", "Qualified", "Solution Submitted", "Quoted"]);
+  assert.ok(read("src/app/api/leads/[id]/stage/route.ts").includes("enqueueMetaCrmFunnelBetween(supabaseAdmin"));
+  assert.ok(read("src/app/api/leads/[id]/milestone/route.ts").includes("enqueueMetaCrmFunnelForLead(supabaseAdmin, leadId, current.stage, result.stage)"));
+  assert.ok(read("src/app/api/quotations/generate/route.ts").includes("enqueueMetaCrmFunnelForLead(supabaseAdmin, lead_id, current.stage"));
+});
+
 // ── 6: WhatsApp ad badge and waiting state ────────────────────────────────────────────────────────────────────────
 test("S39-6 a click merged into an older lead is an ad lead and shows the waiting state until someone answers", () => {
   const merged = { source: "fb", source_channel: "meta_lead_form", ctwa_clid: "AbC123xyz-123", stage: "contacted", last_contact_date: "2026-11-01",
@@ -299,4 +369,17 @@ test("S39-6 the badge and waiting state appear in the board card, the compact li
   const route = read("src/app/api/leads/list/route.ts");
   for (const column of ["wa_first_inbound_at", "wa_first_reply_at", "ctwa_clid"]) assert.ok(route.includes(column), column);
   assert.ok(read("src/app/(dashboard)/leads/[id]/page.tsx").includes("isWaitingForReply(lead)"));
+});
+
+test("S39-1 the quick-log button shows for every role the server allows (any assigned user; admin, boss and operator on every lead)", () => {
+  const page = read("src/app/(dashboard)/leads/[id]/page.tsx");
+  assert.ok(page.includes('canLog={["admin", "boss", "operator"].includes(salesRole ?? "") || (!!currentUserId && lead.assigned_to === currentUserId)}'));
+  assert.ok(!page.includes('salesRole === "sales" && lead.assigned_to === currentUserId)}\n          onLogged'));
+});
+
+test("S39-2 the compact list keeps its page when the parent refreshes with a new array of the same leads", () => {
+  const list = read("src/app/(dashboard)/leads/_components/LeadsMobileList.tsx");
+  assert.ok(list.includes("pageState.resetKey === resetKey && pageState.sort === sort"));
+  assert.ok(!list.includes("pageState.list === leads"), "the array identity must not drive the reset");
+  assert.ok(read("src/app/(dashboard)/leads/page.tsx").includes("resetKey={JSON.stringify([search, stageFilter"));
 });

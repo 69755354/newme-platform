@@ -10,7 +10,7 @@ import {
 import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { enqueueMetaCrmStageEvent } from "@/lib/meta-crm-events";
+import { enqueueMetaCrmFunnelBetween } from "@/lib/meta-crm-events";
 import { ensureWonAmount, revertWonAmount } from "@/lib/won-amount.mjs";
 import { enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
 import { enqueueWebsitePurchaseForLead, enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
@@ -145,7 +145,8 @@ export async function PATCH(
         && (committed.id === undefined || committed.id === leadId)
         && typeof committed.stage === "string" ? committed.stage : null;
       if (!tagError && tag?.meta_leadgen_id && committedStage === stage) {
-        await enqueueMetaCrmStageEvent(supabaseAdmin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, committedStage);
+        // S39: a skipped stage still reports every funnel step passed on the way.
+        await enqueueMetaCrmFunnelBetween(supabaseAdmin, { id: leadId, meta_leadgen_id: tag.meta_leadgen_id }, lead.stage, committedStage);
       }
       // Click-to-WhatsApp leads report to the business-messaging dataset instead.
       if (committedStage && committedStage === stage) {

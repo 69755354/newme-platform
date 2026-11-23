@@ -157,7 +157,7 @@ const ATTRIBUTION_KEYS = ["ad_id", "meta_ad_id", "ad_name", "adset_id", "adset_n
 /**
  * Store one mapped lead. Idempotent by meta_leadgen_id:
  *  - already stored            -> "duplicate"
- *  - same phone/email on an active, untagged lead -> tag it, fill empty attribution -> "merged"
+ *  - same phone/email on an open (not archived, not won/lost), untagged lead -> tag it, fill empty attribution -> "merged"
  *    (archived leads are never revived silently; a new active lead is inserted instead)
  *  - otherwise                 -> insert -> "inserted"
  * The unique partial index on meta_leadgen_id is the final race guard (23505).
@@ -170,24 +170,34 @@ export async function storeMetaLead(db, row, origin = "backfill") {
   if (existing.error) throw new Error("lead_lookup_failed");
   if (existing.data?.length) return { outcome: "duplicate", id: existing.data[0].id };
 
-  // One parameterized lookup per contact field (never an interpolated .or() filter), email first, active untagged
-  // leads only. S39: the phone is matched by its identity key, so a lead stored as 050 123 4567 or 00971... is the
-  // same customer as the form's +971 number.
+  // One parameterized lookup per contact field (never an interpolated .or() filter), email first, OPEN untagged
+  // leads only: not archived, not won or lost (a closed deal is never reopened by a new form). S39: the phone is
+  // matched by its identity key, so a lead stored as 050 123 4567 or 00971... is the same customer as the form's
+  // +971 number, but never when both sides have an email and the emails differ (two people, one shared phone),
+  // and never on a junk number (phoneIdentityKey is null for those).
   let target = null;
-  const columns = `id, meta_leadgen_id, raw_import_data, ${ATTRIBUTION_KEYS.join(", ")}, phone`;
+  const columns = `id, meta_leadgen_id, raw_import_data, ${ATTRIBUTION_KEYS.join(", ")}, phone, email`;
   if (row.email) {
     const match = await db.from("leads").select(columns)
-      .eq("email", row.email).is("meta_leadgen_id", null).eq("archived", false).limit(1);
+      .eq("email", row.email).is("meta_leadgen_id", null).eq("archived", false).is("final_status", null).limit(1);
     if (match.error) throw new Error("lead_lookup_failed");
     target = match.data?.[0] ?? null;
   }
   const key = phoneIdentityKey(row.phone);
   if (!target && key) {
-    const suffix = key.slice(-4);
+    // Stored spellings differ in separators, so the candidate filter allows anything between the last seven digits
+    // ("%4%5%6%7%..."); the exact comparison is done on the normalized key below.
+    const pattern = `%${key.slice(-7).split("").join("%")}%`;
     const match = await db.from("leads").select(columns)
-      .ilike("phone", `%${suffix}`).is("meta_leadgen_id", null).eq("archived", false).order("created_at", { ascending: true }).limit(200);
+      .ilike("phone", pattern).is("meta_leadgen_id", null).eq("archived", false).is("final_status", null)
+      .order("created_at", { ascending: true }).limit(500);
     if (match.error) throw new Error("lead_lookup_failed");
-    target = (match.data ?? []).find((candidate) => phoneIdentityKey(candidate.phone) === key) ?? null;
+    const formEmail = String(row.email ?? "").trim().toLowerCase();
+    target = (match.data ?? []).find((candidate) => {
+      if (phoneIdentityKey(candidate.phone) !== key) return false;
+      const storedEmail = String(candidate.email ?? "").trim().toLowerCase();
+      return !(formEmail && storedEmail && formEmail !== storedEmail);
+    }) ?? null;
   }
   if (target) {
     const patch = { meta_leadgen_id: row.meta_leadgen_id, updated_at: new Date().toISOString(),

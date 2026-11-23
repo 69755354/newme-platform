@@ -16,7 +16,7 @@ import { buildBottomUpLabourRequest } from "@/lib/quotation-labour-request";
 import { formatInstallLabourNote } from "@/lib/quotation-labour-basis.mjs";
 import { advanceStageForMilestone } from "@/lib/milestone-stage-advance.mjs";
 import { isCompleteContact } from "@/lib/first-contact-gate.mjs";
-import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueMetaCrmEventForLead, enqueueMetaCrmFunnelForLead } from "@/lib/meta-crm-events";
 import { enqueueQuotedFeedback } from "@/lib/quote-feedback.mjs";
 import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 
@@ -349,6 +349,10 @@ export async function POST(request: NextRequest) {
           hasCompleteContact,
           note: `Quotation generated ${quoteNo}`,
         });
+        // S39: a skip reports every funnel step passed on the way to Quoted.
+        if (stageAdvance.advanced && stageAdvance.stage) {
+          await enqueueMetaCrmFunnelForLead(supabaseAdmin, lead_id, current.stage, stageAdvance.stage);
+        }
       }
     } catch {
       stageAdvance = { advanced: false, stage: null, reason: "stage_update_failed" };

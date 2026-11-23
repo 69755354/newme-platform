@@ -593,7 +593,7 @@ export default function LeadDetailPage() {
         <LeadActionBar
           lead={lead}
           repName={assignedToName}
-          canLog={["admin", "boss", "operator"].includes(salesRole ?? "") || (salesRole === "sales" && lead.assigned_to === currentUserId)}
+          canLog={["admin", "boss", "operator"].includes(salesRole ?? "") || (!!currentUserId && lead.assigned_to === currentUserId)}
           onLogged={refreshData}
           t={t}
         />

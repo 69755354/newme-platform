@@ -32,6 +32,20 @@ export const STAGE_ORDER = Object.freeze([
   "quotation_submitted",
 ]);
 
+/**
+ * S39: the funnel stages a lead passes through when it moves from one stage to another (the old stage is
+ * excluded, the new one included), so a skip never loses the ad feedback of the steps in between.
+ * A target outside the funnel (won, lost, negotiation...) is reported on its own.
+ * @returns {string[]}
+ */
+export function funnelStagesBetween(fromStage, toStage) {
+  const to = STAGE_ORDER.indexOf(toStage);
+  const from = STAGE_ORDER.indexOf(fromStage);
+  if (to === -1) return typeof toStage === "string" && toStage ? [toStage] : [];
+  if (from === -1 || from >= to) return [toStage];
+  return STAGE_ORDER.slice(from + 1, to + 1);
+}
+
 const KEY_NAMESPACE = "b6c1f0a4-2d7e-4c39-8a51-3e9f0d2c7b18";
 
 /** Deterministic RFC 4122 v5 key for one (lead, milestone, step), so a retried request replays. */

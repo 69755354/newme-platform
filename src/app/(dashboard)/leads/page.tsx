@@ -321,7 +321,12 @@ function LeadsContent() {
       ) : loading ? (
         <div className="text-center text-muted-foreground py-16 text-sm">{t("common.loading")}</div>
       ) : narrow ? (
-        <LeadsMobileList leads={filtered} onOpen={(id) => router.push(`/leads/${id}`)} t={t} />
+        <LeadsMobileList
+          leads={filtered}
+          resetKey={JSON.stringify([search, stageFilter, sourceFilter, statusFilter, alertFilter, recoveryFilter, transferFilter, reviewFilter, probabilityFilter, followupFilter, assignedToFilter, qualityFilter])}
+          onOpen={(id) => router.push(`/leads/${id}`)}
+          t={t}
+        />
       ) : (
         <LeadsKanbanBoard
           ref={scrollContainerRef}

@@ -19,6 +19,8 @@ import type { Lead } from "../_hooks/useLeadsData";
 
 interface Props {
   leads: Lead[];
+  /** Changes when a filter changes; a refresh of the same filter keeps the reader on the page they reached. */
+  resetKey?: string;
   onOpen: (id: string) => void;
   t: (key: string) => string;
 }
@@ -27,12 +29,13 @@ export function readSavedSort(): LeadSort {
   try { return parseLeadSort(window.localStorage.getItem(LEAD_SORT_STORAGE_KEY)); } catch { return DEFAULT_LEAD_SORT; }
 }
 
-export function LeadsMobileList({ leads, onOpen, t }: Props) {
+export function LeadsMobileList({ leads, resetKey = "", onOpen, t }: Props) {
   // Rendered only after the leads have loaded in the browser, so reading the saved sort at first render is safe.
   const [sort, setSort] = useState<LeadSort>(() => readSavedSort());
-  // The page count belongs to one (list, sort) pair: a new list or a new sort starts again at the first page.
-  const [pageState, setPageState] = useState<{ list: Lead[]; sort: LeadSort; pages: number }>({ list: leads, sort, pages: 1 });
-  const pages = pageState.list === leads && pageState.sort === sort ? pageState.pages : 1;
+  // The page count belongs to one (filter, sort) pair. A refresh that hands over a NEW array of the same leads keeps
+  // the page the reader reached; only a filter change (resetKey) or a sort change starts again at the first page.
+  const [pageState, setPageState] = useState<{ resetKey: string; sort: LeadSort; pages: number }>({ resetKey, sort, pages: 1 });
+  const pages = pageState.resetKey === resetKey && pageState.sort === sort ? pageState.pages : 1;
 
   const today = dubaiDateKey() ?? "";
   const sorted = useMemo(() => sortLeads(leads, sort), [leads, sort]);
@@ -98,7 +101,7 @@ export function LeadsMobileList({ leads, onOpen, t }: Props) {
         })}
       </ul>
       {shown.length < sorted.length && (
-        <button type="button" data-testid="leads-load-more" onClick={() => setPageState({ list: leads, sort, pages: pages + 1 })}
+        <button type="button" data-testid="leads-load-more" onClick={() => setPageState({ resetKey, sort, pages: pages + 1 })}
           className="h-11 w-full rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted">
           {t("s39.list.loadMore").replace("{n}", String(Math.min(MOBILE_PAGE_SIZE, sorted.length - shown.length)))}
         </button>

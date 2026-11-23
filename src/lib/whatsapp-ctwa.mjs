@@ -1,4 +1,4 @@
-import { phoneIdentityKey } from "./lead-contact.mjs";
+import { waPhoneKey } from "./lead-contact.mjs";
 // Click-to-WhatsApp (CTWA) ad attribution parsing. Pure functions shared by the
 // webhook route, the sender and node:test.
 //
@@ -43,17 +43,8 @@ export function normalizeCtwaClid(raw) {
  * stray trunk 0 after 971 removed. Null when the input is not a plausible number.
  */
 export function normalizeWhatsAppPhoneKey(raw) {
-  if (typeof raw !== "string" && typeof raw !== "number") return null;
-  // S39: the shared reader first (one phone normalizer for every entry point); the lenient digits rule below is kept for
-  // numbers the shared reader refuses, so the key stays equal to public.wa_phone_key().
-  const shared = phoneIdentityKey(raw);
-  if (shared) return shared;
-  let d = String(raw).replace(/\D/g, "");
-  if (d.startsWith("00")) d = d.slice(2);
-  if (d.startsWith("9710") && d.length === 13) d = `971${d.slice(4)}`;
-  else if (d.startsWith("0") && d.length >= 9 && d.length <= 10) d = `971${d.slice(1)}`;
-  else if (d.length === 9 && d.startsWith("5")) d = `971${d}`;
-  return d.length >= 7 && d.length <= 15 ? d : null;
+  // S39: the very rule of public.wa_phone_key(), kept in one place (lead-contact.mjs) for every entry point.
+  return waPhoneKey(raw);
 }
 
 function cleanReferral(raw) {

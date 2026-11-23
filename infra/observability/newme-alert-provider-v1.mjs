@@ -501,7 +501,9 @@ export async function produceProviderReceipt(mode, releaseSha) {
   ) refuse("provider_delivery_readback_mismatch");
   const providerTimestamp = mode === "readback" ? delivered.edit_date : delivered.date;
   const occurredAt = utcSecond(providerTimestamp * 1000);
-  if (Date.parse(occurredAt) < Date.parse(trigger.triggered_at) || Date.parse(occurredAt) > Date.now() + 5000) {
+  // The provider stamps whole seconds and the trigger is written in the same second it is sent, so an
+  // on-time delivery can read up to one second earlier than triggered_at. Allow two seconds of skew.
+  if (Date.parse(occurredAt) + 2000 < Date.parse(trigger.triggered_at) || Date.parse(occurredAt) > Date.now() + 5000) {
     refuse("provider_delivery_time_invalid");
   }
   providerOperationId = mode === "readback"

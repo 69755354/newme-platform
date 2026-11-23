@@ -25,6 +25,14 @@ test("the sans font is not defined as a reference to itself", () => {
   assert.match(css, /--font-sans:\s*var\(--font-geist-sans\)[^;]*"PingFang SC"/);
 });
 
+test("the font variables are set on <html>, where font-sans is applied", () => {
+  // globals.css applies font-sans on html; a variable defined only on body leaves html's
+  // font-family invalid and the whole app falls back to the browser serif (seen on staging).
+  const layout = read("src/app/layout.tsx");
+  assert.match(layout, /<html[^>]*className=\{`\$\{geistSans\.variable\}/);
+  assert.match(read("src/app/globals.css"), /html\s*\{\s*@apply font-sans;/);
+});
+
 test("no UI text is smaller than 12px", () => {
   const offenders = [];
   for (const f of SRC) {

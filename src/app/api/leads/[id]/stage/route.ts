@@ -35,7 +35,7 @@ export async function PATCH(
 
     const body = await req.json();
     const stage = String(body?.stage ?? "").trim();
-    const note = String(body?.note ?? "").trim();
+    let note = String(body?.note ?? "").trim();
     const idempotencyKey = String(body?.idempotencyKey ?? "").trim();
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
       return respond({ error: "A valid idempotency key is required" }, { status: 400 });
@@ -43,12 +43,14 @@ export async function PATCH(
     if (note.length > 1000) {
       return respond({ error: "Stage note must be 1000 characters or fewer" }, { status: 400 });
     }
-    if (!note) {
-      return respond({ error: "Stage note is required" }, { status: 400 });
-    }
     if (!VALID_STAGES.has(stage)) {
       return respond({ error: "Invalid stage" }, { status: 400 });
     }
+    // S39: a note is optional for a move along the funnel; won (the amount's story) and lost (the reason) still need one.
+    if (!note && (stage === "won" || stage === "lost")) {
+      return respond({ error: "Stage note is required" }, { status: 400 });
+    }
+    if (!note) note = `Stage set to ${stage}`;
 
     const { data: lead, error: leadError } = await supabase
       .from("leads")
@@ -79,7 +81,7 @@ export async function PATCH(
       currentStage: lead.stage,
       nextStage: stage,
       contactCount: (contacts ?? []).filter(isCompleteContact).length,
-      quality: lead.quality,
+      quality: lead.quality, // S39: no longer part of the rule
     });
     if (!gate.allowed) {
       return respond(

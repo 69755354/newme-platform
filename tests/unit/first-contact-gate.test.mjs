@@ -19,25 +19,24 @@ test("new lead cannot advance without a complete contact", () => {
   assert.match(result.reasons.join(" "), /complete contact/i);
 });
 
-test("new lead cannot advance until quality is assessed", () => {
-  const result = gate({ contactCount: 1 });
-  assert.equal(result.allowed, false);
-  assert.match(result.reasons.join(" "), /quality/i);
+test("S39: the quality rating is optional, one complete contact is enough", () => {
+  assert.deepEqual(gate({ contactCount: 1 }), { allowed: true, reasons: [] });
 });
 
-test("one complete contact and an assessed quality unlock the stage", () => {
-  for (const quality of ["good", "normal", "poor"]) {
+test("one complete contact unlocks the stage whatever the quality", () => {
+  for (const quality of ["good", "normal", "poor", null, "pending"]) {
     assert.deepEqual(gate({ contactCount: 1, quality }), { allowed: true, reasons: [] });
   }
 });
 
-test("three contacts do not bypass the quality requirement", () => {
-  assert.equal(gate({ contactCount: 3, quality: null }).allowed, false);
+test("no contact record still blocks, with or without quality", () => {
+  assert.equal(gate({ contactCount: 0, quality: "good" }).allowed, false);
+  assert.equal(gate({ contactCount: 0, quality: null }).allowed, false);
 });
 
 test("direct new-to-won and new-to-lost transitions are gated", () => {
   assert.equal(gate({ nextStage: "won", contactCount: 0, quality: "good" }).allowed, false);
-  assert.equal(gate({ nextStage: "lost", contactCount: 1, quality: null }).allowed, false);
+  assert.equal(gate({ nextStage: "lost", contactCount: 0, quality: "good" }).allowed, false);
 });
 
 test("transitions after First Contact are not re-gated", () => {

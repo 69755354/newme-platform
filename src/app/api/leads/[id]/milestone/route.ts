@@ -13,7 +13,7 @@ import {
   requestAuthErrorResponse,
   type RequestAuthContext,
 } from "@/lib/request-auth-context";
-import { isAssessedQuality, isCompleteContact } from "@/lib/first-contact-gate.mjs";
+import { isCompleteContact } from "@/lib/first-contact-gate.mjs";
 import { advanceStageForMilestone, MILESTONE_STAGE, type StageAdvanceResult } from "@/lib/milestone-stage-advance.mjs";
 
 type AdminSupabaseClient = SupabaseClient<Database>;
@@ -40,7 +40,8 @@ export async function POST(
   const leadId = (await context.params).id;
   const body = await req.json();
   const { milestoneKey, notes } = body as { milestoneKey: string; notes?: string };
-  const normalizedNotes = String(notes ?? "").trim();
+  // S39: the progress note is optional; the record keeps a plain default so the audit row is never empty.
+  const normalizedNotes = String(notes ?? "").trim() || `Milestone completed: ${milestoneKey}`;
 
   if (!milestoneKey) {
     return respond({ error: "缺少 milestoneKey" }, { status: 400 });
@@ -110,9 +111,10 @@ export async function POST(
     }
 
     const hasCompleteContact = (contacts ?? []).some(isCompleteContact);
-    if (!hasCompleteContact || !isAssessedQuality(lead.quality)) {
+    // S39: one contact record is enough; the quality rating is optional.
+    if (!hasCompleteContact) {
       return respond(
-        { error: "请先添加1条完整联系记录并评估线索质量" },
+        { error: "请先添加1条联系记录" },
         { status: 400 }
       );
     }
@@ -129,13 +131,6 @@ export async function POST(
     return respond(
       { error: "查询里程碑失败", detail: milestonesError.message },
       { status: 500 }
-    );
-  }
-
-  if (!normalizedNotes) {
-    return respond(
-      { error: "Milestone note is required" },
-      { status: 400 },
     );
   }
 

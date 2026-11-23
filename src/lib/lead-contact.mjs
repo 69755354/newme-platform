@@ -84,6 +84,36 @@ export function phoneMatchKey(raw) {
   return result.ok ? result.e164 : null;
 }
 
+/**
+ * S39: the ONE phone reader every entry point uses (Meta lead form, website form, WhatsApp, sheet sync, manual create).
+ * A number that reads as a UAE or international number is returned in E.164. A number that does not (a short or odd
+ * foreign number) is never dropped: an automatic intake must not lose a lead over formatting, so it keeps the digits
+ * (and a leading +) as written, 7-15 of them, exactly as the Meta intake always did. null only for "no number".
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function intakePhone(raw) {
+  const result = normalizePhone(raw);
+  if (result.ok) return result.e164;
+  if (raw === null || raw === undefined || (typeof raw !== "string" && typeof raw !== "number")) return null;
+  const compact = String(raw).replace(/[^0-9+]/g, "");
+  return /^\+?\d{7,15}$/.test(compact) ? compact : null;
+}
+
+/**
+ * Digits-only duplicate key of any phone spelling ("971501234567"): the same key the database function
+ * public.wa_phone_key() builds for WhatsApp, so a customer is one customer whichever door they came through.
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function phoneIdentityKey(raw) {
+  const e164 = intakePhone(raw);
+  if (!e164) return null;
+  const digits = e164.replace(/\D/g, "");
+  if (digits.startsWith("0") && digits.length >= 9 && digits.length <= 10) return `971${digits.slice(1)}`;
+  return digits.length >= 7 && digits.length <= 15 ? digits : null;
+}
+
 /** https://wa.me link for a stored phone in any accepted format, or null. */
 export function whatsappHref(raw) {
   const e164 = phoneMatchKey(raw);

@@ -5,6 +5,7 @@
 //
 // Never logs or returns customer answers; callers only see aggregate outcomes.
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { intakePhone, phoneIdentityKey } from "./lead-contact.mjs";
 import { isolateTestLead } from "./meta-lead-test-isolation.mjs";
 
 export const MAX_LEADGEN_WEBHOOK_BYTES = 256 * 1024;
@@ -93,8 +94,8 @@ function cleanEmail(raw) {
 function cleanPhone(raw) {
   const value = clip(raw, 40);
   if (!value) return null;
-  const compact = value.replace(/[^0-9+]/g, "");
-  return /^\+?\d{7,15}$/.test(compact) ? compact : null;
+  // S39: the shared phone reader (E.164 for UAE and international spellings; odd numbers keep their digits).
+  return intakePhone(value);
 }
 
 /** Map one Graph lead object to a leads-table row. Raw answers kept in raw_import_data. */
@@ -169,15 +170,24 @@ export async function storeMetaLead(db, row, origin = "backfill") {
   if (existing.error) throw new Error("lead_lookup_failed");
   if (existing.data?.length) return { outcome: "duplicate", id: existing.data[0].id };
 
-  // One parameterized equality lookup per contact field (never an interpolated
-  // .or() filter), email first, active untagged leads only.
+  // One parameterized lookup per contact field (never an interpolated .or() filter), email first, active untagged
+  // leads only. S39: the phone is matched by its identity key, so a lead stored as 050 123 4567 or 00971... is the
+  // same customer as the form's +971 number.
   let target = null;
-  for (const [column, value] of [["email", row.email], ["phone", row.phone]]) {
-    if (!value || target) continue;
-    const match = await db.from("leads").select(`id, meta_leadgen_id, raw_import_data, ${ATTRIBUTION_KEYS.join(", ")}`)
-      .eq(column, value).is("meta_leadgen_id", null).eq("archived", false).limit(1);
+  const columns = `id, meta_leadgen_id, raw_import_data, ${ATTRIBUTION_KEYS.join(", ")}, phone`;
+  if (row.email) {
+    const match = await db.from("leads").select(columns)
+      .eq("email", row.email).is("meta_leadgen_id", null).eq("archived", false).limit(1);
     if (match.error) throw new Error("lead_lookup_failed");
     target = match.data?.[0] ?? null;
+  }
+  const key = phoneIdentityKey(row.phone);
+  if (!target && key) {
+    const suffix = key.slice(-4);
+    const match = await db.from("leads").select(columns)
+      .ilike("phone", `%${suffix}`).is("meta_leadgen_id", null).eq("archived", false).order("created_at", { ascending: true }).limit(200);
+    if (match.error) throw new Error("lead_lookup_failed");
+    target = (match.data ?? []).find((candidate) => phoneIdentityKey(candidate.phone) === key) ?? null;
   }
   if (target) {
     const patch = { meta_leadgen_id: row.meta_leadgen_id, updated_at: new Date().toISOString(),

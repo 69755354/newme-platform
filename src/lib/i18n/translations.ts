@@ -2247,6 +2247,26 @@ export const translations = {
         waitingMinutes: "Customer has been waiting for a reply on WhatsApp for {n} min",
       },
     },
+    // ── S39 销售愿意天天用 (2026-11-23) — separate block at the end ──
+    s39: {
+      actions: { title: "Quick actions", call: "Call", quickLog: "Log a contact" },
+      quickLog: {
+        saved: "Contact logged",
+        notePlaceholder: "Optional note",
+        hint: "Counts as the first contact: a new lead becomes Contacted.",
+        method: { phone: "Phone", whatsapp: "WhatsApp", other: "Other" },
+      },
+      list: {
+        count: "{n} leads",
+        sort: "Sort",
+        sorts: { smart: "Uncontacted, overdue, newest", newest: "Newest first", overdue: "Most overdue first", last_contact: "Longest without contact" },
+        uncontacted: "Not contacted",
+        overdue: "Follow-up overdue",
+        waitingReply: "Waiting for reply",
+        loadMore: "Show {n} more",
+        empty: "No leads match",
+      },
+    },
   },
   zh: {
     // ── S3 线索流程修复（2026-11-04）— 独立区块，放在语言开头以避免与 S6 合并冲突 ──
@@ -4468,6 +4488,26 @@ export const translations = {
         badge: "WhatsApp 广告",
         waitingHours: "客户在 WhatsApp 等回复 {n} 小时",
         waitingMinutes: "客户在 WhatsApp 等回复 {n} 分钟",
+      },
+    },
+    // ── S39 销售愿意天天用 (2026-11-23) — 独立区块，放在末尾 ──
+    s39: {
+      actions: { title: "快捷操作", call: "拨号", quickLog: "记一笔" },
+      quickLog: {
+        saved: "已记录联系",
+        notePlaceholder: "备注（选填）",
+        hint: "算一次联系：新线索会变成“已联系”。",
+        method: { phone: "电话", whatsapp: "WhatsApp", other: "其他" },
+      },
+      list: {
+        count: "共 {n} 条线索",
+        sort: "排序",
+        sorts: { smart: "未联系、逾期、最新", newest: "最新在前", overdue: "逾期最久在前", last_contact: "最久没联系在前" },
+        uncontacted: "未联系",
+        overdue: "跟进逾期",
+        waitingReply: "等待回复",
+        loadMore: "再显示 {n} 条",
+        empty: "没有符合条件的线索",
       },
     },
   },

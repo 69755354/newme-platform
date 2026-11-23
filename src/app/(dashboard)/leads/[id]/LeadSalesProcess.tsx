@@ -261,10 +261,13 @@ export default function LeadSalesProcess({
     .filter((m) => m.completed && (m.milestone_key !== "first_contact" || firstContactReady))
     .map((m) => m.milestone_key);
   const nextPendingKey = COMPLETABLE_MILESTONES.find((k) => !completedKeys.includes(k));
+  // S39: steps may be skipped going forward. Nothing is locked once First Contact is done, except what lies behind the
+  // furthest completed step (that can only be re-opened, never completed late).
+  const furthestDone = Math.max(-1, ...completedKeys.map((k) => COMPLETABLE_MILESTONES.indexOf(k)));
   const isLocked = (key: string): boolean => {
     if (completedKeys.includes(key)) return false;
     if (key === nextPendingKey) return false;
-    return true;
+    return furthestDone < 0 || COMPLETABLE_MILESTONES.indexOf(key) < furthestDone;
   };
 
   const hasContract = !!trace?.contract_id;
@@ -451,7 +454,7 @@ export default function LeadSalesProcess({
 
                       const handleAddStructuredContact = async () => {
                         if (contactSubmitting) return;
-                        if (!contactMethod || !contactTime || !contactResult.trim()) return;
+                        if (!contactMethod || !contactTime) return;
                         setContactSaveError(null);
                         setContactSubmitting(true);
                         try {
@@ -463,7 +466,7 @@ export default function LeadSalesProcess({
                           const result = await onAddStructuredContact({
                             contact_method: contactMethod,
                             contact_time: contactTimeIso,
-                            contact_result: contactResult.trim(),
+                            contact_result: contactResult.trim() || (lang === "zh" ? "已联系" : "Contacted"),
                             summary: contactNotes.trim() || undefined,
                           });
                           if (!result.success) {
@@ -506,7 +509,7 @@ export default function LeadSalesProcess({
                         }
                       };
 
-                      const canSubmit = contactMethod !== "" && contactTime !== "" && contactResult.trim() !== "" && !contactSubmitting;
+                      const canSubmit = contactMethod !== "" && contactTime !== "" && !contactSubmitting;
 
                       return (
                       <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
@@ -582,7 +585,7 @@ export default function LeadSalesProcess({
                             {/* Contact Result */}
                             <div>
                               <label className="text-[10px] text-muted-foreground block mb-0.5">
-                                {t("leadDetail.contactResult") || "Contact Result"} *
+                                {t("leadDetail.contactResult") || "Contact Result"}
                               </label>
                               <input
                                 type="text"
@@ -757,10 +760,10 @@ export default function LeadSalesProcess({
                       </div>
                       );
                     })()}
-                    {isNext && !completed && (
+                    {!locked && !completed && (
                       <div className="mt-4 rounded-md border border-border bg-background/60 p-3 space-y-2">
                         <Label htmlFor={`milestone-note-${key}`} className="text-xs font-medium text-foreground">
-                          {lang === "zh" ? "推进备注（必填）" : "Progress note (required)"}
+                          {lang === "zh" ? "推进备注（选填）" : "Progress note (optional)"}
                         </Label>
                         <textarea
                           id={`milestone-note-${key}`}
@@ -785,14 +788,6 @@ export default function LeadSalesProcess({
                             const note = stageNote.trim();
                             if (key === "first_contact" && completeContactCount < 1) {
                               setFirstContactBlockReason(lang === "zh" ? "请先添加 1 条完整联系记录（方式、时间和结果）" : "Add one complete contact record first");
-                              return;
-                            }
-                            if (key === "first_contact" && !isAssessedQuality(lead.quality)) {
-                              setFirstContactBlockReason(lang === "zh" ? "请先选择线索质量，再完成初次接触" : "Select lead quality before completing First Contact");
-                              return;
-                            }
-                            if (!note) {
-                              setMilestoneNoteError(lang === "zh" ? "请填写推进备注后再完成此阶段" : "Add a progress note before completing this stage");
                               return;
                             }
                             setFirstContactBlockReason(null);

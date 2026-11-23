@@ -50,7 +50,7 @@ function triggerCheck(from, to) {
   const cur = ORDER.indexOf(from);
   const next = ORDER.indexOf(to);
   if (cur === -1 || next === -1) return "Invalid stage transition";
-  return next === cur + 1 ? null : `Stage must advance sequentially. Current: ${from}, attempted: ${to}.`;
+  return next > cur ? null : `Stage can only move forward. Current: ${from}, attempted: ${to}.`; // S39: skipping forward is allowed
 }
 
 function makeWorld(lead) {
@@ -171,13 +171,13 @@ const READY = {
   contacts: [{ contact_time: "2026-11-01T08:00:00Z", contact_result: "answered" }],
 };
 
-test("a new lead that meets the gates is advanced one audited step at a time, never by a direct stage write", async () => {
+test("a new lead that meets the gates skips straight to quotation_submitted in one audited move (S39), never by a direct stage write", async () => {
   const { response, state, logs, metaFeedback } = await generate({ stage: "new", ...READY });
   assert.equal(response.status, 200);
   assert.equal(response.body.quote_no, "NM-2026-0042");
   assert.deepEqual(state.adminStageWrites, [], "no service-role stage write");
   assert.deepEqual(state.rpcCalls.map(([, from, to]) => `${from}>${to}`), [
-    "new>contacted", "contacted>requirement_confirmed", "requirement_confirmed>solution_submitted", "solution_submitted>quotation_submitted",
+    "new>quotation_submitted",
   ]);
   assert.equal(state.stage, "quotation_submitted");
   assert.equal(response.body.stage_advanced, true);
@@ -236,6 +236,6 @@ test("the stage_change audit note on the quotation path is 'Quotation generated 
   assert.equal(response.body.stage_advanced, true);
   assert.deepEqual(state.rpcNotes, ["Quotation generated NM-2026-0042"]);
   const walk = await generate({ stage: "new", ...READY });
-  assert.equal(walk.state.rpcNotes.length, 4);
+  assert.equal(walk.state.rpcNotes.length, 1); // S39: one move, not four steps
   assert.ok(walk.state.rpcNotes.every((note) => note === "Quotation generated NM-2026-0042"));
 });

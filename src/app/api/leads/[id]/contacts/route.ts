@@ -3,6 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { logger, genReqId } from "@/lib/logger";
 import { futureContactTimeBody, requestLanguage } from "@/lib/api-language.mjs";
+import { completeFirstContactAfterLog } from "@/lib/contact-first-contact.mjs";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { enqueueMetaCrmEventForLead } from "@/lib/meta-crm-events";
+import { enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
 import {
   applyRequestAuthCookies,
   getRequestAuthContext,
@@ -26,9 +30,12 @@ export async function POST(
 
     const body = await req.json();
     const contactMethod = String(body?.contact_method ?? "").trim().toLowerCase();
-    const contactResult = String(body?.contact_result ?? "").trim();
+    // S39: the result and the time are optional ("one tap" quick log): no result reads "Contacted", no time reads now.
+    const contactResult = String(body?.contact_result ?? "").trim() || "Contacted";
     const summary = String(body?.summary ?? "").trim();
-    const contactTime = new Date(String(body?.contact_time ?? ""));
+    const contactTime = body?.contact_time === undefined || body?.contact_time === null || body?.contact_time === ""
+      ? new Date(Date.now() - 1_000)
+      : new Date(String(body.contact_time));
 
     if (!METHODS.has(contactMethod)) {
       return respond({ error: "Invalid contact_method" }, { status: 400 });
@@ -39,10 +46,6 @@ export async function POST(
     if (contactTime.getTime() > Date.now()) {
       return respond(futureContactTimeBody(requestLanguage(req.headers)), { status: 400 });
     }
-    if (!contactResult) {
-      return respond({ error: "contact_result is required" }, { status: 400 });
-    }
-
     const { data: lead, error: leadError } = await supabase
       .from("leads")
       .select("id, assigned_to")
@@ -83,7 +86,16 @@ export async function POST(
       );
     }
 
-    return respond({ success: true, contact });
+    // S39: a logged contact is the first contact when the lead is still new. Never fails the record.
+    const firstContact = await completeFirstContactAfterLog(supabase, { leadId, userId: context.user.id });
+    if (firstContact.milestone) {
+      try {
+        await enqueueMetaCrmEventForLead(supabaseAdmin, leadId, "first_contact");
+        await enqueueWhatsAppProgressWithDelivery(supabaseAdmin, leadId, "first_contact");
+        await enqueueWebsiteQuoteForProgress(supabaseAdmin, leadId, "first_contact");
+      } catch { /* tracking must never fail a contact record */ }
+    }
+    return respond({ success: true, contact, stageAdvance: firstContact });
   } catch (error) {
     if (error instanceof RequestAuthError) return requestAuthErrorResponse(error);
     logger.error(

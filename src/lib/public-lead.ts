@@ -1,3 +1,5 @@
+import { normalizePhone as normalizeLeadPhone } from "./lead-contact.mjs";
+
 export const PUBLIC_LEAD_ORIGINS = new Set([
   "https://newme.ae",
   "https://www.newme.ae",
@@ -97,6 +99,10 @@ function attributionIdentifier(
 
 function normalizePhone(value: string | null | undefined): string | null | undefined {
   if (!value) return null;
+  // S39: the shared reader (UAE 05x / 9715x / +971 / 00971 and other countries in E.164), so a website lead and a Meta or
+  // WhatsApp lead of the same person carry the same number. A number it cannot read keeps the earlier lenient rule.
+  const shared = normalizeLeadPhone(value);
+  if (shared.ok) return shared.e164;
   let normalized = value.replace(/[\s().-]/g, "");
   if (normalized.startsWith("00")) normalized = `+${normalized.slice(2)}`;
   return PHONE.test(normalized) ? normalized : undefined;

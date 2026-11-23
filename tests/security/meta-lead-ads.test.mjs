@@ -123,6 +123,8 @@ function fakeDb(initial = []) {
       eq(k, v) { state.filters.push((r) => k.includes("->>") ? r[k.split("->>")[0]]?.[k.split("->>")[1]] === v : r[k] === v); return api; },
       is(k, v) { state.filters.push((r) => (r[k] ?? null) === v); return api; },
       in(k, vs) { state.filters.push((r) => vs.includes(r[k])); return api; },
+      ilike(k, pattern) { const tail = String(pattern).replace(/^%/, "").toLowerCase(); state.filters.push((r) => String(r[k] ?? "").toLowerCase().endsWith(tail)); return api; },
+      order() { return api; },
       or(expr) {
         const parts = expr.split(",").map((p) => p.split(".eq."));
         state.filters.push((r) => parts.some(([k, v]) => r[k] === v));

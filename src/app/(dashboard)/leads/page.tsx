@@ -21,6 +21,8 @@ import { LeadsFilters } from "./_components/LeadsFilters";
 import { LeadsBulkTransferBar } from "./_components/LeadsBulkTransferBar";
 import { LeadsPipelineSummary } from "./_components/LeadsPipelineSummary";
 import { LeadsKanbanBoard } from "./_components/LeadsKanbanBoard";
+import { LeadsMobileList } from "./_components/LeadsMobileList";
+import { useNarrowViewport } from "./_hooks/useNarrowViewport";
 import {
   PIPELINE_STAGES,
 } from "./_utils/constants";
@@ -31,6 +33,8 @@ function LeadsContent() {
   const { t, lang } = useLanguage();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // S39: phones get the compact sortable list instead of the nine-column board.
+  const narrow = useNarrowViewport();
 
   // Keyboard navigation for kanban board
   useEffect(() => {
@@ -316,6 +320,8 @@ function LeadsContent() {
         <ErrorState message={t("common.loadFailed")} retryText={t("common.retry")} onRetry={fetchLeads} />
       ) : loading ? (
         <div className="text-center text-muted-foreground py-16 text-sm">{t("common.loading")}</div>
+      ) : narrow ? (
+        <LeadsMobileList leads={filtered} onOpen={(id) => router.push(`/leads/${id}`)} t={t} />
       ) : (
         <LeadsKanbanBoard
           ref={scrollContainerRef}

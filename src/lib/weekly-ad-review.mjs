@@ -246,9 +246,17 @@ export function buildSuggestions(rows, { spendAvailable }) {
     out.push(`可以加预算：${label(r)}，${detail}，建议小幅加（比如两成）再观察一周。`);
   }
 
+  // No lead has a quality mark or a quote yet: "no good leads" says nothing about one ad, so judge by cost per lead only.
+  const noOutcomes = totalGood === 0 && withLeads.every((r) => r.quotes === 0);
+  if (noOutcomes) {
+    out.push("本周所有广告线索都还没有标好坏、也没有带金额报价，先不按质量判断哪条该停；请销售把跟进结果记上，下周再比。");
+    const cheapest = priced.filter((r) => r.leads >= 3).sort((a, b) => a.cpl - b.cpl)[0];
+    if (cheapest) out.push(`按线索成本看，${label(cheapest)}最划算：${cheapest.leads}条线索，每条${money(cheapest.cpl)}，先保持。`);
+  }
+
   // pause: money out, nothing good back
   const pauseCandidates = withLeads
-    .filter((r) => r.leads >= 3 && r.good_leads === 0 && r.quotes === 0 && (r.cpl === null || avgCpl === null || r.cpl >= avgCpl))
+    .filter((r) => !noOutcomes && r.leads >= 3 && r.good_leads === 0 && r.quotes === 0 && (r.cpl === null || avgCpl === null || r.cpl >= avgCpl))
     .sort((a, b) => (b.spend ?? 0) - (a.spend ?? 0) || b.leads - a.leads);
   const wasted = rows.filter((r) => r.leads === 0 && (r.spend ?? 0) > 0 && !r.spend_note.includes("无法区分")).sort((a, b) => b.spend - a.spend);
   if (pauseCandidates[0]) {

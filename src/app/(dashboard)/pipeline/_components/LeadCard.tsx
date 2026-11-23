@@ -8,6 +8,8 @@
  * assigned rep, and stale-day badge with color tiers.
  */
 
+import { LEAD_STATUS_CLASS } from "@/lib/status-palette";
+import { formatAED } from "@/lib/display-format.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 import { cn } from "@/lib/utils";
@@ -27,15 +29,9 @@ export interface Lead {
   followup_count: number | null;
 }
 
-const STATUS_EMOJIS: Record<string, string> = {
-  hot: "🔥", warm: "☀️", cold: "❄️", dormant: "💤",
-};
-
 function fmtAED(v: number | null | undefined): string {
   if (v == null || v === 0) return "—";
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }
 
 function daysSince(d: string | null): number | null {
@@ -72,10 +68,8 @@ export function LeadCard({ lead, onDragStart, onLeadClick, salesUsers }: { lead:
         "p-3 rounded-lg border bg-muted/60 cursor-grab active:cursor-grabbing transition-all duration-150 select-none",
         "hover:bg-muted/80 hover:border-border",
         "group relative",
-        isHot && "ring-1 ring-slate-600/30",
-        isInactive24h && !isStale && "ring-1 ring-amber-500/20",
-        isCrit ? "ring-2 ring-red-500/40" : isStale ? "ring-1 ring-amber-500/30" : "border-border",
-        isWon && "border-emerald-700/50 bg-emerald-950/20",
+        isCrit ? "ring-1 ring-red-600/40" : "border-border",
+        isWon && "border-emerald-300 bg-emerald-50/70",
         isLost && "border-border/30 bg-muted/40",
       )}
     >
@@ -86,24 +80,23 @@ export function LeadCard({ lead, onDragStart, onLeadClick, salesUsers }: { lead:
 
       {/* Customer name */}
       <div className="flex items-center gap-1.5 mb-1.5 pr-4">
-        {isHot && <span className="text-[10px]">🔥</span>}
         <span className="text-sm font-medium text-foreground truncate flex-1">
           {lead.customer_name || t("common.unnamed")}
         </span>
-        {lead.lead_status && (
-          <span className="text-[9px]">{STATUS_EMOJIS[lead.lead_status]}</span>
+        {isHot && (
+          <span className={cn("text-xs px-1 py-0.5 rounded font-medium", LEAD_STATUS_CLASS.hot)}>{t("statusLabels.hot")}</span>
         )}
       </div>
 
       {/* Value & Probability */}
       <div className="flex items-center gap-2 mb-1.5">
         {lead.quotation_value != null && lead.quotation_value > 0 && (
-          <span className="text-xs font-semibold text-copper-400">{fmtAED(lead.quotation_value)}</span>
+          <span className="text-xs font-semibold text-copper-700">{fmtAED(lead.quotation_value)}</span>
         )}
         {lead.win_probability != null && (
-          <span className={cn("text-[10px] font-medium",
-            lead.win_probability >= 70 ? "text-emerald-400" :
-            lead.win_probability >= 30 ? "text-amber-400" : "text-muted-foreground"
+          <span className={cn("text-xs font-medium",
+            lead.win_probability >= 70 ? "text-emerald-700" :
+            lead.win_probability >= 30 ? "text-amber-700" : "text-muted-foreground"
           )}>
             {lead.win_probability}%
           </span>
@@ -112,25 +105,25 @@ export function LeadCard({ lead, onDragStart, onLeadClick, salesUsers }: { lead:
 
       {/* Next action */}
       {lead.next_action && (
-        <p className="text-[10px] text-muted-foreground truncate mb-1">📋 {localizeServerText(lead.next_action, lang)}</p>
+        <p className="text-xs text-muted-foreground truncate mb-1">{localizeServerText(lead.next_action, lang)}</p>
       )}
 
       {/* Footer: assigned + stale days */}
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span className="flex items-center gap-0.5 truncate">
           <User className="w-2.5 h-2.5 shrink-0" />
           <span className="truncate">{lead.rep_name || (salesUsers.find(u => u.id === lead.assigned_to)?.full_name) || "—"}</span>
         </span>
         {days !== null && !isWon && !isLost && (
           <span className={cn("flex items-center gap-1",
-            isCrit ? "text-red-400 font-semibold" : isStale ? "text-amber-400" : "text-muted-foreground"
+            isCrit ? "text-red-700 font-semibold" : "text-muted-foreground"
           )}>
             {isInactive24h && !isStale && <Clock className="w-2.5 h-2.5" />}
-            {days}d
+            {t("common.nDays").replace("{n}", String(days))}
           </span>
         )}
         {isInactive24h && !isStale && days === null && (
-          <span className="text-amber-400 text-[10px] flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />24h</span>
+          <span className="text-muted-foreground text-xs flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />24h</span>
         )}
       </div>
     </div>

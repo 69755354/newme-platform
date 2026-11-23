@@ -11,6 +11,7 @@
  * component is only mounted for sales users.
  */
 
+import { formatAED } from "@/lib/display-format.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { cn } from "@/lib/utils";
 import {
@@ -20,16 +21,14 @@ import { useSalesKpiData, type KpiApiData } from "../_hooks/useSalesKpiData";
 
 /* ─── Local helpers (purely rendering concerns) ─── */
 function fmtAED(v: number): string {
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }
 
 function kpiPctColor(v: number | null): string {
   if (v === null) return "text-muted-foreground";
-  if (v >= 100) return "text-emerald-400";
-  if (v >= 50) return "text-amber-400";
-  return "text-rose-400";
+  if (v >= 100) return "text-emerald-700";
+  if (v >= 50) return "text-amber-700";
+  return "text-rose-700";
 }
 
 /* ─── Component ─── */
@@ -46,12 +45,12 @@ export function SalesKpiDashboard({ currentUserId, kpiData }: { currentUserId: s
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground tracking-tight flex items-center gap-2">
-          <Target className="w-6 h-6 text-copper-400" />
+          <Target className="w-6 h-6 text-copper-700" />
           {t("kpi.title")}
         </h1>
         <p className="text-muted-foreground text-sm mt-0.5">
           {new Date().toISOString().slice(0, 7)} {t("kpi.subtitle")}
-          {kpiLoading && <span className="ml-2 text-[10px] text-muted-foreground animate-pulse">{t("common.loading")}</span>}
+          {kpiLoading && <span className="ml-2 text-xs text-muted-foreground animate-pulse">{t("common.loading")}</span>}
         </p>
       </div>
 
@@ -61,7 +60,7 @@ export function SalesKpiDashboard({ currentUserId, kpiData }: { currentUserId: s
         <div className="rounded-xl border border-border/50 bg-card/50 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-copper-400" />
+              <TrendingUp className="w-5 h-5 text-copper-700" />
               <span className="text-sm font-semibold text-foreground">{t("kpi.signing")}</span>
             </div>
             <span className="text-xs text-muted-foreground">{t("kpi.wonOrders").replace("{n}", String(contractCount))}</span>
@@ -90,11 +89,11 @@ export function SalesKpiDashboard({ currentUserId, kpiData }: { currentUserId: s
         <div className="rounded-xl border border-border/50 bg-card/50 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-emerald-400" />
+              <Wallet className="w-5 h-5 text-emerald-700" />
               <span className="text-sm font-semibold text-foreground">{t("kpi.collection")}</span>
             </div>
             {collectionPct !== null && collectionPct >= 100 && (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-700" />
             )}
           </div>
           <div className="text-center">
@@ -121,7 +120,7 @@ export function SalesKpiDashboard({ currentUserId, kpiData }: { currentUserId: s
       {/* Detail breakdown */}
       <div className="rounded-xl border border-border/50 p-5">
         <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-          <DollarSign className="w-4 h-4 text-copper-400" />
+          <DollarSign className="w-4 h-4 text-copper-700" />
           {t("kpi.detailData")}
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -131,11 +130,11 @@ export function SalesKpiDashboard({ currentUserId, kpiData }: { currentUserId: s
           </div>
           <div className="p-4 rounded-lg bg-muted/30">
             <p className="text-xs text-muted-foreground">{t("kpi.totalSigning")}</p>
-            <p className="text-xl font-bold text-copper-400 mt-1">{fmtAED(signingActual)}</p>
+            <p className="text-xl font-bold text-copper-700 mt-1">{fmtAED(signingActual)}</p>
           </div>
           <div className="p-4 rounded-lg bg-muted/30">
             <p className="text-xs text-muted-foreground">{t("kpi.totalCollected")}</p>
-            <p className="text-xl font-bold text-emerald-400 mt-1">{fmtAED(collectionActual)}</p>
+            <p className="text-xl font-bold text-emerald-700 mt-1">{fmtAED(collectionActual)}</p>
           </div>
         </div>
       </div>

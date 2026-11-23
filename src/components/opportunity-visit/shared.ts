@@ -42,8 +42,8 @@ export const buttonClass = "inline-flex h-7 items-center rounded-md border borde
 
 export const STATUS_TONE: Record<string, string> = {
   planned: "bg-slate-500/15 text-slate-300",
-  approved: "bg-sky-500/15 text-sky-300",
-  completed: "bg-amber-500/15 text-amber-300",
-  reviewed: "bg-emerald-500/15 text-emerald-300",
-  overdue: "bg-red-500/15 text-red-400",
+  approved: "bg-sky-500/15 text-sky-700",
+  completed: "bg-amber-500/15 text-amber-700",
+  reviewed: "bg-emerald-500/15 text-emerald-700",
+  overdue: "bg-red-500/15 text-red-700",
 };

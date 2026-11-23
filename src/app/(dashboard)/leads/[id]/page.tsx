@@ -10,6 +10,7 @@
 // Layout:  Left (3/12) CustomerProfile · Middle (5/12) SalesProcess · Right (4/12) Timeline
 //          Bottom: LeadFoldingPanel (6 accordion blocks).
 
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
@@ -360,7 +361,7 @@ export default function LeadDetailPage() {
         />
       </span>
     ) : (
-      <p className="text-foreground mt-1 cursor-pointer hover:text-copper-400"
+      <p className="text-foreground mt-1 cursor-pointer hover:text-copper-700"
         onClick={() => { setEditField(field); setEditValue(String(value ?? "")); }}>
         {value ? String(value) : <span className="text-gray-600">{t("leadDetail.placeholderClickToFill")}</span>}
       </p>
@@ -375,7 +376,7 @@ export default function LeadDetailPage() {
         onBlur={() => { updateField(field, editValue || null, "note_added", `${label}: ${editValue || t("leadDetail.cleared")}`); }}
         className="w-full h-8 text-xs bg-muted border border-border rounded px-2 text-foreground mt-1" />
     ) : (
-      <p className="text-foreground mt-1 cursor-pointer hover:text-copper-400"
+      <p className="text-foreground mt-1 cursor-pointer hover:text-copper-700"
         onClick={() => { setEditField(field); setEditValue(value || ""); }}>
         {value ? fmtDubai(value, { locale: t("locale.dateLocale") }) : <span className="text-gray-600">{t("leadDetail.placeholderClickToFill")}</span>}
       </p>
@@ -409,7 +410,7 @@ export default function LeadDetailPage() {
           className="flex-1 h-8 text-xs bg-muted border border-border rounded px-2 text-foreground" />
       </div>
     ) : (
-      <p className="text-foreground mt-1 cursor-pointer hover:text-copper-400 break-all text-xs"
+      <p className="text-foreground mt-1 cursor-pointer hover:text-copper-700 break-all text-xs"
         onClick={() => { setEditField(field); setEditValue(display || ""); }}>
         {display || <span className="text-gray-600">{t("leadDetail.placeholderClickToFill")}</span>}
       </p>
@@ -424,7 +425,7 @@ export default function LeadDetailPage() {
         onBlur={() => { if (editValue) updateNextTask({ due_at: editValue }); }}
         className="w-full h-8 text-xs bg-muted border border-border rounded px-2 text-foreground mt-1" />
     ) : (
-      <p className={cn("mt-1 cursor-pointer hover:text-copper-400", !nextTask ? "text-rose-400 font-medium" : "text-foreground")}
+      <p className={cn("mt-1 cursor-pointer hover:text-copper-700", !nextTask ? "text-rose-700 font-medium" : "text-foreground")}
         onClick={() => { setEditField("next_followup_date"); setEditValue(nextTask?.due_at.slice(0, 10) || ""); }}>
         {nextTask ? fmtDubai(nextTask.due_at, { locale: t("locale.dateLocale") }) : t("leadDetail.placeholderRequired")}
       </p>
@@ -445,7 +446,7 @@ export default function LeadDetailPage() {
           className="flex-1 h-8 text-xs bg-muted border border-border rounded px-2 text-foreground" />
       </div>
     ) : (
-      <p className={cn("mt-1 cursor-pointer hover:text-copper-400", !nextTask ? "text-rose-400 font-medium" : "text-foreground")}
+      <p className={cn("mt-1 cursor-pointer hover:text-copper-700", !nextTask ? "text-rose-700 font-medium" : "text-foreground")}
         onClick={() => { setEditField("next_action"); setEditValue(nextTask?.title || ""); }}>
         {nextTask?.title || t("leadDetail.placeholderRequired")}
       </p>
@@ -531,16 +532,16 @@ export default function LeadDetailPage() {
             </h1>
             {shownStatus && (
               <span className={cn("text-xs px-2 py-0.5 rounded font-medium",
-                shownStatus === "hot" ? "bg-rose-500/10 text-rose-400" :
-                shownStatus === "warm" ? "bg-amber-500/10 text-amber-400" :
-                shownStatus === "cold" ? "bg-sky-500/10 text-sky-400" :
+                shownStatus === "hot" ? "bg-rose-500/10 text-rose-700" :
+                shownStatus === "warm" ? "bg-amber-500/10 text-amber-700" :
+                shownStatus === "cold" ? "bg-sky-500/10 text-sky-700" :
                 "bg-gray-500/10 text-muted-foreground")}>
-                {shownStatus === "hot" ? "🔥 " : shownStatus === "warm" ? "☀️ " : shownStatus === "cold" ? "❄️ " : "💤 "}
+                {shownStatus === "hot" ? "" : shownStatus === "warm" ? "" : shownStatus === "cold" ? "" : ""}
                 {t(`statusLabels.${shownStatus}`)}
               </span>
             )}
             {isWhatsAppAdLead(lead) && (
-              <span data-testid="whatsapp-ad-badge" className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-400">
+              <span data-testid="whatsapp-ad-badge" className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-700">
                 {t("s37.wa.badge")}
               </span>
             )}
@@ -548,13 +549,13 @@ export default function LeadDetailPage() {
               <LeadWaitingBadge inboundAt={lead.wa_first_inbound_at} t={t} />
             )}
             {lead.quality === 'poor' && (
-              <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400">
-                ⚠️ {t("leads.poorLead")}{lead.poor_reason && `: ${lead.poor_reason}`}
+              <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-700">
+                {t("leads.poorLead")}{lead.poor_reason && `: ${lead.poor_reason}`}
               </span>
             )}
           </div>
           <p data-newme-uat-sensitive="true" className="break-anywhere text-muted-foreground text-xs md:text-sm">
-            {fmtDubai(lead.created_at, { locale: t("locale.dateLocale") })} · {lead.source ? t(`sourceLabels.${lead.source}`) : t("sourceLabels.unknown")}
+            {fmtDubai(lead.created_at, { locale: t("locale.dateLocale") })} · {lead.source ? translatedOrRaw(t, `sourceLabels.${lead.source}`, lead.source) : t("sourceLabels.unknown")}
             {lead.rep_name && ` · ${lead.rep_name}`}
             {assignedToName && !lead.rep_name && ` · ${assignedToName}`}
             {creatorName && ` · ${t("leadDetail.createdBy")}: ${creatorName}`}
@@ -563,17 +564,17 @@ export default function LeadDetailPage() {
         {(["admin", "boss", "operator"].includes(salesRole ?? "") || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
           <>
           <Button variant="ghost" size="icon"
-            className="text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+            className="text-muted-foreground hover:text-red-700 hover:bg-red-500/10"
             onClick={handleDelete}
             title={t("common.delete") || "Delete"}>
             <Trash2 className="w-5 h-5" />
           </Button>
           {(["admin", "boss", "operator"].includes(salesRole ?? "")) && (
             <Button variant="ghost" size="sm"
-              className="text-amber-400 hover:bg-amber-500/10"
+              className="text-amber-700 hover:bg-amber-500/10"
               onClick={() => { setMarkingPoor(true); }}
               title={t("leads.markPoor")}>
-              ⚠️ {t("leads.markPoor")}
+              {t("leads.markPoor")}
             </Button>
           )}
           </>
@@ -582,8 +583,8 @@ export default function LeadDetailPage() {
           <div className="flex items-center gap-2 mt-2">
             <input value={poorReasonText} onChange={e => setPoorReasonText(e.target.value)}
               placeholder={t("leads.poorReasonPlaceholder")} className="text-sm border border-border rounded px-2 py-1 bg-background" />
-            <Button size="sm" variant="ghost" onClick={handleMarkPoor} className="text-amber-400">✓</Button>
-            <Button size="sm" variant="ghost" onClick={() => setMarkingPoor(false)} className="text-muted-foreground">✗</Button>
+            <Button size="sm" variant="ghost" onClick={handleMarkPoor} className="text-amber-700">✓</Button>
+            <Button size="sm" variant="ghost" onClick={() => setMarkingPoor(false)} className="text-muted-foreground">×</Button>
           </div>
         )}
       </div>
@@ -601,7 +602,7 @@ export default function LeadDetailPage() {
       {/* Deal Canvas: facts → focused action workspace → auditable activity ledger. */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
         <aside className="min-w-0 space-y-3">
-          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <p className="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {lang === "zh" ? "客户与项目事实" : "Customer & project facts"}
           </p>
           <LeadCustomerProfile
@@ -627,7 +628,7 @@ export default function LeadDetailPage() {
         </aside>
 
         <main className="min-w-0 space-y-3">
-          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-copper-400">
+          <p className="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-copper-700">
             {lang === "zh" ? "成交工作区 · 下一步行动" : "Deal workspace · next action"}
           </p>
           <LeadSalesProcess
@@ -662,7 +663,7 @@ export default function LeadDetailPage() {
         </main>
 
         <aside className="min-w-0 space-y-3 xl:sticky xl:top-20 xl:self-start">
-          <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <p className="px-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {lang === "zh" ? "可追溯时间线" : "Auditable timeline"}
           </p>
           <LeadTimeline

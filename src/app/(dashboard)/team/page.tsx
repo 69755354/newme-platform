@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDubaiTime } from "@/lib/display-format.mjs";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { cn, fmtDubai } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -105,12 +107,12 @@ const ROLES = [
 ];
 
 const ROLE_COLORS: Record<string, string> = {
-  admin: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  boss: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  sales: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  designer: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  operator: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
-  finance: "bg-rose-500/10 text-rose-400 border-rose-500/20",
+  admin: "bg-purple-500/10 text-purple-700 border-purple-500/20",
+  boss: "bg-amber-500/10 text-amber-700 border-amber-500/20",
+  sales: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
+  designer: "bg-blue-500/10 text-blue-700 border-blue-500/20",
+  operator: "bg-cyan-500/10 text-cyan-700 border-cyan-500/20",
+  finance: "bg-rose-500/10 text-rose-700 border-rose-500/20",
 };
 
 // ─── Helpers ───
@@ -119,8 +121,7 @@ function todayStr(): string {
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatDubaiTime(iso);
 }
 
 export default function TeamPage() {
@@ -354,7 +355,7 @@ export default function TeamPage() {
 
   if (error) {
     return (
-      <div className="p-10 text-center text-rose-400">
+      <div className="p-10 text-center text-rose-700">
         {t("common.error")}: {error}
         <button
           onClick={fetchUsers}
@@ -429,10 +430,10 @@ export default function TeamPage() {
               </p>
             </div>
             <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-              <p className="text-xs text-emerald-400">
+              <p className="text-xs text-emerald-700">
                 {t("team.salesTeam")}
               </p>
-              <p className="text-2xl font-bold text-emerald-400 mt-1">
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
                 {users.filter((u) => u.role === "sales").length}
               </p>
             </div>
@@ -493,7 +494,7 @@ export default function TeamPage() {
                     >
                       <TableCell className="py-2.5 px-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-copper-500/20 flex items-center justify-center text-copper-400 text-xs font-bold shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-copper-500/20 flex items-center justify-center text-copper-700 text-xs font-bold shrink-0">
                             {(user.full_name || user.email || "?")
                               .charAt(0)
                               .toUpperCase()}
@@ -503,7 +504,7 @@ export default function TeamPage() {
                               {user.full_name || "-"}
                             </p>
                             {user.full_name && user.email && (
-                              <p className="text-[11px] text-muted-foreground">
+                              <p className="text-xs text-muted-foreground">
                                 {user.email}
                               </p>
                             )}
@@ -523,7 +524,7 @@ export default function TeamPage() {
                         <Badge
                           variant="outline"
                           className={cn(
-                            "text-[11px] font-medium",
+                            "text-xs font-medium",
                             ROLE_COLORS[user.role] || "bg-muted text-muted-foreground border-border",
                           )}
                         >
@@ -533,7 +534,7 @@ export default function TeamPage() {
                       </TableCell>
                       <TableCell className="py-2.5 px-3">
                         {user.is_active ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
                             <CheckCircle2 className="w-3 h-3" />
                             {t("team.active")}
                           </span>
@@ -556,7 +557,7 @@ export default function TeamPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 px-2 text-[11px] text-copper-400 hover:text-copper-300 hover:bg-copper-500/10"
+                              className="h-7 px-2 text-xs text-copper-700 hover:text-copper-700 hover:bg-copper-500/10"
                               onClick={() => { setRevealTarget({ id: user.id, name: (user.full_name || user.email || "—") }); setResetPasswordValue(""); setRevealedPassword(null); }}
                               aria-label={t("team.resetPassword")}
                               title={t("team.resetPassword")}
@@ -568,7 +569,7 @@ export default function TeamPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 px-2 text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                              className="h-7 px-2 text-xs text-rose-700 hover:text-rose-700 hover:bg-rose-500/10"
                               onClick={() => setHandoverMember({ id: user.id, name: user.full_name || user.email || "User" })}
                               aria-label={t("team.deactivate")}
                               title={t("team.deactivate")}
@@ -628,7 +629,7 @@ export default function TeamPage() {
 
             {/* Error */}
             {activityError && (
-              <div className="p-10 text-center text-rose-400">
+              <div className="p-10 text-center text-rose-700">
                 {activityError}
                 <button
                   onClick={() => fetchActivity(activityDate)}
@@ -668,20 +669,20 @@ export default function TeamPage() {
                           ) : (
                             <ChevronRight className="w-4 h-4 text-muted-foreground" />
                           )}
-                          <div className="w-8 h-8 rounded-full bg-copper-500/20 flex items-center justify-center text-copper-400 text-xs font-bold shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-copper-500/20 flex items-center justify-center text-copper-700 text-xs font-bold shrink-0">
                             {userActivity.user_name.charAt(0).toUpperCase()}
                           </div>
                           <div>
                             <p className="font-medium text-foreground text-sm">
                               {userActivity.user_name}
                             </p>
-                            <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                               <Clock className="w-3 h-3" />
                               {t("team.activityActivePeriod")}: {formatTime(userActivity.first_active)} ~ {formatTime(userActivity.last_active)}
                             </p>
                           </div>
                         </div>
-                        <Badge variant="outline" className="text-[11px] bg-muted/50">
+                        <Badge variant="outline" className="text-xs bg-muted/50">
                           {userActivity.actions.length} {t("team.activityActions")}
                         </Badge>
                       </button>
@@ -700,14 +701,14 @@ export default function TeamPage() {
                                   key={idx}
                                   className="flex items-start gap-3 px-4 py-2.5 hover:bg-accent/10 transition-colors"
                                 >
-                                  <span className="text-[11px] text-muted-foreground font-mono shrink-0 mt-0.5 min-w-[48px]">
+                                  <span className="text-xs text-muted-foreground font-mono shrink-0 mt-0.5 min-w-[48px]">
                                     {formatTime(action.time)}
                                   </span>
                                   <Badge
                                     variant="outline"
-                                    className="text-[10px] shrink-0 bg-muted/30 font-medium"
+                                    className="text-xs shrink-0 bg-muted/30 font-medium"
                                   >
-                                    {action.type}
+                                    {translatedOrRaw(t, `team.actionTypes.${action.type}`, action.type)}
                                   </Badge>
                                   <span className="text-xs text-foreground/80 leading-relaxed">
                                     {action.content}
@@ -744,7 +745,7 @@ export default function TeamPage() {
             <div className="space-y-1.5">
               <Label htmlFor="full_name">
                 {t("team.fullName")}{" "}
-                <span className="text-rose-400">*</span>
+                <span className="text-rose-700">*</span>
               </Label>
               <Input
                 id="full_name"
@@ -759,7 +760,7 @@ export default function TeamPage() {
             {/* Email */}
             <div className="space-y-1.5">
               <Label htmlFor="email">
-                {t("leads.email")} <span className="text-rose-400">*</span>
+                {t("leads.email")} <span className="text-rose-700">*</span>
               </Label>
               <Input
                 id="email"
@@ -774,7 +775,7 @@ export default function TeamPage() {
             <div className="space-y-1.5">
               <Label htmlFor="password">
                 {t("team.password")}{" "}
-                <span className="text-rose-400">*</span>
+                <span className="text-rose-700">*</span>
               </Label>
               <Input
                 id="password"
@@ -791,7 +792,7 @@ export default function TeamPage() {
             <div className="space-y-1.5">
               <Label htmlFor="role">
                 {t("team.role")}{" "}
-                <span className="text-rose-400">*</span>
+                <span className="text-rose-700">*</span>
               </Label>
               <Select
                 value={form.role}
@@ -816,7 +817,7 @@ export default function TeamPage() {
             <div className="space-y-1.5">
               <Label htmlFor="phone">
                 {t("team.phone")}{" "}
-                <span className="text-muted-foreground text-[10px]">
+                <span className="text-muted-foreground text-xs">
                   ({t("team.optional")})
                 </span>
               </Label>
@@ -859,7 +860,7 @@ export default function TeamPage() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-copper-400" />
+              <KeyRound className="w-4 h-4 text-copper-700" />
               {t("team.resetPassword")}
             </DialogTitle>
             <DialogDescription>
@@ -874,7 +875,7 @@ export default function TeamPage() {
               onChange={(e) => setResetPasswordValue(e.target.value)}
               minLength={6}
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {t("team.passwordMinLength")}
             </p>
           </div>
@@ -898,7 +899,7 @@ export default function TeamPage() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-400" />
+              <CheckCircle2 className="w-4 h-4 text-green-700" />
               {t("team.passwordResetSuccess")}
             </DialogTitle>
             <DialogDescription>
@@ -907,12 +908,12 @@ export default function TeamPage() {
           </DialogHeader>
           <div className="py-4">
             <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border border-border/20">
-              <KeyRound className="w-4 h-4 text-copper-400 shrink-0" />
+              <KeyRound className="w-4 h-4 text-copper-700 shrink-0" />
               <code className="text-sm font-mono text-foreground select-all">
                 {revealedPassword || "••••••"}
               </code>
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               {t("team.passwordResetHint")}
             </p>
           </div>

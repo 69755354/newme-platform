@@ -1,5 +1,6 @@
 "use client";
 
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -478,12 +479,12 @@ export default function PaymentsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <Card className="bg-copper-500/5 border-copper-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-copper-400">{t("payments.totalRecorded")}</p>
+            <p className="text-xs text-copper-700">{t("payments.totalRecorded")}</p>
             <p className="text-xl font-bold">{fmtAED(totals.recorded)}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {totals.counts.all - totals.counts.voided} {t("payments.paymentCount")}
               {totals.counts.voided > 0 && (
-                <span className="text-rose-400 ml-1">
+                <span className="text-rose-700 ml-1">
                   · {fmtAED(totals.voided)} {t("payments.totalVoided")}
                 </span>
               )}
@@ -492,32 +493,32 @@ export default function PaymentsPage() {
         </Card>
         <Card className="bg-emerald-500/5 border-emerald-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-emerald-400">{t("payments.totalConfirmed")}</p>
+            <p className="text-xs text-emerald-700">{t("payments.totalConfirmed")}</p>
             <p className="text-xl font-bold">{fmtAED(totals.confirmed)}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {totals.counts.confirmed} {t("payments.paymentCount")}
             </p>
           </CardContent>
         </Card>
         <Card className="bg-amber-500/5 border-amber-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-amber-400">{t("payments.totalPending")}</p>
+            <p className="text-xs text-amber-700">{t("payments.totalPending")}</p>
             <p className="text-xl font-bold">{fmtAED(totals.pending)}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {totals.counts.pending} {t("payments.paymentCount")}
             </p>
           </CardContent>
         </Card>
         <Card className="bg-blue-500/5 border-blue-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-blue-400">{t("payments.totalAllocated")}</p>
+            <p className="text-xs text-blue-700">{t("payments.totalAllocated")}</p>
             <p className="text-xl font-bold">{fmtAED(totals.allocated)}</p>
             {/* An incomplete aggregate is named, not averaged into a percentage.
                 The reviewed page reported AED 0.00 with total confidence because
                 the route never sent the field at all. */}
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {totals.allocationDataMissing > 0 ? (
-                <span className="text-amber-400">{t("payments.allocationUnknown")}</span>
+                <span className="text-amber-700">{t("payments.allocationUnknown")}</span>
               ) : totals.confirmed > 0 ? (
                 `${Math.round((totals.allocated / totals.confirmed) * 100)}% ${t("payments.ofConfirmed")}`
               ) : (
@@ -585,24 +586,24 @@ export default function PaymentsPage() {
                         <div className="space-y-1 flex-1 min-w-0">
                           {/* Contract & Status Row */}
                           <div className="flex items-center gap-2 flex-wrap">
-                            <CreditCard className="w-4 h-4 text-copper-400 shrink-0" />
+                            <CreditCard className="w-4 h-4 text-copper-700 shrink-0" />
                             <span className="font-medium text-foreground">
                               {cNo}
                             </span>
                             {state === "voided" && (
-                              <Badge className="bg-rose-500/10 text-rose-400 border border-rose-500/30 text-[10px] px-1.5 py-0">
+                              <Badge className="bg-rose-500/10 text-rose-700 border border-rose-500/30 text-xs px-1.5 py-0">
                                 <Ban className="w-3 h-3 mr-0.5" />
                                 {t("payments.voidedStatus")}
                               </Badge>
                             )}
                             {state === "confirmed" && (
-                              <Badge className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] px-1.5 py-0">
+                              <Badge className="bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 text-xs px-1.5 py-0">
                                 <CheckCircle className="w-3 h-3 mr-0.5" />
                                 {t("payments.confirmedStatus")}
                               </Badge>
                             )}
                             {state === "pending" && (
-                              <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0">
+                              <Badge className="bg-amber-500/10 text-amber-700 border border-amber-500/30 text-xs px-1.5 py-0">
                                 <Clock className="w-3 h-3 mr-0.5" />
                                 {t("payments.pending")}
                               </Badge>
@@ -643,22 +644,22 @@ export default function PaymentsPage() {
                             <div className="text-xs text-muted-foreground">
                               {hasAllocationData(payment) ? (
                                 <>
-                                  <span className="text-blue-400">
+                                  <span className="text-blue-700">
                                     {t("payments.allocated")}: {fmtAED(allocatedTotal(payment))}
                                   </span>
                                   {unallocated != null && unallocated > 0 && (
-                                    <span className="text-amber-400 ml-2">
+                                    <span className="text-amber-700 ml-2">
                                       {t("payments.unallocated")}: {fmtAED(unallocated)}
                                     </span>
                                   )}
                                   {isFullyAllocated(payment) && (
-                                    <span className="text-emerald-400 ml-2">
+                                    <span className="text-emerald-700 ml-2">
                                       {t("payments.fullyAllocated")}
                                     </span>
                                   )}
                                 </>
                               ) : (
-                                <span className="text-amber-400">
+                                <span className="text-amber-700">
                                   {t("payments.allocationUnknown")}
                                 </span>
                               )}
@@ -668,7 +669,7 @@ export default function PaymentsPage() {
                           {/* Why it was reversed, and when. void_payment() records
                               both; the reviewed page displayed neither. */}
                           {state === "voided" && (
-                            <div className="text-xs text-rose-400">
+                            <div className="text-xs text-rose-700">
                               {t("payments.voidedOn")}: {payment.voided_at?.slice(0, 10)}
                               {payment.void_reason && (
                                 <span className="text-muted-foreground ml-2">
@@ -680,7 +681,7 @@ export default function PaymentsPage() {
 
                           {/* Notes */}
                           {payment.notes && (
-                            <p className="text-[10px] text-gray-500">{payment.notes}</p>
+                            <p className="text-xs text-gray-500">{payment.notes}</p>
                           )}
                         </div>
 
@@ -701,7 +702,7 @@ export default function PaymentsPage() {
                               variant="outline"
                               onClick={() => handleConfirm(payment.id)}
                               disabled={confirmingId === payment.id}
-                              className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs h-8"
+                              className="border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 text-xs h-8"
                             >
                               <CheckCircle className="w-3 h-3 mr-1" />
                               {confirmingId === payment.id ? "..." : t("payments.confirm")}
@@ -712,7 +713,7 @@ export default function PaymentsPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => openAllocateDialog(payment)}
-                              className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs h-8"
+                              className="border-blue-500/30 text-blue-700 hover:bg-blue-500/10 text-xs h-8"
                             >
                               <ArrowRightLeft className="w-3 h-3 mr-1" />
                               {t("payments.allocate")}
@@ -723,7 +724,7 @@ export default function PaymentsPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => openVoidDialog(payment)}
-                              className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs h-8"
+                              className="border-rose-500/30 text-rose-700 hover:bg-rose-500/10 text-xs h-8"
                             >
                               <Ban className="w-3 h-3 mr-1" />
                               {t("payments.voidPayment")}
@@ -890,7 +891,7 @@ export default function PaymentsPage() {
                 <p>
                   {t("payments.paymentAmount")}: <span className="text-foreground font-medium">{fmtAED(allocatePayment.amount)}</span>
                 </p>
-                <p className="text-xs text-amber-400 mt-1">{t("payments.allocationReplaces")}</p>
+                <p className="text-xs text-amber-700 mt-1">{t("payments.allocationReplaces")}</p>
               </div>
 
               {/* Installment Plans */}
@@ -910,7 +911,7 @@ export default function PaymentsPage() {
                           <span className="text-sm font-medium text-foreground">
                             {t("payments.installment")} #{plan.seq}
                           </span>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-xs text-muted-foreground">
                             {t("payments.due")}: {plan.due_date?.slice(0, 10)}
                           </span>
                         </div>
@@ -921,10 +922,10 @@ export default function PaymentsPage() {
                             the reviewed dialog showed a "Paid" figure that nothing
                             it did could move. */}
                         <p className="text-xs text-muted-foreground">
-                          {t("payments.amount")}: {fmtAED(plan.amount)} | {t("payments.allocated")}: {fmtAED(plan.allocated_amount)} | {t("payments.status")}: {plan.status}
+                          {t("payments.amount")}: {fmtAED(plan.amount)} | {t("payments.allocated")}: {fmtAED(plan.allocated_amount)} | {t("payments.status")}: {translatedOrRaw(t, `payments.${plan.status}`, plan.status)}
                         </p>
                         {plan.description && (
-                          <p className="text-[10px] text-gray-500 mt-0.5">{plan.description}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{plan.description}</p>
                         )}
                       </div>
                       <div className="w-28 shrink-0">
@@ -952,7 +953,7 @@ export default function PaymentsPage() {
               <div className="flex items-center justify-between text-sm border-t border-border pt-3">
                 <span className="text-muted-foreground">{t("payments.allocating")}:</span>
                 <span
-                  className={cn("font-bold", allocateDraft.exceeds ? "text-rose-400" : "text-foreground")}
+                  className={cn("font-bold", allocateDraft.exceeds ? "text-rose-700" : "text-foreground")}
                 >
                   {fmtAED(allocateDraft.total)}
                   <span className="text-muted-foreground font-normal ml-2">
@@ -961,13 +962,13 @@ export default function PaymentsPage() {
                 </span>
               </div>
               {allocateDraft.exceeds ? (
-                <div className="flex items-center gap-1 text-xs text-rose-400">
+                <div className="flex items-center gap-1 text-xs text-rose-700">
                   <AlertTriangle className="w-3 h-3" />
                   {t("payments.allocationExceeds")}
                 </div>
               ) : (
                 allocateDraft.remaining > 0 && (
-                  <div className="text-xs text-amber-400">
+                  <div className="text-xs text-amber-700">
                     {t("payments.remainingToAllocate")}: {fmtAED(allocateDraft.remaining)}
                   </div>
                 )
@@ -1023,7 +1024,7 @@ export default function PaymentsPage() {
                   deletes this payment's allocations and recomputes
                   installment_plans.allocated_amount, projects.paid_amount,
                   kpi_targets.actual_amount and contracts.first_payment_status. */}
-              <div className="flex items-start gap-2 text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+              <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>{t("payments.voidWarning")}</span>
               </div>

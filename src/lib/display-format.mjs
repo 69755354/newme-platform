@@ -38,11 +38,11 @@ function parts(value) {
 }
 
 /** "22 Nov" (en) / "11月22日" (zh); with the year ("22 Nov 2025" / "2025年11月22日") when it is not the current Dubai year. */
-export function formatShortDate(value, lang = "en", now = new Date()) {
+export function formatShortDate(value, lang = "en", now = new Date(), forceYear = false) {
   const p = parts(value);
   if (!p) return "—";
   const thisYear = parts(now)?.year;
-  const withYear = thisYear !== undefined && p.year !== thisYear;
+  const withYear = forceYear || (thisYear !== undefined && p.year !== thisYear);
   if (lang === "zh") return `${withYear ? `${p.year}年` : ""}${p.month}月${p.day}日`;
   return `${p.day} ${MONTHS_EN[p.month - 1]}${withYear ? ` ${p.year}` : ""}`;
 }
@@ -55,8 +55,8 @@ export function formatDubaiTime(value) {
 }
 
 /** "22 Nov 14:05" / "11月22日 14:05"; just the date for a date-only value. */
-export function formatDateTime(value, lang = "en", now = new Date()) {
-  const date = formatShortDate(value, lang, now);
+export function formatDateTime(value, lang = "en", now = new Date(), forceYear = false) {
+  const date = formatShortDate(value, lang, now, forceYear);
   const time = formatDubaiTime(value);
   return time ? `${date} ${time}` : date;
 }

@@ -62,14 +62,14 @@ export default function LeadFollowupCard({ lead, t }: Props) {
     <Card data-testid="followup-card">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Activity className="h-4 w-4 text-copper-400" />
+          <Activity className="h-4 w-4 text-copper-700" />
           {t("followup.title")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span data-testid="followup-state" className={`rounded-full px-2 py-0.5 text-xs font-medium ${tone}`}>{t(`followup.state.${state?.state ?? "normal"}`)}</span>
-          {state?.abandon_risk && <span data-testid="followup-abandon" className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">{t("followup.abandonRisk")}</span>}
+          {state?.abandon_risk && <span data-testid="followup-abandon" className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-700">{t("followup.abandonRisk")}</span>}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -93,7 +93,7 @@ export default function LeadFollowupCard({ lead, t }: Props) {
                 <li key={f.field}>{t(`followup.field.${f.field}`)}: <span className="font-medium">{formatSuggestedValue(f.field, f.value)}</span> <span className="text-muted-foreground">({Math.round(f.confidence * 100)}%)</span></li>
               ))}
             </ul>
-            <p className="mt-1 text-[11px] text-muted-foreground">{t("followup.draftHint")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("followup.draftHint")}</p>
             <button type="button" onClick={saveDraft} disabled={saving === "saving" || saving === "saved"}
               className="mt-1 inline-flex h-7 items-center rounded-md border border-border px-2 text-xs hover:bg-muted disabled:opacity-60">
               {saving === "saved" ? t("followup.draftSaved") : saving === "error" ? t("followup.draftError") : t("followup.saveDraft")}

@@ -35,15 +35,15 @@ export interface KanbanStageDef {
 }
 
 export const DEFAULT_KANBAN_STAGES: KanbanStageDef[] = [
-  { key: "new",                    labelKey: "pipeline.stageNew",              color: "#6B7280", bg: "bg-muted/30",         border: "border-border/40" },
-  { key: "contacted",              labelKey: "pipeline.stageContacted",        color: "#C48A52", bg: "bg-amber-950/30",     border: "border-amber-800/40" },
-  { key: "requirement_confirmed",  labelKey: "pipeline.stageReqConfirmed",     color: "#E0B95A", bg: "bg-yellow-950/20",    border: "border-yellow-800/40" },
-  { key: "solution_submitted",     labelKey: "pipeline.stageSolutionSub",      color: "#4A5568", bg: "bg-slate-950/20",     border: "border-slate-800/40" },
-  { key: "quotation_submitted",    labelKey: "pipeline.stageQuotationSub",     color: "#8B5CF6", bg: "bg-purple-950/20",    border: "border-purple-800/40" },
-  { key: "negotiation",            labelKey: "pipeline.stageNegotiation",      color: "#3B82F6", bg: "bg-blue-950/20",      border: "border-blue-800/40" },
-  { key: "pending_decision",       labelKey: "pipeline.stagePendingDecision",  color: "#F59E0B", bg: "bg-amber-950/20",     border: "border-amber-800/40" },
-  { key: "won",                    labelKey: "pipeline.stageWon",              color: "#4ADE80", bg: "bg-emerald-950/20",   border: "border-emerald-800/40" },
-  { key: "lost",                   labelKey: "pipeline.stageLost",             color: "#6B7280", bg: "bg-muted/30",         border: "border-border/40" },
+  { key: "new",                    labelKey: "pipeline.stageNew",              color: "#78716C", bg: "bg-muted/30",         border: "border-border/40" },
+  { key: "contacted",              labelKey: "pipeline.stageContacted",        color: "#475569", bg: "bg-muted/30",     border: "border-border/40" },
+  { key: "requirement_confirmed",  labelKey: "pipeline.stageReqConfirmed",     color: "#475569", bg: "bg-muted/30",    border: "border-border/40" },
+  { key: "solution_submitted",     labelKey: "pipeline.stageSolutionSub",      color: "#475569", bg: "bg-muted/30",     border: "border-border/40" },
+  { key: "quotation_submitted",    labelKey: "pipeline.stageQuotationSub",     color: "#475569", bg: "bg-muted/30",    border: "border-border/40" },
+  { key: "negotiation",            labelKey: "pipeline.stageNegotiation",      color: "#475569", bg: "bg-muted/30",      border: "border-border/40" },
+  { key: "pending_decision",       labelKey: "pipeline.stagePendingDecision",  color: "#475569", bg: "bg-muted/30",     border: "border-border/40" },
+  { key: "won",                    labelKey: "pipeline.stageWon",              color: "#047857", bg: "bg-emerald-50/70",   border: "border-emerald-200" },
+  { key: "lost",                   labelKey: "pipeline.stageLost",             color: "#78716C", bg: "bg-muted/30",         border: "border-border/40" },
 ];
 
 /* ─── Currency helper (re-exported for callers) ─── */
@@ -146,10 +146,10 @@ export default function KanbanStats({
             >
               {/* Row 1: label + percent — same baseline */}
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[10px] font-medium text-muted-foreground truncate">
+                <span className="text-xs font-medium text-muted-foreground truncate">
                   {t(s.labelKey)}
                 </span>
-                <span className="text-[9px] text-muted-foreground/70 tabular-nums">{pct}%</span>
+                <span className="text-xs text-muted-foreground/70 tabular-nums">{pct}%</span>
               </div>
 
               {/* Row 2: count number — the headline metric */}
@@ -165,7 +165,7 @@ export default function KanbanStats({
 
               {/* Row 4: value — optional caption, stays inside the unit */}
               {value > 0 && (
-                <p className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">{formatAEDShort(value)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">{formatAEDShort(value)}</p>
               )}
             </button>
           );

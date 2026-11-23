@@ -1,14 +1,13 @@
 // Pure utility helpers for the Lead Detail three-column layout.
 
+import { formatAED } from "@/lib/display-format.mjs";
 import type { Lead } from "./types";
 // Extracted verbatim from page.tsx (logic unchanged) so every column component
 // can share them without duplication. Plain .ts — no JSX, no React.
 
 export function fmtAED(v: number | null | undefined): string {
   if (v == null || v === 0) return "—";
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }
 
 export function daysSince(d: string | null): number | null {
@@ -35,11 +34,11 @@ export function projectDraftFromLead(l: Pick<Lead, "project_type" | "emirate" | 
 export const getStatusLabels = (
   t: (key: string) => string
 ): Record<string, { label: string; color: string; bg: string }> => ({
-  hot: { label: "🔥 " + t("leads.hot"), color: "text-rose-400", bg: "bg-rose-500/10" },
-  warm: { label: "☀️ " + t("leads.warm"), color: "text-amber-400", bg: "bg-amber-500/10" },
-  cold: { label: "❄️ " + t("leads.cold"), color: "text-sky-400", bg: "bg-sky-500/10" },
+  hot: { label: "" + t("leads.hot"), color: "text-rose-700", bg: "bg-rose-500/10" },
+  warm: { label: "" + t("leads.warm"), color: "text-amber-700", bg: "bg-amber-500/10" },
+  cold: { label: "" + t("leads.cold"), color: "text-sky-700", bg: "bg-sky-500/10" },
   dormant: {
-    label: "💤 " + t("leads.dormant"),
+    label: "" + t("leads.dormant"),
     color: "text-muted-foreground",
     bg: "bg-gray-500/10",
   },

@@ -49,7 +49,7 @@ test("the first client render uses only the server language: no storage read in 
 
 test("the root layout renders the same default language the client starts with", () => {
   const layout = read("src/app/layout.tsx");
-  assert.match(layout, /<html lang=\{lang \?\? DEFAULT_LANGUAGE\}>/);
+  assert.match(layout, /<html lang=\{lang \?\? DEFAULT_LANGUAGE\}[ >]/);
   assert.doesNotMatch(layout, /lang \?\? "zh"/, "html lang must not claim zh while the page renders English");
 });
 

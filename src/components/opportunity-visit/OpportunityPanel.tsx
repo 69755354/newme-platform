@@ -73,13 +73,13 @@ export default function OpportunityPanel({ t, lang, leadId }: Props) {
 
   if (state === "loading") return <p className="text-xs text-muted-foreground">…</p>;
   if (state === "unavailable") return <p className="text-xs text-muted-foreground" data-testid="opportunities-unavailable">{t("opportunities.unavailable")}</p>;
-  if (state === "error") return <p className="text-xs text-red-400">{t("opportunities.loadError")}</p>;
+  if (state === "error") return <p className="text-xs text-red-700">{t("opportunities.loadError")}</p>;
 
   const field = (name: keyof typeof EMPTY, label: string, input: React.ReactNode) => (
     <label className="block text-xs">
       <span className="text-muted-foreground">{label}</span>
       {input}
-      {fieldErrors[name] && <span className="block text-[11px] text-red-400">{fieldErrorText(t, "opportunities", fieldErrors[name])}</span>}
+      {fieldErrors[name] && <span className="block text-xs text-red-700">{fieldErrorText(t, "opportunities", fieldErrors[name])}</span>}
     </label>
   );
 
@@ -100,7 +100,7 @@ export default function OpportunityPanel({ t, lang, leadId }: Props) {
           <li key={o.id} className="rounded-md border border-border px-2 py-1.5 text-xs" data-testid="opportunity-row">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">O{String(o.opp_no).padStart(4, "0")} · {o.name}</span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px]">{stageLabel(o.stage)}</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{stageLabel(o.stage)}</span>
             </div>
             <div className="mt-0.5 text-muted-foreground">{o.confirmed_requirement}</div>
             <div className="mt-0.5 flex flex-wrap gap-x-3 text-muted-foreground">
@@ -122,7 +122,7 @@ export default function OpportunityPanel({ t, lang, leadId }: Props) {
               {stages.filter((s) => s.active).map((s) => <option key={s.key} value={s.key}>{stageLabel(s.key)}</option>)}
             </select>
           ))}
-          {chosen?.requires_quote && <p className="text-[11px] text-amber-400">{t("opportunities.quoteHint")}</p>}
+          {chosen?.requires_quote && <p className="text-xs text-amber-700">{t("opportunities.quoteHint")}</p>}
           {field("quote_amount_aed", t("opportunities.amount"), <input className={inputClass} inputMode="decimal" value={form.quote_amount_aed} onChange={(e) => setForm({ ...form, quote_amount_aed: e.target.value })} />)}
           {field("decision_target", t("opportunities.decisionTarget"), <input type="date" min="2020-01-01" max="2100-12-31" className={inputClass} value={form.decision_target} onChange={(e) => setForm({ ...form, decision_target: e.target.value })} />)}
           {field("quotation_link", t("opportunities.quotationLink"), <input className={inputClass} placeholder="https://" value={form.quotation_link} onChange={(e) => setForm({ ...form, quotation_link: e.target.value })} />)}
@@ -132,7 +132,7 @@ export default function OpportunityPanel({ t, lang, leadId }: Props) {
           </div>
         </div>
       )}
-      {message && <p className="text-xs text-red-400" role="alert">{message}</p>}
+      {message && <p className="text-xs text-red-700" role="alert">{message}</p>}
     </div>
   );
 }

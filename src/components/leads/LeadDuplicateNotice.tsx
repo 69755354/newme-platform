@@ -64,7 +64,7 @@ export function LeadDuplicateNotice({
       <ul className="space-y-1">
         {duplicates.filter((lead) => lead.visible && lead.id).map((lead) => (
           <li key={lead.id!} className="break-words">
-            <a href={`/leads/${lead.id}`} target="_blank" rel="noopener noreferrer" className="text-copper-400 underline">
+            <a href={`/leads/${lead.id}`} target="_blank" rel="noopener noreferrer" className="text-copper-700 underline">
               {lead.customer_name || t("leadFlow.duplicate.open")}
             </a>
             {lead.archived && <span className="ml-2 text-xs text-muted-foreground">({t("leadFlow.duplicate.archived")})</span>}

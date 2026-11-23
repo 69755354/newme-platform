@@ -193,26 +193,26 @@ export default function AdsPage() {
 
       {/* Spend freshness: the Meta sync is what moves it */}
       {spendMissing && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-300" data-testid="spend-not-connected">
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700" data-testid="spend-not-connected">
           <p className="font-medium">{t("ads.spendNotConnected")}</p>
-          <p className="text-xs text-amber-300/80 mt-0.5">{t("ads.spendNotConnectedHint")}</p>
+          <p className="text-xs text-amber-700/80 mt-0.5">{t("ads.spendNotConnectedHint")}</p>
         </div>
       )}
       {noSpendInWindow && !roi?.spend_stale && (
         <p className="text-xs text-muted-foreground" data-testid="no-spend-in-window">{t("ads.noSpendInWindow")}</p>
       )}
       {roi?.spend_stale && roi.data_last_updated && (
-        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-400">
+        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700">
           {t("ads.staleBanner").replace("{date}", roi.data_last_updated).replace("{n}", String(roi.spend_days_old ?? ""))}
         </div>
       )}
       {roiLoading && <p className="text-xs text-muted-foreground">{t("common.loading")}</p>}
-      {roiError && <p className="text-xs text-red-400">{t("common.loadFailedRetry")}</p>}
+      {roiError && <p className="text-xs text-red-700">{t("common.loadFailedRetry")}</p>}
       {roi && (
         <p className="text-xs text-muted-foreground">{t("ads.dataUpdated")}: {roi.data_last_updated ?? "—"}</p>
       )}
       {/* "All" reads spend over 90 days (see WINDOW_OPTIONS): say so wherever spend is shown */}
-      {roi && days === 0 && <p className="text-xs text-amber-400" data-testid="roi-period-90">{t("ads.roiPeriod90")}</p>}
+      {roi && days === 0 && <p className="text-xs text-amber-700" data-testid="roi-period-90">{t("ads.roiPeriod90")}</p>}
 
       {/* Summary: leads, cost per lead - the return stops at leads */}
       <div className={cn("grid grid-cols-2 gap-3", roi?.summary && !spendMissing && !noSpendInWindow ? "md:grid-cols-5" : "md:grid-cols-2")}>
@@ -222,11 +222,11 @@ export default function AdsPage() {
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-emerald-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.validLeads")}</p>
-          <p className="text-2xl font-bold text-emerald-400">{totalStats.valid}</p>
+          <p className="text-2xl font-bold text-emerald-700">{totalStats.valid}</p>
           <p className="text-xs text-muted-foreground">
             {t("ads.validOfRated").replace("{valid}", String(totalStats.valid)).replace("{rated}", String(totalStats.rated)).replace("{unrated}", String(totalStats.unrated))}
           </p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{t("ads.validNote")}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{t("ads.validNote")}</p>
         </div>
         {roi?.summary && !spendMissing && !noSpendInWindow && (
           <>
@@ -240,7 +240,7 @@ export default function AdsPage() {
             </div>
             <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-copper-500/5 to-transparent">
               <p className="text-xs text-muted-foreground">{t("ads.cpl")}</p>
-              <p className="text-2xl font-bold text-copper-400">{fmtAED(roi.summary.cpl)}</p>
+              <p className="text-2xl font-bold text-copper-700">{fmtAED(roi.summary.cpl)}</p>
             </div>
           </>
         )}
@@ -300,7 +300,7 @@ export default function AdsPage() {
                     <td className="text-right py-3 px-3 text-muted-foreground">{g.unrated}</td>
                     <td className="text-right py-3 px-3">{g.valid}</td>
                     <td className="text-right py-3 px-3">
-                      <span className={cn(validRate === null ? "text-muted-foreground" : validRate >= 50 ? "text-emerald-400" : validRate >= 20 ? "text-amber-400" : "text-muted-foreground")}>
+                      <span className={cn(validRate === null ? "text-muted-foreground" : validRate >= 50 ? "text-emerald-700" : validRate >= 20 ? "text-amber-700" : "text-muted-foreground")}>
                         {pctOfRated(g.valid, g.rated)}
                       </span>
                     </td>
@@ -321,7 +321,7 @@ export default function AdsPage() {
       {/* Cost per lead per week and per ad (boss/admin only: spend is not shown to operator) */}
       {roi && (
         <div className="grid gap-4 md:grid-cols-2">
-          {days === 0 && <p className="md:col-span-2 text-xs text-amber-400">{t("ads.roiPeriod90")}</p>}
+          {days === 0 && <p className="md:col-span-2 text-xs text-amber-700">{t("ads.roiPeriod90")}</p>}
           <div className="rounded-xl border border-border/50 overflow-hidden">
             <h3 className="px-4 py-2 text-sm font-semibold bg-muted/30">{t("ads.cplByWeek")}</h3>
             <div className="overflow-x-auto">

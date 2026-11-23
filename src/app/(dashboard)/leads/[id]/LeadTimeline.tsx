@@ -10,6 +10,7 @@
 // behaviour is preserved); this component only renders. Extracted verbatim from
 // the old TabTimeline() during the three-column refactor.
 
+import { formatDubaiTime } from "@/lib/display-format.mjs";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -201,7 +202,7 @@ export default function LeadTimeline({
     <Card className="border-border bg-card shadow-sm">
       <CardHeader className="border-b border-border/70 pb-3">
         <CardTitle className="text-base text-foreground flex items-center gap-2">
-          <Clock className="w-4 h-4 text-copper-400" /> {t("leadDetail.timeline")}
+          <Clock className="w-4 h-4 text-copper-700" /> {t("leadDetail.timeline")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -230,7 +231,7 @@ export default function LeadTimeline({
         </div>
         <Separator className="bg-border" />
         {contactError && !editingContactId && (
-          <p role="alert" className="text-xs text-red-400">{contactError}</p>
+          <p role="alert" className="text-xs text-red-700">{contactError}</p>
         )}
 
         {/* WhatsApp chat bubbles */}
@@ -250,7 +251,7 @@ export default function LeadTimeline({
                         outbound ? "bg-[#dcf8c6] text-gray-900 rounded-tr-none" : "bg-white text-gray-900 rounded-tl-none"
                       )}
                     >
-                      <div className="flex items-center gap-1 mb-0.5 text-[10px] font-medium text-gray-500">
+                      <div className="flex items-center gap-1 mb-0.5 text-xs font-medium text-gray-500">
                         {outbound ? (
                           <>
                             <PhoneOutgoing className="w-3 h-3" />
@@ -266,11 +267,8 @@ export default function LeadTimeline({
                       <p className="break-anywhere whitespace-pre-wrap text-sm leading-snug">
                         {msg.content || <span className="italic text-gray-400">—</span>}
                       </p>
-                      <p className="mt-0.5 text-right text-[10px] text-gray-500">
-                        {new Date(msg.created_at).toLocaleTimeString(t("locale.dateTimeLocale"), {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                      <p className="mt-0.5 text-right text-xs text-gray-500">
+                        {formatDubaiTime(msg.created_at)}
                       </p>
                     </div>
                   </div>
@@ -325,7 +323,7 @@ export default function LeadTimeline({
                           type="button"
                           onClick={() => beginContactEdit(contact)}
                           aria-label={lang === "zh" ? "编辑联系记录" : "Edit Contact Record"}
-                          className="text-[10px] text-copper-500 hover:text-copper-400 flex items-center gap-1"
+                          className="text-xs text-copper-500 hover:text-copper-700 flex items-center gap-1"
                         >
                           <Pencil className="w-3 h-3" />
                           {lang === "zh" ? "编辑" : "Edit"}
@@ -334,7 +332,7 @@ export default function LeadTimeline({
                           type="button"
                           onClick={() => void deleteContact(contact.id)}
                           disabled={contactDeleting === contact.id}
-                          className="text-[10px] text-rose-400 hover:text-rose-300 disabled:opacity-50 flex items-center gap-1"
+                          className="text-xs text-rose-700 hover:text-rose-700 disabled:opacity-50 flex items-center gap-1"
                         >
                           <Trash2 className="w-3 h-3" />
                           {contactDeleting === contact.id ? "..." : lang === "zh" ? "删除" : "Delete"}
@@ -372,7 +370,7 @@ export default function LeadTimeline({
                         placeholder={lang === "zh" ? "摘要" : "Summary"}
                         className="min-h-16 bg-muted text-xs"
                       />
-                      {contactError && <p className="text-xs text-red-400">{contactError}</p>}
+                      {contactError && <p className="text-xs text-red-700">{contactError}</p>}
                       <div className="flex gap-2">
                         <Button
                           size="sm"
@@ -394,7 +392,7 @@ export default function LeadTimeline({
                   )}
                   <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-2">
                     {fmtDubai(item.created_at, { locale: t("locale.dateTimeLocale") })}
-                    {item.ai_generated && <span className="text-purple-500">🤖 AI</span>}
+                    {item.ai_generated && <span className="text-purple-500">AI</span>}
                     {item._type === "event" && <span className="text-blue-500">{t("leadDetail.event")}</span>}
                     {item._type === "milestone" && (
                       <span className="text-emerald-500">{lang === "zh" ? "阶段" : "Milestone"}</span>
@@ -402,13 +400,13 @@ export default function LeadTimeline({
                     {item._type === "followup" && (
                       <span className="text-copper-500">
                         {item.type === "note"
-                          ? `📝 ${t("leadDetail.note")}`
+                          ? `${t("leadDetail.note")}`
                           : item.type === "import_note"
-                          ? `📥 ${lang === "zh" ? "导入备注" : "Imported"}`
+                          ? `${lang === "zh" ? "导入备注" : "Imported"}`
                           : item.type === "phone"
-                          ? `📞 ${t("leadDetail.call")}`
+                          ? `${t("leadDetail.call")}`
                           : item.type === "whatsapp"
-                          ? "💬 WhatsApp"
+                          ? "WhatsApp"
                           : lang === "zh"
                           ? "跟进"
                           : "Follow-up"}

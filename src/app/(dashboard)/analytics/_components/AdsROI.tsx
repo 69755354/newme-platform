@@ -114,7 +114,7 @@ export default function AdsROI() {
 
   if (error) {
     return (
-      <div className="py-8 text-center text-sm text-rose-400">
+      <div className="py-8 text-center text-sm text-rose-700">
         {error}
       </div>
     );
@@ -149,16 +149,16 @@ export default function AdsROI() {
           ))}
         </div>
         {period?.start_date && period?.end_date && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {t("analytics.campaignPeriod")}: {period.start_date} ~ {period.end_date}
           </p>
         )}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {t("analytics.adsDataUpdated")}: {data.data_last_updated ?? "—"}
         </p>
       </div>
       {data.spend_stale && (
-        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">
+        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-700">
           {data.data_last_updated
             ? t("analytics.adsStaleBanner").replace("{date}", data.data_last_updated).replace("{n}", String(data.spend_days_old ?? ""))
             : t("analytics.adsNoSpendBanner")}
@@ -173,12 +173,12 @@ export default function AdsROI() {
           { label: t("analytics.cpl"), value: fmtAED(summary.cpl) },
         ].map((card) => (
           <div key={card.label} className="p-3 rounded-lg border border-border/50 bg-card/50">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{card.label}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{card.label}</p>
             <p className="text-lg font-bold text-foreground mt-0.5">{card.value}</p>
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {t("analytics.adLeadsWindowNote").replace("{n}", String(days))}
         {summary.total_spend === null && <> {t("ads.spendNotConnected")}</>}
       </p>
@@ -305,16 +305,16 @@ export default function AdsROI() {
                 <TableRow key={row.source}>
                   <TableCell className="font-medium">{translatedOrRaw(t, `sourceLabels.${row.source}`, row.source)}</TableCell>
                   <TableCell className="text-right">{row.total}</TableCell>
-                  <TableCell className="text-right text-emerald-400">
+                  <TableCell className="text-right text-emerald-700">
                     {row.good}
                   </TableCell>
-                  <TableCell className="text-right text-sky-400">
+                  <TableCell className="text-right text-sky-700">
                     {row.normal}
                   </TableCell>
-                  <TableCell className="text-right text-amber-400">
+                  <TableCell className="text-right text-amber-700">
                     {row.pending}
                   </TableCell>
-                  <TableCell className="text-right text-rose-400">
+                  <TableCell className="text-right text-rose-700">
                     {row.bad}
                   </TableCell>
                 </TableRow>

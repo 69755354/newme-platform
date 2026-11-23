@@ -20,8 +20,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // S6 (review 4d #21): render the first HTML in the user's chosen language.
   const lang = parseLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
   return (
-    <html lang={lang ?? DEFAULT_LANGUAGE}>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F5F3EF]`}>
+    <html lang={lang ?? DEFAULT_LANGUAGE} className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className="antialiased bg-[#F5F3EF]">
         <HtmlLangSync />
         <MetaPixel />
         <ErrorBoundary>

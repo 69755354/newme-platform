@@ -13,9 +13,8 @@ const NEW_TYPES = ["reminder", "contract_pending_approval", "warning"];
 /** The notifications.types blocks (English first, Chinese second). */
 const typeBlocks = [...translations.matchAll(/notifications:[\s\S]*?\btypes:\s*\{([^}]*)\}/g)].map((m) => m[1]);
 
-test("the bell has an icon and a label key for each newly delivered type", () => {
+test("the bell has a label key (S38: emoji icons removed) for each newly delivered type", () => {
   for (const type of NEW_TYPES) {
-    assert.match(bell, new RegExp(`TYPE_ICONS[\\s\\S]*?\\b${type}: "`), `${type} icon`);
     assert.match(bell, new RegExp(`${type}: "notifications\\.types\\.${type}"`), `${type} label key`);
   }
 });

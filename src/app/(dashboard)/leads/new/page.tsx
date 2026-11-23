@@ -82,7 +82,7 @@ export default function NewLeadPage() {
 
   const fieldError = (field: string) => {
     const code = errorState?.fieldErrors?.[field];
-    return code ? <p className="text-xs text-red-400 mt-1">{t(leadFieldErrorKey(field, code))}</p> : null;
+    return code ? <p className="text-xs text-red-700 mt-1">{t(leadFieldErrorKey(field, code))}</p> : null;
   };
 
   return (

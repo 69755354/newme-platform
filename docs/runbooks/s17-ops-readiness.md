@@ -94,5 +94,7 @@ sudo BACKUP_LIB=/usr/local/libexec/newme/newme-backup-lib.sh /usr/local/libexec/
 
 - `newme-daily-brief.timer`：迪拜 08:05（UTC 04:05）发简报给 Sam 和 Tanya；`newme-lead-reminder.timer`：迪拜 09:00 到 21:00 每小时，给分配超过 24 小时仍无首次联系的销售发一条提醒（每人每天最多一条）。两者都走现有告警发送器和已批准模板，失败走 `newme-unit-alert@`。
 - 开关在 `/etc/newme/daily-brief.env`（可选文件，不存在即关闭）：`NEWME_DAILY_BRIEF_ENABLED=true`、`NEWME_LEAD_REMINDER_ENABLED=true`。每次运行都重新读取，改完不用重启。
+- 日报加"销售反馈待补"段（默认关）：`/etc/newme/daily-brief.env` 里加 `NEWME_BRIEF_FEEDBACK_SECTION_ENABLED=true`；按销售列出分配满 1 天仍未写 Day 1 反馈、分配满 3 天且最新反馈只是"未接"的线索数和最久几条编号。读表失败则该段省略，日报照发。
+- 新表单线索即时跟进（默认关，计时器只安装不启用）：开关 `/etc/newme/speed-to-lead.env` 里 `NEWME_SPEED_TO_LEAD_ENABLED=true`；公司号发客户模板用 root 专属文件 `/etc/newme/customer-wa.env`（`CUSTOMER_WA_ACCESS_TOKEN`、`CUSTOMER_WA_PHONE_NUMBER_ID`，权限 0600）。启用：`systemctl enable --now newme-speed-to-lead.timer`。台账 `/var/lib/newme-speed-to-lead/ledger.json`（只含线索编号和次数）。
 - 试运行（只读，只打印数量）：`node scripts/daily-brief.mjs --mode brief` 或 `--mode reminders`。
 - 销售手机号取自 `profiles.phone`；没有手机号的人不发提醒，并在简报的“需要注意”里列出。

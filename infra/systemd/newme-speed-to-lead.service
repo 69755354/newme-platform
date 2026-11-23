@@ -1,0 +1,33 @@
+[Unit]
+Description=NewMe speed-to-lead: WhatsApp template to new form-lead customers and call alert to the salesperson; off until its switch is set
+After=network-online.target
+Wants=network-online.target
+OnFailure=newme-unit-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/newme/newme-runtime.env
+# The database URL is kept in capi-wa.env on the host; newme-runtime.env holds only the key
+EnvironmentFile=-/etc/newme/capi-wa.env
+# Switch file, optional: NEWME_SPEED_TO_LEAD_ENABLED=true turns the job on (default OFF, the run then does nothing). Read at every start.
+EnvironmentFile=-/etc/newme/speed-to-lead.env
+# Company WhatsApp sender for the customer template (root-only, optional): CUSTOMER_WA_ACCESS_TOKEN, CUSTOMER_WA_PHONE_NUMBER_ID
+EnvironmentFile=-/etc/newme/customer-wa.env
+WorkingDirectory=/opt/newme/current
+ExecStart=/usr/bin/node scripts/speed-to-lead.mjs --execute
+TimeoutStartSec=240
+Nice=10
+UMask=0077
+StateDirectory=newme-speed-to-lead
+StateDirectoryMode=0700
+ReadWritePaths=-/var/lib/newme-alerts
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+LockPersonality=true

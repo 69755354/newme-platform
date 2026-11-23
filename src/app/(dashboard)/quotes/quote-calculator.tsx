@@ -176,7 +176,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleReset(); onOpenChange(o); }}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg">📊 {t("quotes.calc.title")}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-lg">{t("quotes.calc.title")}</DialogTitle>
           <DialogDescription>{t("quotes.calc.desc")}</DialogDescription>
         </DialogHeader>
 
@@ -188,7 +188,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
             <div className="rounded-lg border border-border/40 p-3 space-y-2">
               <div>
                 <label className="text-xs font-medium text-foreground mb-1 block">
-                  {t("quotes.calc.customerLead")} <span className="text-rose-400">*</span>
+                  {t("quotes.calc.customerLead")} <span className="text-rose-700">*</span>
                 </label>
                 <select value={selectedLeadId} onChange={(e) => handleLeadChange(e.target.value)}
                   className="w-full h-9 px-2.5 text-sm rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
@@ -210,8 +210,8 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
                   <label className="text-xs font-medium text-foreground mb-1 block">{t("quotes.calc.propertyType")}</label>
                   <select value={propertyType} onChange={(e) => setPropertyType(e.target.value as "villa" | "apartment")}
                     className="w-full h-8 px-2 text-xs rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-                    <option value="villa">🏠 {t("quotes.calc.villa")}</option>
-                    <option value="apartment">🏢 {t("quotes.calc.apartment")}</option>
+                    <option value="villa">{t("quotes.calc.villa")}</option>
+                    <option value="apartment">{t("quotes.calc.apartment")}</option>
                   </select>
                 </div>
               </div>
@@ -248,8 +248,8 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
                     text-xs font-medium text-foreground hover:bg-accent/50 rounded-t-lg transition-colors
                     [&[data-state=closed]]:rounded-lg">
                     <span className="flex items-center gap-1.5">
-                      <span className="text-sm">{cat.icon}</span> {cat.label}
-                      <span className="text-[10px] text-muted-foreground ml-1">
+                      {cat.label}
+                      <span className="text-xs text-muted-foreground ml-1">
                         ({cat.devices.filter((d) => getQty(d.id) > 0).length})
                       </span>
                     </span>
@@ -264,7 +264,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
                             qty > 0 ? "bg-copper-500/10 border border-copper-500/20" : "hover:bg-accent/30")}>
                           <div className="flex-1 min-w-0">
                             <p className="text-foreground truncate">{device.name}</p>
-                            <p className="text-muted-foreground text-[10px]">
+                            <p className="text-muted-foreground text-xs">
                               AED {device.price.toLocaleString()}{device.unit ? ` /${device.unit}` : ""}
                             </p>
                           </div>
@@ -296,7 +296,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
             {/* Device summary */}
             <div className="rounded-lg border border-border/40 p-3">
               <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
-                <span className="text-sm">📦</span> {t("quotes.calc.deviceList")} ({totalDeviceCount})
+                <span className="text-sm"></span> {t("quotes.calc.deviceList")} ({totalDeviceCount})
               </h3>
               {totalDeviceCount > 0 ? (
                 <div className="space-y-1 max-h-[200px] overflow-y-auto">
@@ -308,14 +308,14 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
                         <span className="text-foreground truncate mr-2">{device.name}</span>
                         <span className="text-muted-foreground shrink-0">
                           {qty} × AED {device.price.toLocaleString()}
-                          <span className="text-copper-400 font-medium ml-1">= AED {fmtCurrency(device.price * qty)}</span>
+                          <span className="text-copper-700 font-medium ml-1">= AED {fmtCurrency(device.price * qty)}</span>
                         </span>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <p className="text-[10px] text-muted-foreground text-center py-4">{t("quotes.calc.selectFromLeft")}</p>
+                <p className="text-xs text-muted-foreground text-center py-4">{t("quotes.calc.selectFromLeft")}</p>
               )}
             </div>
 
@@ -333,9 +333,9 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
                   <Input type="number" min={0} max={20} step={0.5} value={discountRate}
                     onChange={(e) => setDiscountRate(clampDiscountRate(e.target.value, 20))}
                     className="w-14 h-6 text-xs text-right px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                  <span className="text-muted-foreground text-[10px]">%</span>
+                  <span className="text-muted-foreground text-xs">%</span>
                   {calc.discountAmount > 0 && (
-                    <span className="text-rose-400 font-medium text-xs">-AED {fmtCurrency(calc.discountAmount)}</span>
+                    <span className="text-rose-700 font-medium text-xs">-AED {fmtCurrency(calc.discountAmount)}</span>
                   )}
                 </div>
               </div>
@@ -379,7 +379,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
               <div className="border-t-2 border-copper-500/40 pt-2 mt-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-foreground">{t("quotes.calc.grandTotal")}</span>
-                  <span className="text-lg font-bold text-copper-400">AED {fmtCurrency(calc.total)}</span>
+                  <span className="text-lg font-bold text-copper-700">AED {fmtCurrency(calc.total)}</span>
                 </div>
               </div>
             </div>
@@ -387,7 +387,7 @@ export default function QuoteCalculator({ open, onOpenChange, onSaved, initialLe
         </div>
 
         {savedQuote && (
-          <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
+          <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">
             {lang === "zh"
               ? `报价 #${savedQuote.no} 已保存（${savedQuote.currency} ${savedQuote.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}）。现在可以导出 Excel，或用 WhatsApp 发给客户；要做新报价请点“重置”。`
               : `Quotation #${savedQuote.no} saved (${savedQuote.currency} ${savedQuote.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Export it to Excel or open it in WhatsApp now; press Reset for a new one.`}

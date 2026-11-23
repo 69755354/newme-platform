@@ -183,10 +183,10 @@ export default function LeadSalesProcess({
       : t("leadDetail.health_stale");
   const healthColor =
     health.score >= 50
-      ? "bg-emerald-500/10 text-emerald-400"
+      ? "bg-emerald-500/10 text-emerald-700"
       : health.score >= 20
-      ? "bg-amber-500/10 text-amber-400"
-      : "bg-red-500/10 text-red-400";
+      ? "bg-amber-500/10 text-amber-700"
+      : "bg-red-500/10 text-red-700";
 
   const completeContactCount = followUpLogs.filter(
     (log) => log.contact_time != null && !!log.contact_result?.trim(),
@@ -298,7 +298,7 @@ export default function LeadSalesProcess({
       <Card className="order-2 overflow-hidden border-copper-500/30 bg-card shadow-none">
         <CardHeader className="border-b border-border/70 pb-3">
           <CardTitle className="text-base text-foreground flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2"><Target className="w-4 h-4 text-copper-400" /> {lang === "zh" ? "当前成交阶段" : "Current deal stage"}</span>
+            <span className="flex items-center gap-2"><Target className="w-4 h-4 text-copper-700" /> {lang === "zh" ? "当前成交阶段" : "Current deal stage"}</span>
             <span className="text-xs font-normal text-muted-foreground">{completedKeys.length}/7</span>
           </CardTitle>
         </CardHeader>
@@ -340,17 +340,17 @@ export default function LeadSalesProcess({
                     </p>
                     {completed && milestone && (
                       <div className="mt-2 space-y-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-2">
-                        <p className="text-[10px] text-emerald-400">{t("leadDetail.milestoneCompleted")}</p>
+                        <p className="text-xs text-emerald-700">{t("leadDetail.milestoneCompleted")}</p>
                         <p className="whitespace-pre-wrap break-words text-xs text-foreground">
                           {milestone.notes?.trim() || "—"}
                         </p>
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           {milestone.completed_at ? fmtDubai(milestone.completed_at, { locale: t("locale.dateLocale") }) : "—"}
                           {milestone.completer?.full_name ? ` · ${milestone.completer.full_name}` : ""}
                         </p>
                         {reopenMilestoneKey === key ? (
                           <div className="space-y-1.5 pt-1">
-                            <Label htmlFor={`reopen-reason-${key}`} className="text-[10px] text-foreground">
+                            <Label htmlFor={`reopen-reason-${key}`} className="text-xs text-foreground">
                               {lang === "zh" ? "重开原因（必填）" : "Reopen reason (required)"}
                             </Label>
                             <textarea
@@ -363,7 +363,7 @@ export default function LeadSalesProcess({
                               placeholder={lang === "zh" ? "说明误操作或需要更新的内容" : "Explain the correction"}
                               className="min-h-16 w-full rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
                             />
-                            {reopenError && <p role="alert" className="text-[10px] text-rose-400">{reopenError}</p>}
+                            {reopenError && <p role="alert" className="text-xs text-rose-700">{reopenError}</p>}
                             <div className="flex gap-1.5">
                               <Button
                                 type="button"
@@ -382,7 +382,7 @@ export default function LeadSalesProcess({
                                     setReopenReason("");
                                   }
                                 }}
-                                className="h-7 border-amber-500/30 text-[10px] text-amber-400"
+                                className="h-7 border-amber-500/30 text-xs text-amber-700"
                               >
                                 {lang === "zh" ? "确认重开" : "Confirm reopen"}
                               </Button>
@@ -396,7 +396,7 @@ export default function LeadSalesProcess({
                                   setReopenReason("");
                                   setReopenError(null);
                                 }}
-                                className="h-7 text-[10px]"
+                                className="h-7 text-xs"
                               >
                                 {t("common.cancel") || "Cancel"}
                               </Button>
@@ -410,16 +410,16 @@ export default function LeadSalesProcess({
                               setReopenReason("");
                               setReopenError(null);
                             }}
-                            className="text-[10px] text-amber-400 hover:text-amber-300"
+                            className="text-xs text-amber-700 hover:text-amber-700"
                           >
                             {lang === "zh" ? "重开此阶段" : "Reopen milestone"}
                           </button>
                         )}
                       </div>
                     )}
-                    {isNext && !completed && <p className="text-[10px] text-copper-400">{t("leadDetail.milestoneNext")}</p>}
+                    {isNext && !completed && <p className="text-xs text-copper-700">{t("leadDetail.milestoneNext")}</p>}
                     {locked && (
-                      <p className="text-[10px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         {previousMilestoneKey
                           ? lang === "zh"
                             ? `请先完成「${t(`leadDetail.milestone_${previousMilestoneKey}`)}」后解锁`
@@ -511,11 +511,11 @@ export default function LeadSalesProcess({
                       return (
                       <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
                         {/* ── Status indicators ── */}
-                        <div className="space-y-1 text-[11px]">
-                          <p className={contactsMet ? "text-emerald-400" : "text-foreground"}>
+                        <div className="space-y-1 text-xs">
+                          <p className={contactsMet ? "text-emerald-700" : "text-foreground"}>
                             {lang === "zh" ? "联系记录" : "Contact record"} {contactsMet ? "✓" : `${contactTimeCount}/${contactsNeeded}`}
                           </p>
-                          <p className={qAssessed ? "text-emerald-400" : "text-foreground"}>
+                          <p className={qAssessed ? "text-emerald-700" : "text-foreground"}>
                             {lang === "zh" ? "线索质量" : "Lead quality"}{" "}
                             {qAssessed
                               ? lead.quality === "good"
@@ -529,7 +529,7 @@ export default function LeadSalesProcess({
                             {lang === "zh" ? "建议跟进" : "Recommended follow-ups"} {contactTimeCount}/{coachingTarget}
                           </p>
                           {!contactsMet && (
-                            <p className="text-amber-400">
+                            <p className="text-amber-700">
                               {lang === "zh" ? "添加1条联系记录后可评估" : "Add 1 contact record to assess quality"}
                             </p>
                           )}
@@ -539,7 +539,7 @@ export default function LeadSalesProcess({
                         {!contactFormOpen ? (
                           <button
                             onClick={() => { setContactTime(dubaiInputValue()); setContactFormOpen(true); }}
-                            className="flex items-center gap-1.5 text-[10px] text-copper-400 hover:text-copper-300 transition-colors w-full py-1"
+                            className="flex items-center gap-1.5 text-xs text-copper-700 hover:text-copper-700 transition-colors w-full py-1"
                           >
                             <Plus className="h-3 w-3" />
                             {t("leadDetail.addContactRecord") || "+ Add Contact Record"}
@@ -548,14 +548,14 @@ export default function LeadSalesProcess({
                           <div className="space-y-2 p-2 rounded border border-copper-500/20 bg-copper-500/5">
                             {/* Contact Method */}
                             <div>
-                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                              <label className="text-xs text-muted-foreground block mb-0.5">
                                 {t("leadDetail.contactMethod") || "Contact Method"} *
                               </label>
                               <select
                                 value={contactMethod}
                                 onChange={(e) => setContactMethod(e.target.value)}
                                 disabled={contactSubmitting}
-                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
+                                className="w-full h-7 text-xs bg-muted border border-border rounded px-2 text-foreground"
                               >
                                 <option value="">{t("leadDetail.selectContactMethod") || "-- Select --"}</option>
                                 <option value="whatsapp">WhatsApp</option>
@@ -566,7 +566,7 @@ export default function LeadSalesProcess({
 
                             {/* Contact Time */}
                             <div>
-                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                              <label className="text-xs text-muted-foreground block mb-0.5">
                                 {t("leadDetail.contactTime") || "Contact Time"} *
                               </label>
                               <input
@@ -575,13 +575,13 @@ export default function LeadSalesProcess({
                                 max={dubaiInputValue()}
                                 onChange={(e) => setContactTime(e.target.value)}
                                 disabled={contactSubmitting}
-                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
+                                className="w-full h-7 text-xs bg-muted border border-border rounded px-2 text-foreground"
                               />
                             </div>
 
                             {/* Contact Result */}
                             <div>
-                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                              <label className="text-xs text-muted-foreground block mb-0.5">
                                 {t("leadDetail.contactResult") || "Contact Result"} *
                               </label>
                               <input
@@ -593,13 +593,13 @@ export default function LeadSalesProcess({
                                 }}
                                 placeholder={t("leadDetail.contactResultPlaceholder") || "e.g. Interested, No answer..."}
                                 disabled={contactSubmitting}
-                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
+                                className="w-full h-7 text-xs bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
                               />
                             </div>
 
                             {/* Summary / Notes (optional) */}
                             <div>
-                              <label className="text-[10px] text-muted-foreground block mb-0.5">
+                              <label className="text-xs text-muted-foreground block mb-0.5">
                                 {t("leadDetail.contactNotes") || "Notes"}
                               </label>
                               <input
@@ -608,12 +608,12 @@ export default function LeadSalesProcess({
                                 onChange={(e) => setContactNotes(e.target.value)}
                                 placeholder={t("leadDetail.contactNotesPlaceholder") || "Optional notes..."}
                                 disabled={contactSubmitting}
-                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
+                                className="w-full h-7 text-xs bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50"
                               />
                             </div>
 
                             {contactSaveError && (
-                              <p className="col-span-2 text-[10px] text-red-500">{contactSaveError}</p>
+                              <p className="col-span-2 text-xs text-red-500">{contactSaveError}</p>
                             )}
 
                             {/* Submit / Cancel row */}
@@ -622,9 +622,9 @@ export default function LeadSalesProcess({
                                 onClick={handleAddStructuredContact}
                                 disabled={!canSubmit}
                                 className={cn(
-                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  "text-xs px-2 py-1 rounded border transition-colors flex items-center gap-1",
                                   canSubmit
-                                    ? "border-copper-500/30 text-copper-400 hover:bg-copper-500/10"
+                                    ? "border-copper-500/30 text-copper-700 hover:bg-copper-500/10"
                                     : "border-border text-muted-foreground/30 cursor-not-allowed"
                                 )}
                               >
@@ -634,7 +634,7 @@ export default function LeadSalesProcess({
                               <button
                                 onClick={() => setContactFormOpen(false)}
                                 disabled={contactSubmitting}
-                                className="text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:border-gray-500"
+                                className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:border-gray-500"
                               >
                                 {t("common.cancel") || "Cancel"}
                               </button>
@@ -644,16 +644,16 @@ export default function LeadSalesProcess({
 
                         {/* ── Quality selector ── */}
                         <div className="space-y-1">
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {t("leadDetail.setContactQuality") || "Set Contact Quality"}
                             {!contactsMet && (
-                              <span className="text-amber-400 ml-1">
+                              <span className="text-amber-700 ml-1">
                                 ({(t("leadDetail.needMoreContacts") || `need ${contactsNeeded - contactTimeCount} more contacts`).replace("{n}", String(contactsNeeded - contactTimeCount))})
                               </span>
                             )}
                           </p>
                           {qualitySaveError && (
-                            <p role="alert" className="text-[10px] text-red-400">{qualitySaveError}</p>
+                            <p role="alert" className="text-xs text-red-700">{qualitySaveError}</p>
                           )}
                           {showQualityPoorReason ? (
                             <div className="space-y-1.5">
@@ -666,19 +666,19 @@ export default function LeadSalesProcess({
                                   if (e.key === "Escape") { setShowQualityPoorReason(false); setQualityPoorReason(""); }
                                 }}
                                 placeholder={t("leadDetail.poorReasonPlaceholder") || "Enter reason for Poor (min 3 chars)"}
-                                className="w-full h-7 text-[11px] bg-muted border border-border rounded px-2 text-foreground"
+                                className="w-full h-7 text-xs bg-muted border border-border rounded px-2 text-foreground"
                               />
                               <div className="flex gap-1.5">
                                 <button
                                   disabled={qualityPoorReason.trim().length < 3 || qualitySetting === "poor"}
                                   onClick={() => handleSetQuality("poor", qualityPoorReason.trim())}
-                                  className="text-[10px] px-2 py-1 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="text-xs px-2 py-1 rounded border border-rose-500/30 text-rose-700 hover:bg-rose-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   {qualitySetting === "poor" ? "..." : t("leadDetail.confirmPoor") || "Confirm Poor"}
                                 </button>
                                 <button
                                   onClick={() => { setShowQualityPoorReason(false); setQualityPoorReason(""); }}
-                                  className="text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:border-gray-500"
+                                  className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:border-gray-500"
                                 >
                                   {t("common.cancel") || "Cancel"}
                                 </button>
@@ -690,9 +690,9 @@ export default function LeadSalesProcess({
                                 disabled={!contactsMet || qualitySetting !== null}
                                 onClick={() => handleSetQuality("good")}
                                 className={cn(
-                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  "text-xs px-2 py-1 rounded border transition-colors flex items-center gap-1",
                                   contactsMet && qualitySetting === null
-                                    ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                                    ? "border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10"
                                     : "border-border text-muted-foreground/30 cursor-not-allowed"
                                 )}
                               >
@@ -703,9 +703,9 @@ export default function LeadSalesProcess({
                                 disabled={!contactsMet || qualitySetting !== null}
                                 onClick={() => handleSetQuality("normal")}
                                 className={cn(
-                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  "text-xs px-2 py-1 rounded border transition-colors flex items-center gap-1",
                                   contactsMet && qualitySetting === null
-                                    ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                                    ? "border-amber-500/30 text-amber-700 hover:bg-amber-500/10"
                                     : "border-border text-muted-foreground/30 cursor-not-allowed"
                                 )}
                               >
@@ -716,9 +716,9 @@ export default function LeadSalesProcess({
                                 disabled={!contactsMet || qualitySetting !== null}
                                 onClick={() => setShowQualityPoorReason(true)}
                                 className={cn(
-                                  "text-[10px] px-2 py-1 rounded border transition-colors flex items-center gap-1",
+                                  "text-xs px-2 py-1 rounded border transition-colors flex items-center gap-1",
                                   contactsMet && qualitySetting === null
-                                    ? "border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                                    ? "border-rose-500/30 text-rose-700 hover:bg-rose-500/10"
                                     : "border-border text-muted-foreground/30 cursor-not-allowed"
                                 )}
                               >
@@ -732,12 +732,12 @@ export default function LeadSalesProcess({
                         {/* ── Recent contacts list ── */}
                         {recentContacts.length > 0 && (
                           <div className="space-y-0.5">
-                            <p className="text-[10px] text-muted-foreground">
+                            <p className="text-xs text-muted-foreground">
                               {t("leadDetail.recentContacts") || "Recent Contacts"}
                             </p>
                             <ul className="space-y-0.5">
                               {recentContacts.map((log) => (
-                                <li key={log.id} className="flex items-start gap-1.5 text-[10px]">
+                                <li key={log.id} className="flex items-start gap-1.5 text-xs">
                                   <span className="mt-0.5 text-muted-foreground">
                                     {contactTypeIcon(log.contact_type)}
                                   </span>
@@ -745,7 +745,7 @@ export default function LeadSalesProcess({
                                     <div className="truncate text-foreground/80">
                                       {log.contact_result || log.summary || "(no summary)"}
                                     </div>
-                                    <div className="text-[9px] text-muted-foreground">
+                                    <div className="text-xs text-muted-foreground">
                                       {fmtDubai(log.contact_time || log.created_at, { locale: t("locale.dateLocale") })}
                                     </div>
                                   </div>
@@ -773,7 +773,7 @@ export default function LeadSalesProcess({
                           className="min-h-20 w-full rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
                         />
                         {(milestoneNoteError || (key === "first_contact" && firstContactBlockReason)) && (
-                          <p role="alert" className="text-xs text-amber-400">
+                          <p role="alert" className="text-xs text-amber-700">
                             {milestoneNoteError || firstContactBlockReason}
                           </p>
                         )}
@@ -823,10 +823,10 @@ export default function LeadSalesProcess({
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-muted-foreground flex items-center justify-between gap-2">
             <span className="flex items-center gap-2 text-foreground">
-              <Calendar className="w-4 h-4 text-copper-400" /> {t("leadDetail.nextRequiredAction")}
+              <Calendar className="w-4 h-4 text-copper-700" /> {t("leadDetail.nextRequiredAction")}
             </span>
             {nextTaskOverdue && (
-              <Badge className="bg-red-500/10 text-red-400 text-[10px]">{t("leadDetail.overdue")}</Badge>
+              <Badge className="bg-red-500/10 text-red-700 text-xs">{t("leadDetail.overdue")}</Badge>
             )}
           </CardTitle>
         </CardHeader>
@@ -848,22 +848,22 @@ export default function LeadSalesProcess({
       {missingFields.length > 0 && (
       <Card className="order-3 border-rose-500/30 bg-rose-500/[0.03] shadow-none">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-rose-400 flex items-center gap-2">
+            <CardTitle className="text-sm text-rose-700 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" /> {t("leadDetail.missingRequiredFields")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <p className="text-[11px] text-muted-foreground">{t("leadDetail.missingFieldsHint")}</p>
+            <p className="text-xs text-muted-foreground">{t("leadDetail.missingFieldsHint")}</p>
             {missingFields.map((f) => (
               <div key={f.key} className="flex items-start gap-2">
-                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 mt-1 shrink-0" />
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-700 mt-1 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-rose-400 text-xs">{f.label}</p>
+                  <p className="text-rose-700 text-xs">{f.label}</p>
                   {f.kind === "contract" ? (
                     canCreateContract ? <Button
                       size="sm"
                       variant="outline"
-                      className="mt-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-7 text-xs"
+                      className="mt-1 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 h-7 text-xs"
                       onClick={onCreateContract}
                     >
                       <FileText className="w-3.5 h-3.5 mr-1" />{t("leadDetail.createContract")}
@@ -893,7 +893,7 @@ export default function LeadSalesProcess({
               {healthLevelLabel} · {health.score}
             </Badge>
             {lead.quotation_value != null && lead.quotation_value > 0 && (
-              <Badge className="bg-copper-500/10 text-copper-400 text-xs">
+              <Badge className="bg-copper-500/10 text-copper-700 text-xs">
                 <DollarSign className="w-3 h-3 mr-1" />
                 {fmtAED(lead.quotation_value)}
               </Badge>
@@ -920,7 +920,7 @@ export default function LeadSalesProcess({
               placeholder={lang === "zh" ? "记录本次阶段推进的原因或客户反馈" : "Reason, customer feedback, or next-step context"}
               className="mt-1 min-h-16 w-full resize-y rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
             />
-            <p className="text-right text-[10px] text-muted-foreground">{stageNote.length}/1000</p>
+            <p className="text-right text-xs text-muted-foreground">{stageNote.length}/1000</p>
           </div>
           {!(lead.quotation_value != null && lead.quotation_value > 0) && (
             <div>
@@ -946,7 +946,7 @@ export default function LeadSalesProcess({
             <Button
               size="sm"
               variant="outline"
-              className="flex-1 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+              className="flex-1 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10"
               onClick={async () => {
                 const changed = await onWon(stageNote, wonAmount);
                 if (changed) { setStageNote(""); setWonAmount(""); }
@@ -959,7 +959,7 @@ export default function LeadSalesProcess({
             <Button
               size="sm"
               variant="outline"
-              className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10"
+              className="flex-1 border-red-500/30 text-red-700 hover:bg-red-500/10"
               onClick={async () => {
                 const changed = await onLost(stageNote);
                 if (changed) setStageNote("");
@@ -975,7 +975,7 @@ export default function LeadSalesProcess({
           <Button
             variant="outline"
             size="sm"
-            className="w-full border-copper-500/30 text-copper-400 justify-start"
+            className="w-full border-copper-500/30 text-copper-700 justify-start"
             onClick={onOpenQuoteCalculator}
           >
             <Plus className="w-4 h-4 mr-2" />{t("leadDetail.createQuote")}
@@ -983,7 +983,7 @@ export default function LeadSalesProcess({
           <Button
             variant="outline"
             size="sm"
-            className="w-full border-copper-500/30 text-copper-400 justify-start"
+            className="w-full border-copper-500/30 text-copper-700 justify-start"
             onClick={onOpenQuickQuote}
           >
             <DollarSign className="w-4 h-4 mr-2" />{lang === "zh" ? "只填金额报价" : "Quick quote (amount only)"}
@@ -991,7 +991,7 @@ export default function LeadSalesProcess({
           <Button
             variant="outline"
             size="sm"
-            className="w-full border-purple-500/30 text-purple-400 hover:bg-purple-500/10 justify-start"
+            className="w-full border-purple-500/30 text-purple-700 hover:bg-purple-500/10 justify-start"
             onClick={onGenerateKnx}
           >
             <WandSparkles className="w-4 h-4 mr-2" />{t("leadDetail.generateKnxPlan")}
@@ -1014,9 +1014,9 @@ export default function LeadSalesProcess({
               </p>
             </div>
             {hasQuotation ? (
-              <Badge className="bg-blue-500/10 text-blue-400 text-[10px]">{t("leadDetail.quotationLabel")}</Badge>
+              <Badge className="bg-blue-500/10 text-blue-700 text-xs">{t("leadDetail.quotationLabel")}</Badge>
             ) : (
-              <Button size="sm" variant="outline" className="border-copper-500/30 text-copper-400 h-7 text-xs" onClick={onOpenQuoteCalculator}>
+              <Button size="sm" variant="outline" className="border-copper-500/30 text-copper-700 h-7 text-xs" onClick={onOpenQuoteCalculator}>
                 <Plus className="w-3.5 h-3.5 mr-1" />{t("leadDetail.createQuote")}
               </Button>
             )}
@@ -1038,7 +1038,7 @@ export default function LeadSalesProcess({
                   )}
                 </div>
                 {!hasContract && canCreateContract && (
-                  <Button size="sm" variant="outline" className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-7 text-xs" onClick={onCreateContract}>
+                  <Button size="sm" variant="outline" className="border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 h-7 text-xs" onClick={onCreateContract}>
                     <FileText className="w-3.5 h-3.5 mr-1" />{t("leadDetail.createContract")}
                   </Button>
                 )}
@@ -1074,7 +1074,7 @@ export default function LeadSalesProcess({
                     column needs a migration that redefines the view, and no migration
                     in this repository creates it — it is a production-only object;
                     that gap is recorded rather than guessed at. */}
-                <Badge className={cn("text-[10px]", trace?.confirmed === true ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400")}>
+                <Badge className={cn("text-xs", trace?.confirmed === true ? "bg-emerald-500/10 text-emerald-700" : "bg-amber-500/10 text-amber-700")}>
                   {trace?.confirmed === true ? t("leadDetail.confirmed") : t("leadDetail.paymentNotConfirmed")}
                 </Badge>
               </div>

@@ -86,7 +86,7 @@ function StatCard({
           : tone === "amber" ? "text-amber-400"
             : "text-gray-200",
       )}>{value}</p>
-      <p className="text-[11px] text-gray-400 mt-0.5">{label}</p>
+      <p className="text-xs text-gray-400 mt-0.5">{label}</p>
     </div>
   );
 }
@@ -295,7 +295,7 @@ export default function ExcelImportDialog({ open, onOpenChange, onImported }: Pr
                   {t("leads.importWarnings")} ({preview.warnings.length})
                 </p>
                 {preview.warnings.slice(0, 10).map((w, i) => (
-                  <p key={i} className="text-[11px] text-amber-400/70 leading-snug">{w}</p>
+                  <p key={i} className="text-xs text-amber-400/70 leading-snug">{w}</p>
                 ))}
               </div>
             )}
@@ -414,7 +414,7 @@ export default function ExcelImportDialog({ open, onOpenChange, onImported }: Pr
             {result.errors.length > 0 && (
               <div className="bg-gray-900/50 rounded-lg p-2.5 max-h-40 overflow-auto">
                 {result.errors.slice(0, 30).map((er, i) => (
-                  <div key={i} className="text-[11px] text-gray-400 py-0.5 leading-snug">
+                  <div key={i} className="text-xs text-gray-400 py-0.5 leading-snug">
                     <span className="text-gray-500">Row {er.row}:</span> {er.error}
                   </div>
                 ))}

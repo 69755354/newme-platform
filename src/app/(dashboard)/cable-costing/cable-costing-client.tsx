@@ -490,7 +490,7 @@ export default function CableCostingClient() {
                   </Button>
                 ))}
               </div>
-              <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+              <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
                 {t(`cableCosting.tierHint_${tier}`)}
               </p>
             </div>
@@ -540,7 +540,7 @@ export default function CableCostingClient() {
                             <span className="block truncate text-sm" title={pointName(point)}>
                               {pointName(point)}
                             </span>
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-xs text-muted-foreground">
                               {point.topology}
                             </span>
                           </label>
@@ -644,7 +644,7 @@ function ResultView({ result, tier, pointName, t }: ResultViewProps) {
           read before the totals, not after them. */}
       {result.warnings.length > 0 && (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
-          <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+          <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-700">
             <AlertTriangle className="size-4 shrink-0" />
             {t("cableCosting.warningsHeading")}
           </p>
@@ -688,7 +688,7 @@ function ResultView({ result, tier, pointName, t }: ResultViewProps) {
                   <TableRow key={cable.cableId}>
                     <TableCell>
                       <span className="block text-sm">{pointName(cable)}</span>
-                      <span className="text-[11px] text-muted-foreground">{cable.cableId}</span>
+                      <span className="text-xs text-muted-foreground">{cable.cableId}</span>
                     </TableCell>
                     <TableCell className={NUM_CELL}>{fmtNumber(cable.metres, 2)}</TableCell>
                     <TableCell className={NUM_CELL}>{fmtMoney(cable.unitPrice)}</TableCell>
@@ -739,7 +739,7 @@ function ResultView({ result, tier, pointName, t }: ResultViewProps) {
                   <TableRow key={line.pointId}>
                     <TableCell>
                       <span className="block text-sm">{pointName(line)}</span>
-                      <span className="text-[11px] text-muted-foreground">{line.pointId}</span>
+                      <span className="text-xs text-muted-foreground">{line.pointId}</span>
                     </TableCell>
                     <TableCell className={NUM_CELL}>{line.points}</TableCell>
                     <TableCell className={NUM_CELL}>{fmtNumber(line.pullMinutes, 1)}</TableCell>
@@ -792,7 +792,7 @@ function SummaryRow({
         )}
       >
         {label}
-        {note && <span className="ml-1.5 text-[11px] text-muted-foreground">{note}</span>}
+        {note && <span className="ml-1.5 text-xs text-muted-foreground">{note}</span>}
       </span>
       <span
         className={cn(

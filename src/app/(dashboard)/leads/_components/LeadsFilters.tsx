@@ -43,7 +43,7 @@ import { Search, X, Calendar, Users, Clock,
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { PIPELINE_STAGES, STATUS_EMOJIS, STATUS_LABELS, PROBABILITIES } from "../_utils/constants";
+import { PIPELINE_STAGES, STATUS_LABELS, PROBABILITIES } from "../_utils/constants";
 import type { SalesUser } from "../_hooks/useLeadMutations";
 
 /* ─── Props ─── */
@@ -150,7 +150,7 @@ export function LeadsFilters({
       <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
         <option value="all">{t("leads.allStatus")}</option>
-        {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{STATUS_EMOJIS[k] || ""} {t(`statusLabels.${k}`)}</option>)}
+        {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{t(`statusLabels.${k}`)}</option>)}
       </select>
       <select value={probabilityFilter ?? "all"} onChange={(e) => setProbabilityFilter(e.target.value === "all" ? null : parseInt(e.target.value))}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[90px]">
@@ -161,37 +161,37 @@ export function LeadsFilters({
       {/* Alert/Manager quick filters */}
       {alertFilter === "yellow" && (
         <button onClick={() => setAlertFilter("all")}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20">
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
           <Clock className="w-3 h-3" />{t("dashboard.yellowAlerts")} <X className="w-3 h-3" />
         </button>
       )}
       {alertFilter === "red" && (
         <button onClick={() => setAlertFilter("all")}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-rose-500/10 text-rose-400 hover:bg-rose-500/20">
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-100 text-amber-800 hover:bg-amber-200">
           <AlertTriangle className="w-3 h-3" />{t("dashboard.redAlerts")} <X className="w-3 h-3" />
         </button>
       )}
       {recoveryFilter && (
         <button onClick={() => setRecoveryFilter(false)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20">
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
           <RotateCcw className="w-3 h-3" />{t("leads.recovery")} <X className="w-3 h-3" />
         </button>
       )}
       {transferFilter && (
         <button onClick={() => setTransferFilter(false)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-red-500/10 text-red-400 hover:bg-red-500/20">
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
           <GripHorizontal className="w-3 h-3" />{t("leads.transfer")} <X className="w-3 h-3" />
         </button>
       )}
       {reviewFilter && (
         <button onClick={() => setReviewFilter(false)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-purple-500/10 text-purple-400 hover:bg-purple-500/20">
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
           <ShieldAlert className="w-3 h-3" />{t("dashboard.managerReview")} <X className="w-3 h-3" />
         </button>
       )}
       {assignedToFilter !== "all" && (
         <button onClick={() => { setAssignedToFilter("all"); router.replace("/leads"); }}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-copper-500/10 text-copper-400 hover:bg-copper-500/20">
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
           <Users className="w-3 h-3" />{salesUsers.find((u: any) => u.id === assignedToFilter)?.full_name || assignedToFilter} <X className="w-3 h-3" />
         </button>
       )}
@@ -199,8 +199,8 @@ export function LeadsFilters({
         className={cn(
           "inline-flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors",
           followupFilter
-            ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
-            : "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+            ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
         )}>
         <Calendar className="w-3 h-3" />{t("leads.needsFollowup")}{followupFilter && <X className="w-3 h-3 ml-0.5" />}
       </button>

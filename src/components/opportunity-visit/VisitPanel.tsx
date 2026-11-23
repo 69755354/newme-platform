@@ -113,12 +113,12 @@ export default function VisitPanel({ t, role, leadId }: Props) {
 
   if (state === "loading") return <p className="text-xs text-muted-foreground">…</p>;
   if (state === "unavailable") return <p className="text-xs text-muted-foreground" data-testid="visits-unavailable">{t("visits.unavailable")}</p>;
-  if (state === "error") return <p className="text-xs text-red-400">{t("visits.loadError")}</p>;
+  if (state === "error") return <p className="text-xs text-red-700">{t("visits.loadError")}</p>;
 
   const planField = (name: keyof typeof PLAN_EMPTY, label: string, input: React.ReactNode) => (
     <label className="block text-xs">
       <span className="text-muted-foreground">{label}</span>{input}
-      {planErrors[name] && <span className="block text-[11px] text-red-400">{fieldErrorText(t, "visits", planErrors[name])}</span>}
+      {planErrors[name] && <span className="block text-xs text-red-700">{fieldErrorText(t, "visits", planErrors[name])}</span>}
     </label>
   );
 
@@ -139,7 +139,7 @@ export default function VisitPanel({ t, role, leadId }: Props) {
           <li key={v.id} className="rounded-md border border-border px-2 py-1.5 text-xs" data-testid="visit-row">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">V{String(v.visit_no).padStart(4, "0")} · {when(v.planned_at)}</span>
-              <span data-testid="visit-status" className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[v.status] ?? ""}`}>{t(`visits.status.${v.status}`)}</span>
+              <span data-testid="visit-status" className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_TONE[v.status] ?? ""}`}>{t(`visits.status.${v.status}`)}</span>
             </div>
             <div className="mt-0.5">{v.purpose}</div>
             <div className="mt-0.5 flex flex-wrap gap-x-3 text-muted-foreground">
@@ -162,7 +162,7 @@ export default function VisitPanel({ t, role, leadId }: Props) {
                     ? <a className="underline" href={v.evidence_link} target="_blank" rel="noopener noreferrer">{v.evidence_link}</a> : v.evidence_link || "—"}</dd></div>
               </dl>
             )}
-            {v.review_notes && v.review_status !== "pending" && <div className="mt-0.5 text-amber-300">{v.review_notes}</div>}
+            {v.review_notes && v.review_status !== "pending" && <div className="mt-0.5 text-amber-700">{v.review_notes}</div>}
             <div className="mt-1 flex flex-wrap gap-2">
               {staff && !v.submitted_at && v.plan_approval !== "approved" && (
                 <button type="button" className={buttonClass} disabled={busy} onClick={() => run(() => callApi(`/api/visits/${v.id}/approve`, { method: "POST", body: JSON.stringify({ decision: "approved" }) }))}>{t("visits.approve")}</button>
@@ -179,12 +179,12 @@ export default function VisitPanel({ t, role, leadId }: Props) {
                 {([["actual_start", "visits.actualStart", "datetime-local"], ["actual_finish", "visits.actualFinish", "datetime-local"]] as const).map(([key, label, type]) => (
                   <label key={key} className="block text-xs"><span className="text-muted-foreground">{t(label)}</span>
                     <input type={type} className={inputClass} value={report.values[key]} onChange={(e) => setReport({ ...report, values: { ...report.values, [key]: e.target.value } })} />
-                    {reportErrors[key] && <span className="block text-[11px] text-red-400">{fieldErrorText(t, "visits", reportErrors[key])}</span>}
+                    {reportErrors[key] && <span className="block text-xs text-red-700">{fieldErrorText(t, "visits", reportErrors[key])}</span>}
                   </label>
                 ))}
                 <label className="block text-xs"><span className="text-muted-foreground">{t("visits.result")}</span>
                   <textarea className={textareaClass} rows={3} maxLength={4000} value={report.values.result} onChange={(e) => setReport({ ...report, values: { ...report.values, result: e.target.value } })} />
-                  {reportErrors.result && <span className="block text-[11px] text-red-400">{fieldErrorText(t, "visits", reportErrors.result)}</span>}
+                  {reportErrors.result && <span className="block text-xs text-red-700">{fieldErrorText(t, "visits", reportErrors.result)}</span>}
                 </label>
                 <label className="block text-xs"><span className="text-muted-foreground">{t("visits.nextAction")}</span>
                   <input className={inputClass} maxLength={2000} value={report.values.next_action} onChange={(e) => setReport({ ...report, values: { ...report.values, next_action: e.target.value } })} />
@@ -194,7 +194,7 @@ export default function VisitPanel({ t, role, leadId }: Props) {
                 </label>
                 <label className="block text-xs"><span className="text-muted-foreground">{t("visits.evidenceLink")}</span>
                   <input className={inputClass} placeholder="https://" value={report.values.evidence_link} onChange={(e) => setReport({ ...report, values: { ...report.values, evidence_link: e.target.value } })} />
-                  {reportErrors.evidence_link && <span className="block text-[11px] text-red-400">{fieldErrorText(t, "visits", reportErrors.evidence_link)}</span>}
+                  {reportErrors.evidence_link && <span className="block text-xs text-red-700">{fieldErrorText(t, "visits", reportErrors.evidence_link)}</span>}
                 </label>
                 <div className="flex gap-2">
                   <button type="button" className={buttonClass} disabled={busy} onClick={() => saveReport(false)}>{t("visits.saveReport")}</button>
@@ -233,7 +233,7 @@ export default function VisitPanel({ t, role, leadId }: Props) {
           </div>
         </div>
       )}
-      {message && <p className="text-xs text-red-400" role="alert">{message}</p>}
+      {message && <p className="text-xs text-red-700" role="alert">{message}</p>}
     </div>
   );
 }

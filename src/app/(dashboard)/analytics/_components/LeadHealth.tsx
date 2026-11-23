@@ -1,5 +1,7 @@
 "use client";
 
+import { formatAED } from "@/lib/display-format.mjs";
+import { STAGE_CLASS } from "@/lib/status-palette";
 import { useEffect, useState } from "react";
 import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -43,9 +45,7 @@ interface OverdueItem {
 /* ─── Helpers ─── */
 function fmtAED(v: number | null | undefined): string {
   if (v == null || v === 0) return "—";
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }
 
 import { fmtDubai } from "@/lib/utils";
@@ -70,17 +70,7 @@ function getStageLabels(t: any): Record<string, string> {
   };
 }
 
-const STAGE_COLORS: Record<string, string> = {
-  new: "bg-gray-500/20 text-gray-300",
-  contacted: "bg-amber-500/20 text-amber-300",
-  requirement_confirmed: "bg-yellow-500/20 text-yellow-300",
-  solution_submitted: "bg-pink-500/20 text-pink-300",
-  quotation_submitted: "bg-purple-500/20 text-purple-300",
-  negotiation: "bg-blue-500/20 text-blue-300",
-  pending_decision: "bg-orange-500/20 text-orange-300",
-  won: "bg-green-500/20 text-green-300",
-  lost: "bg-gray-500/20 text-gray-400",
-};
+const STAGE_COLORS = STAGE_CLASS;
 
 const QUALITY_COLORS: Record<string, string> = {
   pending: "bg-amber-500",
@@ -111,7 +101,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-xl font-bold text-foreground">{value}</p>
-        {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -172,7 +162,7 @@ function OverdueTable({ items, stageLabels, t }: {
   return (
     <div className="bg-card border border-border rounded-xl p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-        <Clock className="w-4 h-4 text-rose-400" />
+        <Clock className="w-4 h-4 text-rose-700" />
         {t("analytics.overdueFollowups")} ({items.length})
       </h3>
       <div className="overflow-x-auto">
@@ -201,12 +191,12 @@ function OverdueTable({ items, stageLabels, t }: {
                 </td>
                 <td className="py-2 px-2 text-muted-foreground">{item.assigned_name || "—"}</td>
                 <td className={`py-2 px-2 text-right font-mono font-bold ${
-                  item.overdue_days >= 7 ? "text-rose-400" : item.overdue_days >= 3 ? "text-amber-400" : "text-muted-foreground"
+                  item.overdue_days >= 7 ? "text-rose-700" : item.overdue_days >= 3 ? "text-amber-700" : "text-muted-foreground"
                 }`}>
                   {t("analytics.daysShort").replace("{n}", String(item.overdue_days))}
                 </td>
                 <td className="py-2 px-2">
-                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${STAGE_COLORS[item.stage] || "bg-gray-500/20 text-gray-300"}`}>
+                  <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${STAGE_COLORS[item.stage] || "bg-gray-500/20 text-gray-300"}`}>
                     {stageLabels[item.stage] || item.stage}
                   </span>
                 </td>
@@ -248,7 +238,7 @@ function SalesOverdueList({ items, stageLabels, t }: {
   return (
     <div className="bg-card border border-border rounded-xl p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 text-rose-400" />
+        <AlertTriangle className="w-4 h-4 text-rose-700" />
         {t("analytics.myOverdueFollowups")} ({items.length})
       </h3>
       <div className="space-y-2">
@@ -268,21 +258,21 @@ function SalesOverdueList({ items, stageLabels, t }: {
             <div className="flex items-center gap-1 shrink-0 ml-2">
               <button
                 onClick={() => window.open(`tel:${item.phone || item.customer_name}`, "_self")}
-                className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 transition-colors"
                 title={t("analytics.call")}
               >
                 <Phone className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => { const href = whatsappLink(item.phone); if (href) window.open(`${href}?text=${encodeURIComponent(`Hi ${item.customer_name}, following up on your enquiry`)}`, "_blank"); }}
-                className="p-1.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                className="p-1.5 rounded-lg bg-green-500/10 text-green-700 hover:bg-green-500/20 transition-colors"
                 title={t("analytics.whatsapp")}
               >
                 <MessageSquare className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => addNote(item.id)}
-                className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                className="p-1.5 rounded-lg bg-blue-500/10 text-blue-700 hover:bg-blue-500/20 transition-colors"
                 title={t("analytics.addNote")}
               >
                 <FileText className="w-3.5 h-3.5" />
@@ -342,7 +332,7 @@ export default function LeadHealth() {
   if (error || !data) {
     return (
       <div className="bg-card border border-border rounded-xl p-6">
-        <p className="text-sm text-rose-400">{t("analytics.loadFailed")}</p>
+        <p className="text-sm text-rose-700">{t("analytics.loadFailed")}</p>
       </div>
     );
   }

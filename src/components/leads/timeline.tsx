@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDateTime, formatDubaiTime } from "@/lib/display-format.mjs";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import {
@@ -45,24 +46,11 @@ const EVENT_CONFIG: Record<
 };
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(iso, "en");
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDubaiTime(iso);
 }
 
 function getGroupKey(date: Date): "thisMonth" | "lastMonth" | "earlier" {
@@ -244,7 +232,7 @@ export default function Timeline({ leadId }: TimelineProps) {
                         : "bg-white text-gray-900 rounded-tl-none"
                     }`}
                   >
-                    <div className="flex items-center gap-1 mb-0.5 text-[10px] font-medium text-gray-500">
+                    <div className="flex items-center gap-1 mb-0.5 text-xs font-medium text-gray-500">
                       {outbound ? (
                         <>
                           <PhoneOutgoing className="w-3 h-3" />
@@ -262,7 +250,7 @@ export default function Timeline({ leadId }: TimelineProps) {
                         <span className="italic text-gray-400">No content</span>
                       )}
                     </p>
-                    <p className="mt-0.5 text-right text-[10px] text-gray-500">
+                    <p className="mt-0.5 text-right text-xs text-gray-500">
                       {formatTime(msg.created_at)}
                     </p>
                   </div>

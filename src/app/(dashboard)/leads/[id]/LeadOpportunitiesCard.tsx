@@ -14,7 +14,7 @@ export default function LeadOpportunitiesCard({ lead, t, lang, role }: Props) {
   return (
     <Card data-testid="lead-opportunities-card">
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm"><Briefcase className="h-4 w-4 text-copper-400" />{t("opportunities.cardTitle")}</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-sm"><Briefcase className="h-4 w-4 text-copper-700" />{t("opportunities.cardTitle")}</CardTitle>
       </CardHeader>
       <CardContent><OpportunityPanel t={t} lang={lang} leadId={lead.id} /></CardContent>
     </Card>

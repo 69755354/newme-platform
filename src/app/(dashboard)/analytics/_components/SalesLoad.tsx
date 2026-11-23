@@ -1,5 +1,7 @@
 "use client";
 
+import { formatAED } from "@/lib/display-format.mjs";
+import { STAGE_HEX } from "@/lib/status-palette";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -51,9 +53,7 @@ interface SalesMyData {
 
 /* ─── Helpers ─── */
 function fmtAED(v: number): string {
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }
 
 const STAGE_KEYS: string[] = [
@@ -73,17 +73,6 @@ const STAGE_I18N_KEYS: Record<string, string> = {
   lost: "pipeline.stageLost",
 };
 
-const STAGE_COLORS: Record<string, string> = {
-  new: "bg-gray-500/20 text-gray-300",
-  contacted: "bg-amber-500/20 text-amber-300",
-  requirement_confirmed: "bg-yellow-500/20 text-yellow-300",
-  solution_submitted: "bg-pink-500/20 text-pink-300",
-  quotation_submitted: "bg-purple-500/20 text-purple-300",
-  negotiation: "bg-blue-500/20 text-blue-300",
-  pending_decision: "bg-orange-500/20 text-orange-300",
-  won: "bg-green-500/20 text-green-300",
-  lost: "bg-gray-500/20 text-gray-400",
-};
 
 /* ─── Stat Card ─── */
 function StatCard({ icon: Icon, label, value, sub, color }: {
@@ -97,7 +86,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-xl font-bold text-foreground">{value}</p>
-        {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -182,9 +171,9 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
       {/* Imbalance warning */}
       {data.imbalanceDetected && (
         <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+          <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-amber-300">{t('analytics.loadImbalanceDetected')}</p>
+            <p className="text-sm font-medium text-amber-700">{t('analytics.loadImbalanceDetected')}</p>
             <p className="text-xs text-muted-foreground">
               {/* S6 (review 4a #12): one translated sentence instead of glued fragments with a raw key. */}
               {t('analytics.imbalanceDetail')
@@ -198,7 +187,7 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
             <button
               onClick={handleRebalance}
               disabled={rebalancing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-medium hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-700 text-xs font-medium hover:bg-amber-500/30 transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${rebalancing ? "animate-spin" : ""}`} />
               {rebalancing ? t('analytics.rebalancing') : t('analytics.rebalance')}
@@ -207,7 +196,7 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
         </div>
       )}
       {rebalMsg && (
-        <div className="p-2 rounded bg-emerald-500/10 text-emerald-300 text-xs">
+        <div className="p-2 rounded bg-emerald-500/10 text-emerald-700 text-xs">
           {rebalMsg}
         </div>
       )}
@@ -219,11 +208,11 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 20, left: 60, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+              <XAxis type="number" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis
                 type="category"
                 dataKey="name"
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 width={55}
               />
               <Tooltip
@@ -260,10 +249,10 @@ function CEOSalesLoad({ data, t, actorId, canRebalance }: {
                 <tr key={rep.id} className="border-b border-border/50 hover:bg-accent/50 transition-colors">
                   <td className="py-2.5 pr-2 font-medium text-foreground">{rep.name || rep.email}</td>
                   <td className="py-2 px-2 text-right font-mono">{rep.totalLeads}</td>
-                  <td className="py-2 px-2 text-right font-mono text-emerald-400">{fmtAED(rep.wonAmount)}</td>
+                  <td className="py-2 px-2 text-right font-mono text-emerald-700">{fmtAED(rep.wonAmount)}</td>
                   <td className="py-2 px-2 text-right font-mono">{rep.conversionRate}%</td>
                   <td className="py-2 px-2 text-right font-mono">{rep.followupRate}%</td>
-                  <td className={`py-2 pl-2 text-right font-mono ${rep.overdueCount > 0 ? "text-rose-400" : "text-muted-foreground"}`}>
+                  <td className={`py-2 pl-2 text-right font-mono ${rep.overdueCount > 0 ? "text-rose-700" : "text-muted-foreground"}`}>
                     {rep.overdueCount}
                   </td>
                 </tr>
@@ -317,7 +306,7 @@ function SalesView({ data, t }: { data: SalesMyData; t: (path: string) => string
         <div className="flex flex-wrap gap-2">
           {stageEntries.map(([stage, count]) => (
             <div key={stage} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-accent">
-              <span className={`w-2 h-2 rounded-full ${STAGE_COLORS[stage]?.split(" ")[0] || "bg-gray-500"}`} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STAGE_HEX[stage] || "#78716C" }} />
               <span className="text-xs text-muted-foreground">{t(STAGE_I18N_KEYS[stage] || `stages.${stage}`)}</span>
               <span className="text-xs font-bold text-foreground">{count}</span>
             </div>
@@ -333,8 +322,8 @@ function SalesView({ data, t }: { data: SalesMyData; t: (path: string) => string
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stageEntries.map(([stage, count]) => ({ stage: t(STAGE_I18N_KEYS[stage] || `stages.${stage}`), count }))} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="stage" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                <XAxis dataKey="stage" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
                 <Tooltip
                   contentStyle={{
                     background: "hsl(var(--card))",
@@ -386,7 +375,7 @@ export default function SalesLoad() {
   if (error || !data) {
     return (
       <div className="bg-card border border-border rounded-xl p-6">
-        <p className="text-sm text-rose-400">{t('common.loadFailed')}: {error || t('analytics.noData')}</p>
+        <p className="text-sm text-rose-700">{t('common.loadFailed')}: {error || t('analytics.noData')}</p>
       </div>
     );
   }

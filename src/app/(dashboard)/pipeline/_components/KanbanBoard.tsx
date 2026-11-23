@@ -114,8 +114,8 @@ export function KanbanBoard({
           <h1 className="text-2xl font-bold text-foreground tracking-tight">{t("pipeline.title")}</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             {t("pipeline.nActive").replace("{n}", String(totalActive))} · {t("pipeline.pipelineLabel")} {fmtAED(totalValue)}
-            {isSales && <span className="ml-2 text-[10px] text-copper-400">{t("kpi.onlyYourLeads")}</span>}
-            {isUpdating && <span className="ml-2 text-[10px] text-amber-400">{t("common.saving")}</span>}
+            {isSales && <span className="ml-2 text-xs text-copper-700">{t("kpi.onlyYourLeads")}</span>}
+            {isUpdating && <span className="ml-2 text-xs text-amber-700">{t("common.saving")}</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -210,7 +210,7 @@ export function KanbanBoard({
                     {!isWon && !isLost && (
                       <button
                         onClick={() => router.push(`/leads?stage=${stage.key}`)}
-                        className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                         title={t("pipeline.viewAllInStage")}
                       >
                         <Plus className="w-3 h-3" />

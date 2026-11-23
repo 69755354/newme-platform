@@ -1333,3 +1333,90 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 - 公司号等回复的文字与选取逻辑：`src/lib/wa-wait.mjs`（简报小节、工作时间等待时长、渠道负责人、白天提醒文案）；运行入口仍是 `scripts/daily-brief.mjs`（08:05 简报加一节“WhatsApp客户等回复”；每小时提醒任务里加“等回复超过阈值”提醒，由 `NEWME_WA_WAIT_ALERT_ENABLED=true` 打开，默认关闭，阈值 `NEWME_WA_WAIT_ALERT_HOURS` 默认 2 个工作小时）。
 - 负责人规则：渠道（`whatsapp_pilot_channels.owner_profile_id`）归属销售本人，否则线索负责人，否则“公司号”；只写姓名和数量，不写客户电话。每个等待回合只提醒一次，记录在提醒任务的当日台账里。
 - 待办小项：看板拖入丢单改走阶段接口并必须填原因（`src/shared/hooks/usePipelineDragDrop.ts`、`src/shared/kanban/WonDropDialog.tsx`、`src/lib/won-drag.mjs`）；阶段接口的拒绝原因带中文（`src/lib/stage-error-zh.mjs`，接口 `src/app/api/leads/[id]/stage/route.ts`）；报价金额的币种比较与数据库触发器一致（`src/lib/quote-amount.mjs`）。
+
+## 2026-11-23 S38 全站视觉统一
+
+- `src/lib/status-palette.ts`（阶段/线索温度统一调色：灰、一种石板蓝、仅 hot/逾期用琥珀、成交绿，对比度达 AA）
+- `src/app/globals.css`（修复 `--font-sans` 自引用，字体链 Geist + 苹方/思源黑体；界面最小字号 12px）
+- `src/lib/utils.ts`（`fmtDubai` 统一走 `display-format`，一种日期样式、迪拜时间、仅日期值不显示时间）
+- 字号：全站不再使用小于 12px 的文字（`text-xs` 起步）；去掉界面表情符号；金额统一 `AED 12,345`，K/M 缩写只留在看板栏头汇总和趋势图。
+- 阶段卡与阶段徽标改用统一调色；线索卡只有真正逾期才用琥珀提示，其余缺项提示为中性色；存储代码（如 `unknown_import`）经 `translatedOrRaw` 显示为可读文字。
+- 涉及文件：
+  - `src/app/(dashboard)/ads/page.tsx`
+  - `src/app/(dashboard)/analytics/_components/AdsROI.tsx`
+  - `src/app/(dashboard)/analytics/_components/LeadHealth.tsx`
+  - `src/app/(dashboard)/analytics/_components/LeadSources.tsx`
+  - `src/app/(dashboard)/analytics/_components/PaymentTracker.tsx`
+  - `src/app/(dashboard)/analytics/_components/PipelineFunnel.tsx`
+  - `src/app/(dashboard)/analytics/_components/SalesLoad.tsx`
+  - `src/app/(dashboard)/analytics/_components/TeamPerformance.tsx`
+  - `src/app/(dashboard)/analytics/_components/WeeklyTrends.tsx`
+  - `src/app/(dashboard)/cable-costing/cable-costing-client.tsx`
+  - `src/app/(dashboard)/contracts/[id]/page.tsx`
+  - `src/app/(dashboard)/contracts/page.tsx`
+  - `src/app/(dashboard)/dashboard/_components/AlertPanel.tsx`
+  - `src/app/(dashboard)/dashboard/_components/WeeklyReview.tsx`
+  - `src/app/(dashboard)/dashboard/page.tsx`
+  - `src/app/(dashboard)/error.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadContactQualityPanel.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadContractsPanel.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadCustomerProfile.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadDispatchCard.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadFoldingPanel.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadFollowupCard.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadOpportunitiesCard.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadTimeline.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadVisitsCard.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadWaitingBadge.tsx`
+  - `src/app/(dashboard)/leads/[id]/LeadWhatsAppAdPanel.tsx`
+  - `src/app/(dashboard)/leads/[id]/page.tsx`
+  - `src/app/(dashboard)/leads/[id]/timeline/page.tsx`
+  - `src/app/(dashboard)/leads/[id]/types.ts`
+  - `src/app/(dashboard)/leads/[id]/utils.ts`
+  - `src/app/(dashboard)/leads/_components/LeadCard.tsx`
+  - `src/app/(dashboard)/leads/_components/LeadsBulkTransferBar.tsx`
+  - `src/app/(dashboard)/leads/_components/LeadsFilters.tsx`
+  - `src/app/(dashboard)/leads/_components/LeadsKanbanBoard.tsx`
+  - `src/app/(dashboard)/leads/_components/LeadsPipelineSummary.tsx`
+  - `src/app/(dashboard)/leads/_utils/constants.ts`
+  - `src/app/(dashboard)/leads/_utils/format.ts`
+  - `src/app/(dashboard)/leads/new/page.tsx`
+  - `src/app/(dashboard)/payments/page.tsx`
+  - `src/app/(dashboard)/pipeline/_components/KanbanBoard.tsx`
+  - `src/app/(dashboard)/pipeline/_components/LeadCard.tsx`
+  - `src/app/(dashboard)/pipeline/_components/SalesKpiDashboard.tsx`
+  - `src/app/(dashboard)/products/page.tsx`
+  - `src/app/(dashboard)/projects/projects-client.tsx`
+  - `src/app/(dashboard)/quotations/[id]/page.tsx`
+  - `src/app/(dashboard)/quotes/quote-calculator.tsx`
+  - `src/app/(dashboard)/quotes/quote-detail-dialog.tsx`
+  - `src/app/(dashboard)/quotes/quote-wizard.tsx`
+  - `src/app/(dashboard)/quotes/quotes-client.tsx`
+  - `src/app/(dashboard)/settings/ads/ads-client.tsx`
+  - `src/app/(dashboard)/settings/kpi-management.tsx`
+  - `src/app/(dashboard)/settings/page.tsx`
+  - `src/app/(dashboard)/tasks/[id]/page.tsx`
+  - `src/app/(dashboard)/tasks/page.tsx`
+  - `src/app/(dashboard)/team/page.tsx`
+  - `src/app/(dashboard)/workbench/page.tsx`
+  - `src/app/error.tsx`
+  - `src/app/global-error.tsx`
+  - `src/components/NotificationBell.tsx`
+  - `src/components/dashboard/DashboardSidebar.tsx`
+  - `src/components/dashboard/DashboardTopBar.tsx`
+  - `src/components/error-boundary.tsx`
+  - `src/components/knx-design-panel.tsx`
+  - `src/components/lead-workflow.tsx`
+  - `src/components/leads/ExcelImportDialog.tsx`
+  - `src/components/leads/LeadDuplicateNotice.tsx`
+  - `src/components/leads/timeline.tsx`
+  - `src/components/opportunity-visit/OpportunityPanel.tsx`
+  - `src/components/opportunity-visit/VisitPanel.tsx`
+  - `src/components/opportunity-visit/shared.ts`
+  - `src/components/pipeline/KanbanStats.tsx`
+  - `src/components/ui/button.tsx`
+  - `src/lib/i18n/translations.ts`
+  - `src/shared/kanban/types.ts`
+  - `src/shared/utils/format.ts`
+- 测试：`tests/unit/s38-visual.test.mjs`。

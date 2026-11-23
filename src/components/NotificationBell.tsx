@@ -1,5 +1,6 @@
 "use client";
 
+import { formatShortDate } from "@/lib/display-format.mjs";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Bell, CheckCheck, Circle, ExternalLink, X } from "lucide-react";
@@ -21,31 +22,6 @@ interface Notification {
   created_at: string;
 }
 
-const TYPE_ICONS: Record<string, string> = {
-  lead_created: "✨",
-  lead_assigned: "👤",
-  lead_stage_change: "🔄",
-  lead_stage_changed: "🔄",
-  quote_created: "📊",
-  contract_created: "📄",
-  contract_signed: "📝",
-  payment_due: "📅",
-  payment_overdue: "⚠️",
-  payment_received: "💰",
-  kpi_target_set: "🎯",
-  followup_reminder: "⏰",
-  team_member_added: "👥",
-  follow_up_overdue: "⚠️",
-  first_payment_reminder: "💳",
-  reminder: "⏰",
-  warning: "📵",
-  contract_pending_approval: "📝",
-  // S17: every type the database constraint accepts needs an icon
-  follow_up_reminder: "⏰",
-  contract_approved: "✅",
-  contract_rejected: "❌",
-  contract_superseded: "🔁",
-};
 
 const TYPE_LABELS: Record<string, string> = {
   lead_created: "notifications.types.lead_created",
@@ -119,10 +95,7 @@ function timeAgo(dateStr: string, lang: "zh" | "en", t: (key: string) => string)
   if (minutes < 60) return `${minutes} ${t("notifications.minutesAgo")}`;
   if (hours < 24) return `${hours} ${t("notifications.hoursAgo")}`;
   if (days < 30) return `${days} ${t("notifications.daysAgo")}`;
-  return new Date(dateStr).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", {
-    month: "short",
-    day: "numeric",
-  });
+  return formatShortDate(dateStr, lang === "zh" ? "zh" : "en");
 }
 
 export default function NotificationBell() {
@@ -246,7 +219,7 @@ export default function NotificationBell() {
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
-          <span data-newme-uat-sensitive="true" className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-[10px] font-bold text-white leading-none">
+          <span data-newme-uat-sensitive="true" className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-xs font-bold text-white leading-none">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
@@ -272,7 +245,7 @@ export default function NotificationBell() {
               {unreadCount > 0 && (
                 <button
                   onClick={markAllAsRead}
-                  className="flex items-center gap-1 text-[11px] text-copper-400 hover:text-copper-300 transition-colors px-2 py-1 rounded hover:bg-accent"
+                  className="flex items-center gap-1 text-xs text-copper-700 hover:text-copper-700 transition-colors px-2 py-1 rounded hover:bg-accent"
                 >
                   <CheckCheck className="w-3 h-3" />
                   {t("notifications.markAllRead")}
@@ -309,9 +282,7 @@ export default function NotificationBell() {
                   )}
                 >
                   {/* Icon */}
-                  <span className="text-lg shrink-0 mt-0.5">
-                    {TYPE_ICONS[n.type] || "🔔"}
-                  </span>
+                  <span aria-hidden className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", n.is_read ? "bg-border" : "bg-copper-600")} />
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
@@ -334,10 +305,10 @@ export default function NotificationBell() {
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-muted-foreground/60">
+                      <span className="text-xs text-muted-foreground/60">
                         {timeAgo(n.created_at, lang, t)}
                       </span>
-                      <span className="text-[10px] text-muted-foreground/40">
+                      <span className="text-xs text-muted-foreground/40">
                         {t(TYPE_LABELS[n.type] || "") || n.type}
                       </span>
                     </div>

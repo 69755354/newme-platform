@@ -52,7 +52,7 @@ export default function LeadWhatsAppAdPanel({ lead, t }: Props) {
                 <div className="text-xs text-muted-foreground">{t("whatsappAds.headline")}: {lead.wa_ad_headline}</div>
               )}
               {safeLink && (
-                <a href={safeLink} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-copper-400 hover:underline">
+                <a href={safeLink} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-copper-700 hover:underline">
                   <ExternalLink className="h-3 w-3" />{t("whatsappAds.adLink")}
                 </a>
               )}

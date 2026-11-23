@@ -93,14 +93,14 @@ export default function ContractsPage() {
     const today = dubaiDateKey() ?? new Date().toISOString().slice(0, 10);
 
     if (status === "paid") {
-      return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: `✓ ${t("contracts.firstPaymentPaid")}`, icon: <CheckCircle className="w-3 h-3" /> };
+      return { color: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30", label: `${t("contracts.firstPaymentPaid")}`, icon: <CheckCircle className="w-3 h-3" /> };
     }
     if (status === "partial") {
-      return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: `⚠ ${t("contracts.firstPaymentPartial")}`, icon: <AlertTriangle className="w-3 h-3" /> };
+      return { color: "bg-amber-500/10 text-amber-700 border-amber-500/30", label: `${t("contracts.firstPaymentPartial")}`, icon: <AlertTriangle className="w-3 h-3" /> };
     }
     // unpaid
     if (dueDate && dueDate < today) {
-      return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: t("contracts.firstPaymentOverdue"), icon: <AlertTriangle className="w-3 h-3" /> };
+      return { color: "bg-rose-500/10 text-rose-700 border-rose-500/30", label: t("contracts.firstPaymentOverdue"), icon: <AlertTriangle className="w-3 h-3" /> };
     }
     // The due-soon boundary is derived from `today` rather than from a second clock
     // read: `Date.now()` during render is impure (react-hooks/purity), and two reads
@@ -110,7 +110,7 @@ export default function ContractsPage() {
       .toISOString()
       .slice(0, 10);
     if (dueDate && dueDate <= dueSoon) {
-      return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: t("contracts.firstPaymentDueSoon"), icon: <Clock className="w-3 h-3" /> };
+      return { color: "bg-amber-500/10 text-amber-700 border-amber-500/30", label: t("contracts.firstPaymentDueSoon"), icon: <Clock className="w-3 h-3" /> };
     }
     return { color: "bg-muted text-muted-foreground border-border/30", label: t("contracts.firstPaymentUnpaid"), icon: <Clock className="w-3 h-3" /> };
   };
@@ -362,7 +362,7 @@ export default function ContractsPage() {
             onClick={() => { setStatusFilter(opt.value); setPage(1); }}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
               statusFilter === opt.value
-                ? "bg-copper-500/20 border-copper-500/40 text-copper-400"
+                ? "bg-copper-500/20 border-copper-500/40 text-copper-700"
                 : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground"
             }`}
           >
@@ -382,10 +382,10 @@ export default function ContractsPage() {
 
       {/* KPI cards */}
       <div data-newme-uat-sensitive="true" className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.total")}</p><p className="text-xl font-bold">{totalCount}</p></CardContent></Card>
-        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.activeValue")}</p><p className="text-xl font-bold">{fmtAED(totalActive)}</p></CardContent></Card>
-        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.signed")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "signed").length}</p></CardContent></Card>
-        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-400">{t("contracts.active")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "active").length}</p></CardContent></Card>
+        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-700">{t("contracts.total")}</p><p className="text-xl font-bold">{totalCount}</p></CardContent></Card>
+        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-700">{t("contracts.activeValue")}</p><p className="text-xl font-bold">{fmtAED(totalActive)}</p></CardContent></Card>
+        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-700">{t("contracts.signed")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "signed").length}</p></CardContent></Card>
+        <Card className="bg-copper-500/5 border-copper-500/20"><CardContent className="p-4"><p className="text-xs text-copper-700">{t("contracts.active")}</p><p className="text-xl font-bold">{contracts.filter(c => c.status === "active").length}</p></CardContent></Card>
       </div>
 
       {/* Contract list */}
@@ -405,14 +405,14 @@ export default function ContractsPage() {
               <div className="flex items-start justify-between">
                 <div className="space-y-1 flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <FileText className="w-4 h-4 text-copper-400 shrink-0" />
-                    <Link prefetch={false} href={`/contracts/${c.id}`} className="font-medium text-foreground hover:text-copper-400 transition-colors">
+                    <FileText className="w-4 h-4 text-copper-700 shrink-0" />
+                    <Link prefetch={false} href={`/contracts/${c.id}`} className="font-medium text-foreground hover:text-copper-700 transition-colors">
                       {c.contract_no}
                     </Link>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-400">{statusLabel(c.status)}</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-700">{statusLabel(c.status)}</span>
                     {/* First payment badge. Always rendered: the column is NOT NULL,
                         so the guard this replaced could only ever be true. */}
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${fpBadge.color} inline-flex items-center gap-1`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded border ${fpBadge.color} inline-flex items-center gap-1`}>
                       {fpBadge.icon}{fpBadge.label}
                     </span>
                   </div>
@@ -422,7 +422,7 @@ export default function ContractsPage() {
                     <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{c.contract_date?.slice(0,10)}</span>
                     <span data-newme-uat-sensitive="true" className="flex items-center gap-1"><User className="w-3 h-3" />{c.profiles?.full_name || c.profiles?.email || "—"}</span>
                     {c.first_payment_due_date && (
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Clock className="w-3 h-3" />{t("contracts.firstDue")}: {c.first_payment_due_date.slice(0,10)}
                       </span>
                     )}
@@ -431,8 +431,8 @@ export default function ContractsPage() {
                   {c.installment_plans && c.installment_plans.length > 0 && (
                     <div className="flex gap-2 mt-1 flex-wrap">
                       {c.installment_plans.map(ip => (
-                        <span key={ip.id} className="text-[10px] px-1.5 py-0.5 rounded border border-border/30 text-muted-foreground">
-                          #{ip.seq || ""} {fmtAED(ip.amount)} → {ip.due_date?.slice(0,10)} {ip.status === "paid" ? "✓" : ip.status === "overdue" ? "⚠️" : ""}
+                        <span key={ip.id} className="text-xs px-1.5 py-0.5 rounded border border-border/30 text-muted-foreground">
+                          #{ip.seq || ""} {fmtAED(ip.amount)} → {ip.due_date?.slice(0,10)} {ip.status === "paid" ? "✓" : ""}
                         </span>
                       ))}
                     </div>
@@ -445,7 +445,7 @@ export default function ContractsPage() {
                     <Button
                       size="sm" variant="outline"
                       onClick={() => sendReminder(c.id)}
-                      className="border-copper-500/30 text-copper-400 hover:bg-copper-500/10 text-xs h-8"
+                      className="border-copper-500/30 text-copper-700 hover:bg-copper-500/10 text-xs h-8"
                     >
                       <Bell className="w-3 h-3 mr-1" />{t("contracts.remind")}
                     </Button>
@@ -456,14 +456,14 @@ export default function ContractsPage() {
                       <Button
                         size="sm" variant="outline"
                         onClick={() => handleApproval(c.id, "approve")}
-                        className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs h-8"
+                        className="border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 text-xs h-8"
                       >
                         <CheckCircle2 className="w-3 h-3 mr-1" />{t("contracts.approve")}
                       </Button>
                       <Button
                         size="sm" variant="outline"
                         onClick={() => openRejectDialog(c.id)}
-                        className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs h-8"
+                        className="border-rose-500/30 text-rose-700 hover:bg-rose-500/10 text-xs h-8"
                       >
                         <XCircle className="w-3 h-3 mr-1" />{t("contracts.reject")}
                       </Button>
@@ -475,7 +475,7 @@ export default function ContractsPage() {
                       size="sm" variant="outline"
                       onClick={() => startUpload(c.id)}
                       disabled={isUploading}
-                      className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs h-8"
+                      className="border-blue-500/30 text-blue-700 hover:bg-blue-500/10 text-xs h-8"
                     >
                       {isUploading ? (
                         <>{t("contracts.uploading")} {uploadProgress}%</>
@@ -489,7 +489,7 @@ export default function ContractsPage() {
                     <Button
                       size="sm" variant="outline"
                       onClick={() => openRevokeDialog(c.id)}
-                      className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 text-xs h-8"
+                      className="border-orange-500/30 text-orange-700 hover:bg-orange-500/10 text-xs h-8"
                     >
                       <Ban className="w-3 h-3 mr-1" />{t("contracts.revoke")}
                     </Button>

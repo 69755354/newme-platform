@@ -406,9 +406,9 @@ export default function ContractDetailPage() {
             {t("contracts.title")}
           </button>
           <div className="flex items-center gap-2 flex-wrap">
-            <FileText className="w-5 h-5 text-copper-400" />
+            <FileText className="w-5 h-5 text-copper-700" />
             <h1 className="text-xl font-bold text-foreground">{contract.contract_no}</h1>
-            <span className="text-[11px] px-2 py-0.5 rounded bg-copper-500/10 text-copper-400 border border-copper-500/20">
+            <span className="text-xs px-2 py-0.5 rounded bg-copper-500/10 text-copper-700 border border-copper-500/20">
               {STATUS_LABELS[contract.status] || contract.status}
             </span>
           </div>
@@ -421,7 +421,7 @@ export default function ContractDetailPage() {
               <Button
                 size="sm" variant="outline" disabled={acting}
                 onClick={() => postAction(`/api/contracts/${contractId}/approve`, { action: "approve" }, t("contracts.approvalSuccess"))}
-                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 h-8"
+                className="border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 h-8"
               >
                 <CheckCircle2 className="w-3.5 h-3.5 mr-1" />{t("contracts.approve")}
               </Button>
@@ -431,7 +431,7 @@ export default function ContractDetailPage() {
                   setRejectNotes("");
                   setRejectDialogOpen(true);
                 }}
-                className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 h-8"
+                className="border-rose-500/30 text-rose-700 hover:bg-rose-500/10 h-8"
               >
                 <XCircle className="w-3.5 h-3.5 mr-1" />{t("contracts.reject")}
               </Button>
@@ -441,7 +441,7 @@ export default function ContractDetailPage() {
             <Button
               size="sm" variant="outline" disabled={uploading}
               onClick={startUpload}
-              className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 h-8"
+              className="border-blue-500/30 text-blue-700 hover:bg-blue-500/10 h-8"
             >
               {uploading ? (
                 <>{t("contracts.uploading")} {uploadProgress}%</>
@@ -454,7 +454,7 @@ export default function ContractDetailPage() {
             <Button
               size="sm" variant="outline" disabled={acting}
               onClick={() => postAction(`/api/contracts/${contractId}/remind-payment`, {}, t("contracts.reminderSent"))}
-              className="border-copper-500/30 text-copper-400 hover:bg-copper-500/10 h-8"
+              className="border-copper-500/30 text-copper-700 hover:bg-copper-500/10 h-8"
             >
               <Bell className="w-3.5 h-3.5 mr-1" />{t("contracts.remind")}
             </Button>
@@ -466,7 +466,7 @@ export default function ContractDetailPage() {
                 setRevokeReason("");
                 setRevokeDialogOpen(true);
               }}
-              className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 h-8"
+              className="border-orange-500/30 text-orange-700 hover:bg-orange-500/10 h-8"
             >
               <Ban className="w-3.5 h-3.5 mr-1" />{t("contracts.revoke")}
             </Button>
@@ -486,7 +486,7 @@ export default function ContractDetailPage() {
         </Card>
         <Card className="bg-emerald-500/5 border-emerald-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-emerald-400 flex items-center gap-1">
+            <p className="text-xs text-emerald-700 flex items-center gap-1">
               <CheckCircle className="w-3 h-3" />{t("analytics.collected")}
             </p>
             <p className="text-xl font-bold text-foreground mt-1">{fmtAED(collected)}</p>
@@ -494,7 +494,7 @@ export default function ContractDetailPage() {
         </Card>
         <Card className="bg-amber-500/5 border-amber-500/20">
           <CardContent className="p-4">
-            <p className="text-xs text-amber-400 flex items-center gap-1">
+            <p className="text-xs text-amber-700 flex items-center gap-1">
               <Clock className="w-3 h-3" />{t("analytics.outstanding")}
             </p>
             <p className="text-xl font-bold text-foreground mt-1">{fmtAED(outstanding)}</p>
@@ -502,7 +502,7 @@ export default function ContractDetailPage() {
         </Card>
         <Card className={overdueAmt > 0 ? "bg-rose-500/5 border-rose-500/20" : "bg-card border-border"}>
           <CardContent className="p-4">
-            <p className={`text-xs flex items-center gap-1 ${overdueAmt > 0 ? "text-rose-400" : "text-muted-foreground"}`}>
+            <p className={`text-xs flex items-center gap-1 ${overdueAmt > 0 ? "text-rose-700" : "text-muted-foreground"}`}>
               <AlertTriangle className="w-3 h-3" />{t("analytics.overdueStatus")}
             </p>
             <p className="text-xl font-bold text-foreground mt-1">{fmtAED(overdueAmt)}</p>
@@ -523,7 +523,7 @@ export default function ContractDetailPage() {
               style={{ width: `${collectedPct}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{fmtAED(collected)} {t("analytics.paid")}</span>
             <span>{fmtAED(totalContract)}</span>
           </div>
@@ -558,7 +558,7 @@ export default function ContractDetailPage() {
                 <InfoRow icon={<FileText className="w-3.5 h-3.5" />} label={t("leads.source")} value={contract.leads.source || "—"} />
                 {/* finance has no read access to lead rows (S2), so the link would only bounce it */}
                 {viewerRole !== "finance" && (
-                  <Link prefetch={false} href={`/leads/${contract.leads.id}`} className="inline-flex items-center gap-1 text-xs text-copper-400 hover:underline mt-1">
+                  <Link prefetch={false} href={`/leads/${contract.leads.id}`} className="inline-flex items-center gap-1 text-xs text-copper-700 hover:underline mt-1">
                     {t("leadDetail.viewLead")} →
                   </Link>
                 )}
@@ -604,7 +604,7 @@ export default function ContractDetailPage() {
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-4 rounded-full bg-copper-400" />
             <h2 className="text-sm font-semibold text-foreground">{t("contracts.installments")}</h2>
-            <span className="text-[11px] text-muted-foreground">({installments.length})</span>
+            <span className="text-xs text-muted-foreground">({installments.length})</span>
           </div>
 
           {installments.length === 0 ? (
@@ -619,18 +619,18 @@ export default function ContractDetailPage() {
                   <div key={ip.id} className="rounded-lg border border-border/40 p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-copper-400">#{ip.seq}</span>
+                        <span className="text-xs font-bold text-copper-700">#{ip.seq}</span>
                         <span className="text-sm font-medium text-foreground">{fmtAED(Number(ip.amount))}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badge.color} inline-flex items-center gap-1`}>
+                        <span className={`text-xs px-1.5 py-0.5 rounded border ${badge.color} inline-flex items-center gap-1`}>
                           {badge.icon}{badge.label}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />{ip.due_date?.slice(0, 10)}
                         </span>
                         {Number(ip.paid_amount) > 0 && (
-                          <span className="text-emerald-400">{fmtAED(Number(ip.paid_amount))} {t("analytics.paid")}</span>
+                          <span className="text-emerald-700">{fmtAED(Number(ip.paid_amount))} {t("analytics.paid")}</span>
                         )}
                       </div>
                     </div>
@@ -642,7 +642,7 @@ export default function ContractDetailPage() {
                       />
                     </div>
                     {ip.description && (
-                      <p className="text-[11px] text-muted-foreground">{ip.description}</p>
+                      <p className="text-xs text-muted-foreground">{ip.description}</p>
                     )}
                   </div>
                 );
@@ -659,7 +659,7 @@ export default function ContractDetailPage() {
             <div className="flex items-center gap-2 mb-3">
               <div className="w-1 h-4 rounded-full bg-emerald-400" />
               <h2 className="text-sm font-semibold text-foreground">{t("contracts.payments")}</h2>
-              <span className="text-[11px] text-muted-foreground">({payments.length})</span>
+              <span className="text-xs text-muted-foreground">({payments.length})</span>
             </div>
             {payments.length === 0 ? (
               <p className="text-xs text-muted-foreground py-4 text-center">{t("contracts.noPayments")}</p>
@@ -681,28 +681,28 @@ export default function ContractDetailPage() {
                           {fmtAED(Number(p.amount))}
                         </span>
                         {state === "voided" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 inline-flex items-center gap-1">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-700 border border-rose-500/20 inline-flex items-center gap-1">
                             <Ban className="w-2.5 h-2.5" />{t("payments.voidedStatus")}
                           </span>
                         )}
                         {state === "confirmed" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 inline-flex items-center gap-1">
                             <CheckCircle className="w-2.5 h-2.5" />{t("analytics.paid")}
                           </span>
                         )}
                         {state === "pending" && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 inline-flex items-center gap-1">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 border border-amber-500/20 inline-flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />{t("contracts.pendingConfirm")}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{p.payment_date?.slice(0, 10)}</span>
                         {p.payment_method && <span>{PAYMENT_METHOD_LABEL[p.payment_method] || p.payment_method}</span>}
                         {p.reference_no && <span>· #{p.reference_no}</span>}
                       </div>
                       {state === "voided" && (
-                        <div className="flex items-center gap-2 text-[11px] text-rose-400/80">
+                        <div className="flex items-center gap-2 text-xs text-rose-700/80">
                           <span>{t("payments.voidedOn")}: {p.voided_at?.slice(0, 10)}</span>
                           {p.voider_name && <span>· {p.voider_name}</span>}
                           {p.void_reason && <span>· {p.void_reason}</span>}
@@ -732,10 +732,10 @@ export default function ContractDetailPage() {
                   return (
                     <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/40 p-2.5">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${b.color}`}>{b.label}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded border ${b.color}`}>{b.label}</span>
                         <span className="text-xs text-muted-foreground capitalize">{a.step.replace("_", " ")}</span>
                       </div>
-                      <span className="text-[11px] text-muted-foreground shrink-0">
+                      <span className="text-xs text-muted-foreground shrink-0">
                         {a.reviewed_at ? a.reviewed_at.slice(0, 10) : a.created_at?.slice(0, 10)}
                         {a.approver_name ? ` · ${a.approver_name}` : ""}
                       </span>
@@ -759,13 +759,13 @@ export default function ContractDetailPage() {
             <div className="flex items-center gap-2 flex-wrap">
               {contract.sealed_file_url && (
                 <a href={contract.sealed_file_url} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs">
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10 text-xs">
                   <ShieldCheck className="w-3.5 h-3.5" />{t("contracts.sealedFile")}
                 </a>
               )}
               {contract.file_url && (
                 <a href={contract.file_url} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 text-xs">
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500/30 text-blue-700 hover:bg-blue-500/10 text-xs">
                   <Download className="w-3.5 h-3.5" />{t("contracts.downloadFile")}
                 </a>
               )}
@@ -870,21 +870,21 @@ function InfoRow({ icon, label, value, sub }: {
       </span>
       <span className="text-foreground text-right truncate">
         {value || "—"}
-        {sub ? <span className="block text-[10px] text-muted-foreground">{sub}</span> : null}
+        {sub ? <span className="block text-xs text-muted-foreground">{sub}</span> : null}
       </span>
     </div>
   );
 }
 
 function installmentBadge(status: string, isOverdue: boolean, t: (p: string) => string) {
-  if (status === "paid") return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: t("analytics.paid"), icon: <CheckCircle className="w-2.5 h-2.5" /> };
-  if (isOverdue || status === "overdue") return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: t("analytics.overdueStatus"), icon: <AlertTriangle className="w-2.5 h-2.5" /> };
-  if (status === "partial") return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: t("contracts.partial"), icon: <Clock className="w-2.5 h-2.5" /> };
+  if (status === "paid") return { color: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30", label: t("analytics.paid"), icon: <CheckCircle className="w-2.5 h-2.5" /> };
+  if (isOverdue || status === "overdue") return { color: "bg-rose-500/10 text-rose-700 border-rose-500/30", label: t("analytics.overdueStatus"), icon: <AlertTriangle className="w-2.5 h-2.5" /> };
+  if (status === "partial") return { color: "bg-amber-500/10 text-amber-700 border-amber-500/30", label: t("contracts.partial"), icon: <Clock className="w-2.5 h-2.5" /> };
   return { color: "bg-muted text-muted-foreground border-border/30", label: t("analytics.pending"), icon: <Clock className="w-2.5 h-2.5" /> };
 }
 
 function approvalBadge(status: string) {
-  if (status === "approved") return { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", label: "Approved" };
-  if (status === "rejected") return { color: "bg-rose-500/10 text-rose-400 border-rose-500/30", label: "Rejected" };
-  return { color: "bg-amber-500/10 text-amber-400 border-amber-500/30", label: "Pending" };
+  if (status === "approved") return { color: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30", label: "Approved" };
+  if (status === "rejected") return { color: "bg-rose-500/10 text-rose-700 border-rose-500/30", label: "Rejected" };
+  return { color: "bg-amber-500/10 text-amber-700 border-amber-500/30", label: "Pending" };
 }

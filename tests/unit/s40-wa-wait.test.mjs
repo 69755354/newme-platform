@@ -110,9 +110,12 @@ test("brief section: counts overdue and at-risk per person with the longest wait
   assert.equal(waits[0].count, 3); // l1, l2 by channel owner, l3 by assignee
   assert.equal(waits[0].overdue, 1);
   assert.equal(waits[0].at_risk, 2);
-  assert.equal(waits[0].longest_hours, 4); // l1; l3 has waited since its customer message at 09:00 (3 h); l7 was answered and does not count
+  assert.equal(waits[0].longest_hours, 3); // working hours 09-21 like the alert: l1 wrote 08:00 -> counted from 09:00 (3 h); l7 was answered and does not count
   assert.equal(waits.length, 1);
-  assert.equal(waitSectionText(waits), "WhatsApp客户等回复：Ayana 超时1风险2(最久4小时)");
+  // the wait starts at the first customer message after the last reply when the live events say so
+  const early = summarizeFollowupWaits({ states, leads, conversations, waitStarts: new Map([["l2", Date.parse("2026-11-23T05:00:00Z")]]), channelOwners: owners, profiles, excludedTestIds: new Set(["l6"]), now: MON_NOON });
+  assert.equal(early[0].longest_hours, 3);
+  assert.equal(waitSectionText(waits), "WhatsApp客户等回复：Ayana 超时1风险2(最久3小时)");
 });
 
 test("brief: the waiting section sits before the attention line and the whole text stays within 400 characters", () => {
@@ -208,7 +211,7 @@ test("runner: the brief carries the follow-up waiting section from lead_followup
   const sent = [];
   const r = await runBrief(fakeDb(t), { execute: true, now: NOW, send: async (m) => { sent.push(m); return true; }, env: { NEWME_DAILY_BRIEF_ENABLED: "true" } });
   assert.equal(r.wa_waiting_people, 1);
-  assert.match(sent[0].text, /WhatsApp客户等回复：Ayana 超时1\(最久4小时\)/);
+  assert.match(sent[0].text, /WhatsApp客户等回复：Ayana 超时1\(最久2小时\)/);
 });
 
 test("S24 follow-up (PR #587): the brief reads excluded tests, logs, transfers, quotations and spend in full pages and ignores note-only logs", async () => {
@@ -218,4 +221,75 @@ test("S24 follow-up (PR #587): the brief reads excluded tests, logs, transfers, 
   for (const table of ["lead_dispatch_state", "follow_up_logs", "transfer_history", "quotations", "ad_spend"]) {
     assert.match(src, new RegExp(`from\\("${table}"\\)\\.select\\("[^"]*", withCount`), table);
   }
+});
+
+// --- ledger safety (review P2-1) and the other review items -----------------------------------------------------------
+const adLead = { id: "ad1", customer_name: "Test", source: "fb", ad_id: "123456", archived: false, stage: "new", assigned_to: null, created_at: iso("2026-11-23T05:00:00Z") };
+const withBell = (t, throwOn = null) => { const bell = []; const db = fakeDb(t); const from = db.from; db.from = (n) => { if (n === throwOn) throw new Error("boom"); return from(n); }; db.rpc = async (_n, a) => { bell.push(...a.p_notifications); return { error: null }; }; db.bell = bell; return db; };
+const both = { NEWME_WA_WAIT_ALERT_ENABLED: "true", NEWME_AD_LEAD_REMINDER_ENABLED: "true" };
+
+test("P2-1: a ledger that cannot be written sends nothing, counts one failure, and the ad reminders still run", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const dir = mkdtempSync(`${tmpdir()}/brief-`);
+  writeFileSync(`${dir}/blocked`, "x");
+  process.env.NEWME_BRIEF_STATE_DIR = `${dir}/blocked/state`; // a directory under a file: every ledger write throws
+  const { runReminders } = await import("../../scripts/daily-brief.mjs");
+  const t = tables(); t.leads.push(adLead);
+  const db = withBell(t);
+  const sent = [];
+  const r = await runReminders(db, { execute: true, now: NOW, send: async (m) => { sent.push(m); return true; }, env: both });
+  assert.equal(sent.filter((m) => m.key === "newme-wa-wait-alert").length, 0);
+  assert.deepEqual([r.wa_wait_sent, r.wa_wait_failed], [0, 1]);
+  assert.ok(r.failed >= 1);
+  assert.ok(db.bell.length > 0, "the ad-lead bell reminders still ran");
+});
+
+test("P2-1: a failed delivery takes its ids out of the ledger again, so the next hour retries exactly once", async () => {
+  process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/brief-`);
+  const { runReminders } = await import("../../scripts/daily-brief.mjs");
+  const calls = [];
+  const env = { NEWME_WA_WAIT_ALERT_ENABLED: "true" };
+  const fail = await runReminders(fakeDb(tables()), { execute: true, now: NOW, send: async (m) => { calls.push(m); return false; }, env });
+  assert.deepEqual([fail.wa_wait_sent, fail.wa_wait_failed], [0, 1]);
+  const ok = await runReminders(fakeDb(tables()), { execute: true, now: new Date(NOW.getTime() + 3_600_000), send: async (m) => { calls.push(m); return true; }, env });
+  assert.equal(ok.wa_wait_sent, 1);
+  const again = await runReminders(fakeDb(tables()), { execute: true, now: new Date(NOW.getTime() + 80 * 60_000), send: async (m) => { calls.push(m); return true; }, env });
+  assert.equal(again.wa_wait_sent, 0);
+  assert.equal(calls.length, 2);
+});
+
+test("P2-1: the brief is still sent when reading the wait data throws", async () => {
+  process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/brief-`);
+  const { runBrief } = await import("../../scripts/daily-brief.mjs");
+  const sent = [];
+  const r = await runBrief(withBell(tables(), "lead_followup_state"), { execute: true, now: NOW, send: async (m) => { sent.push(m); return true; }, env: { NEWME_DAILY_BRIEF_ENABLED: "true" } });
+  assert.equal(r.sent, true);
+  assert.ok(!sent[0].text.includes("等回复"));
+});
+
+test("P3-2: closed, test and history-only conversations do not use up the 300 cap", async () => {
+  process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/brief-`);
+  const { runReminders } = await import("../../scripts/daily-brief.mjs");
+  const t = tables();
+  const closed = Array.from({ length: 320 }, (_, i) => ({ id: `x${i}`, lead_id: `cl${i}`, phone_number_id: "11111", last_inbound_at: iso("2026-11-22T05:00:00Z"), last_outbound_at: null }));
+  t.leads.push(...closed.map((c) => ({ id: c.lead_id, assigned_to: null, archived: true, final_status: null, source: "fb" })));
+  t.whatsapp_conversations.push(...closed,
+    { id: "hist", lead_id: null, phone_number_id: "11111", last_inbound_at: iso("2026-11-22T06:00:00Z"), last_outbound_at: null }); // no live event: history only
+  const r = await runReminders(fakeDb(t), { now: NOW, env: {} });
+  assert.equal(r.wa_wait_due, 1, "the real waiting conversation c1 is still found behind 320 closed ones and a history-only one");
+});
+
+test("P3-5: a lost lead keeps its reason in lost_reason, set once, through the stage route", async () => {
+  const { readFileSync } = await import("node:fs");
+  const route = readFileSync(new URL("../../src/app/api/leads/[id]/stage/route.ts", import.meta.url), "utf8");
+  assert.match(route, /stage === "lost"[\s\S]{0,200}update\(\{ lost_reason: note\.slice\(0, 1000\) \}\)\.eq\("id", leadId\)\.is\("lost_reason", null\)/);
+});
+
+test("P3-5: the dialog shows the specific first-contact reasons in the user's language", async () => {
+  const { submitStageFromDrag } = await import("../../src/lib/won-drag.mjs");
+  const reply = async () => ({ ok: false, json: async () => ({ error: "First Contact requirements are incomplete", error_zh: "首次联系要求未完成", reasons: ["At least one complete contact record is required"], reasons_zh: ["至少需要一条完整的联系记录"] }) });
+  const r = await submitStageFromDrag(reply, "l", { stage: "lost", note: "n", idempotencyKey: "k" });
+  assert.deepEqual([r.reasons, r.reasons_zh], [["At least one complete contact record is required"], ["至少需要一条完整的联系记录"]]);
+  const { readFileSync } = await import("node:fs");
+  assert.match(readFileSync(new URL("../../src/shared/hooks/usePipelineDragDrop.ts", import.meta.url), "utf8"), /result\.reasons_zh/);
 });

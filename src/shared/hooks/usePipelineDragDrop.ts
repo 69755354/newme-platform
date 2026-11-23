@@ -178,7 +178,8 @@ export function usePipelineDragDrop<T extends LeadBase>(
     try {
       const result = await submitStageFromDrag(fetch, leadId, { stage, note, amount, idempotencyKey });
       if (!result.ok) {
-        const message = lang === "zh" ? result.error_zh : result.error;
+        const reasons = (lang === "zh" ? result.reasons_zh : result.reasons) ?? [];
+        const message = reasons.length ? reasons.join("；") : (lang === "zh" ? result.error_zh : result.error);
         setWonPrompt(prev => prev && { ...prev, needsAmount: prev.needsAmount || result.needsAmount, error: message });
         return;
       }

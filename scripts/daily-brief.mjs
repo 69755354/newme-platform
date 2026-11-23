@@ -27,7 +27,7 @@ import {
 } from "../src/lib/daily-brief.mjs";
 
 import {
-  WAIT_ALERT_KEY, WAIT_ALERT_MAX_AGE_DAYS, buildWaitAlert, channelOwnerMap, planWaitAlert, resolveWaitAlertHours, selectWaiting, summarizeFollowupWaits,
+  WAIT_ALERT_KEY, WAIT_ALERT_MAX_AGE_DAYS, buildWaitAlert, channelOwnerMap, isUnanswered, planWaitAlert, resolveWaitAlertHours, selectWaiting, summarizeFollowupWaits,
 } from "../src/lib/wa-wait.mjs";
 
 const SENDER = process.env.NEWME_ALERT_SENDER || "/usr/local/libexec/newme/newme-whatsapp-alert.sh";
@@ -107,6 +107,14 @@ async function loadBriefExtras(db, data, now) {
   return { quotations, sheetLeads: sheet, leadsById, spendRows, waits };
 }
 
+/** First live customer message after our last reply: where the waiting episode of one conversation starts (null: none). */
+async function firstLiveInboundAfterReply(db, c) {
+  let q = db.from("whatsapp_message_events").select("occurred_at").eq("conversation_id", c.id).eq("direction", "inbound").eq("backfilled", false);
+  if (c.last_outbound_at) q = q.gt("occurred_at", c.last_outbound_at);
+  const first = must(await q.order("occurred_at", { ascending: true }).limit(1))[0];
+  return first ? Date.parse(first.occurred_at) : null;
+}
+
 /** S40: customers waiting for a WhatsApp reply, per responsible person (live messages only: the monitor ignores backfilled history). */
 export async function loadFollowupWaits(db, data, now) {
   try {
@@ -114,9 +122,14 @@ export async function loadFollowupWaits(db, data, now) {
     if (!states.length) return [];
     const ids = states.map((r) => r.lead_id);
     const leads = await inChunks(ids, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
-    const conversations = await inChunks(ids, (part) => db.from("whatsapp_conversations").select("lead_id,phone_number_id,last_inbound_at,last_outbound_at").in("lead_id", part));
+    const conversations = await inChunks(ids, (part) => db.from("whatsapp_conversations").select("id,lead_id,phone_number_id,last_inbound_at,last_outbound_at").in("lead_id", part));
     const channels = must(await db.from("whatsapp_pilot_channels").select("phone_number_id,owner_profile_id,enabled"));
-    return summarizeFollowupWaits({ states, leads: new Map(leads.map((l) => [l.id, l])), conversations, channelOwners: channelOwnerMap(channels, data.profiles),
+    const waitStarts = new Map();
+    for (const c of conversations.filter(isUnanswered).slice(0, 300)) {
+      const start = await firstLiveInboundAfterReply(db, c);
+      if (start !== null) waitStarts.set(c.lead_id, Math.min(waitStarts.get(c.lead_id) ?? Infinity, start));
+    }
+    return summarizeFollowupWaits({ states, leads: new Map(leads.map((l) => [l.id, l])), conversations, waitStarts, channelOwners: channelOwnerMap(channels, data.profiles),
       profiles: data.profiles, excludedTestIds: data.excludedTestIds, now });
   } catch { return []; } // the brief goes out without this section rather than not at all
 }
@@ -196,21 +209,20 @@ export async function planWaitAlerts(db, data, now, env) {
   if (!channelIds.length) return { items: [], groups: [], text: "", thresholdHours };
   const rows = must(await db.from("whatsapp_conversations").select("id,lead_id,phone_number_id,last_inbound_at,last_outbound_at")
     .in("phone_number_id", channelIds).gte("last_inbound_at", since).order("last_inbound_at", { ascending: false }).limit(1000));
-  // Unanswered and not alerted yet, oldest customer message first (the longest waits are the ones that matter), then capped.
+  // Unanswered, not alerted yet, not closed / archived / test: filtered BEFORE the cap, oldest customer message first.
   const done = waLedgerKeys(now);
-  const open = rows.filter((c) => (!c.last_outbound_at || Date.parse(c.last_outbound_at) < Date.parse(c.last_inbound_at))
-    && !done.has(`${c.id}:${c.last_outbound_at ? Date.parse(c.last_outbound_at) : 0}`))
-    .sort((a, b) => Date.parse(a.last_inbound_at) - Date.parse(b.last_inbound_at)).slice(0, 300);
-  const leadIds = [...new Set(open.map((c) => c.lead_id).filter(Boolean))];
+  const unanswered = rows.filter((c) => isUnanswered(c) && !done.has(`${c.id}:${c.last_outbound_at ? Date.parse(c.last_outbound_at) : 0}`));
+  const leadIds = [...new Set(unanswered.map((c) => c.lead_id).filter(Boolean))];
   const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
   const ignored = new Set(leads.filter((l) => l.archived || l.final_status || l.source === "synthetic_qa" || data.excludedTestIds.has(l.id)).map((l) => l.id));
   const waitStarts = new Map();
-  for (const c of open) {
-    if (c.lead_id && ignored.has(c.lead_id)) continue;
-    let q = db.from("whatsapp_message_events").select("occurred_at").eq("conversation_id", c.id).eq("direction", "inbound").eq("backfilled", false);
-    if (c.last_outbound_at) q = q.gt("occurred_at", c.last_outbound_at);
-    const first = must(await q.order("occurred_at", { ascending: true }).limit(1))[0];
-    if (first) waitStarts.set(c.id, Date.parse(first.occurred_at));
+  const open = [];
+  for (const c of unanswered.filter((x) => !(x.lead_id && ignored.has(x.lead_id))).sort((a, b) => Date.parse(a.last_inbound_at) - Date.parse(b.last_inbound_at))) {
+    if (open.length >= 300) break;
+    const start = await firstLiveInboundAfterReply(db, c);
+    if (start === null) continue; // no live customer message (history only): never an episode, and it does not use the cap
+    waitStarts.set(c.id, start);
+    open.push(c);
   }
   const items = selectWaiting({ conversations: open, waitStarts, ignoredLeadIds: ignored, done, now, thresholdHours });
   const groups = planWaitAlert(items, { leadAssignee: new Map(leads.map((l) => [l.id, l.assigned_to])), channelOwners: channelOwnerMap(channels, data.profiles), profiles: data.profiles });
@@ -247,16 +259,25 @@ export async function runReminders(db, { execute = false, now = new Date(), send
   for (const person of reminder24 ? due : []) {
     if (await send({ key: "newme-lead-reminder", text: buildReminder(person), number: person.number })) {
       summary.sent += 1; done.add(person.id);
-      writeLedger("reminders", today, { sent: [...done] }); // after each delivery: a crash never double-sends
+      try { writeLedger("reminders", today, { sent: [...done] }); } catch { summary.failed += 1; } // after each delivery; a failed write never stops the run
     } else summary.failed += 1;
   }
-  // S40: one alert for every conversation newly past the wait threshold; the ledger is written after delivery.
+  // S40: one alert for every conversation newly past the wait threshold. Write-then-send: the ids are recorded as pending
+  // first (a failed write means nothing is sent, one failure), and taken out again when the delivery fails so the next hour retries.
   if (waAlert && waPlan?.items.length) {
-    if (await send({ key: WAIT_ALERT_KEY, text: waPlan.text })) {
-      summary.wa_wait_sent = waPlan.items.length;
-      const day = readLedger("wa-wait", today).sent ?? [];
-      writeLedger("wa-wait", today, { sent: [...new Set([...day, ...waPlan.items.map((i) => i.key)])] });
-    } else summary.wa_wait_failed += 1;
+    const keys = waPlan.items.map((i) => i.key);
+    let recorded = false;
+    try {
+      writeLedger("wa-wait", today, { sent: [...new Set([...(readLedger("wa-wait", today).sent ?? []), ...keys])] });
+      recorded = true;
+    } catch { summary.wa_wait_failed += 1; }
+    if (recorded) {
+      if (await send({ key: WAIT_ALERT_KEY, text: waPlan.text })) summary.wa_wait_sent = keys.length;
+      else {
+        summary.wa_wait_failed += 1;
+        try { writeLedger("wa-wait", today, { sent: (readLedger("wa-wait", today).sent ?? []).filter((k) => !keys.includes(k)) }); } catch { /* the next run sees the pending ids and skips them: logged as a failure above */ }
+      }
+    }
   }
   summary.failed += summary.wa_wait_failed;
   // Ad-lead reminders: the bell first (idempotent by event key, also reaches people without a phone number), then WhatsApp.
@@ -277,7 +298,7 @@ export async function runReminders(db, { execute = false, now = new Date(), send
     if (await send({ key: "newme-lead-reminder", text: buildAdReminder(person), number: person.number })) {
       summary.ad_sent += 1;
       for (const item of person.items) adSent.push(`${person.id}:${item.lead_id}`);
-      writeLedger("ad-reminders", today, { sent: [...new Set(adSent)] }); // after each delivery: a crash never double-sends
+      try { writeLedger("ad-reminders", today, { sent: [...new Set(adSent)] }); } catch { summary.ad_failed += 1; } // after each delivery
     } else summary.ad_failed += 1;
   }
   summary.failed += summary.ad_failed;

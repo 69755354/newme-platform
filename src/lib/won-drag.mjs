@@ -43,6 +43,8 @@ export async function submitStageFromDrag(fetchImpl, leadId, { stage, note, amou
   return {
     ok: false,
     needsAmount: body?.code === "won_amount_required",
+    reasons: Array.isArray(body?.reasons) ? body.reasons.map(String) : [],
+    reasons_zh: Array.isArray(body?.reasons_zh) ? body.reasons_zh.map(String) : [],
     error: typeof body?.error === "string" ? body.error : (stage === "won" ? "Could not mark the lead won." : "Could not mark the lead lost."),
     error_zh: typeof body?.error_zh === "string" ? body.error_zh : (stage === "won" ? "没能标记赢单。" : "没能标记丢单。"),
   };

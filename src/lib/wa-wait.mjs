@@ -6,7 +6,7 @@
 //                     (09:00-21:00 Dubai, Monday to Friday) raises ONE alert per conversation per waiting episode.
 // Responsible person: the salesperson who owns the channel (whatsapp_pilot_channels.owner_profile_id, only when that
 // profile is an operator), else the lead's assignee, else "公司号". Only names are ever written, never customer phones.
-import { isWorkingDay, workingElapsedMs } from "./followup-monitor.mjs";
+import { isWorkingDay } from "./followup-monitor.mjs";
 import { isSystemAccount } from "./system-accounts.mjs";
 
 export const COMPANY_NUMBER_LABEL = "公司号";
@@ -61,6 +61,13 @@ export function channelOwnerMap(channels, profiles) {
   return map;
 }
 
+/** Conversations whose newest customer message has no reply after it. */
+export const isUnanswered = (c) => {
+  const lastIn = ms(c?.last_inbound_at);
+  const lastOut = c?.last_outbound_at ? ms(c.last_outbound_at) : -Infinity;
+  return Number.isFinite(lastIn) && lastIn > lastOut;
+};
+
 /** Channel owner, else the lead's assignee, else the company number label. */
 export function responsibleName({ phoneNumberId, assignedTo, channelOwners = new Map(), profiles = [] }) {
   const owner = channelOwners.get(String(phoneNumberId ?? ""));
@@ -75,7 +82,7 @@ export function responsibleName({ phoneNumberId, assignedTo, channelOwners = new
  * leads: Map lead_id -> { assigned_to, archived, final_status, source }. conversations: { lead_id, phone_number_id, last_inbound_at }.
  * @returns {Array<{name, overdue, at_risk, count, longest_hours}>} biggest first
  */
-export function summarizeFollowupWaits({ states = [], leads = new Map(), conversations = [], channelOwners = new Map(), profiles = [], excludedTestIds = new Set(), now = new Date() } = {}) {
+export function summarizeFollowupWaits({ states = [], leads = new Map(), conversations = [], waitStarts = new Map(), channelOwners = new Map(), profiles = [], excludedTestIds = new Set(), now = new Date() } = {}) {
   const nowMs = ms(now);
   const channelByLead = new Map();
   for (const c of conversations) {
@@ -96,9 +103,11 @@ export function summarizeFollowupWaits({ states = [], leads = new Map(), convers
     if (!unansweredAt.has(s.lead_id)) continue;
     const lead = leads.get(s.lead_id);
     if (!lead || lead.archived || lead.final_status || lead.source === "synthetic_qa" || excludedTestIds.has(s.lead_id)) continue;
-    const since = s.first_reply_at ? unansweredAt.get(s.lead_id) : ms(s.first_inbound_at);
+    // The wait starts at the first customer message after our last reply (waitStarts, read from the live events); the same
+    // working-hours measure as the alert. Without it, fall back to the stored first message / the newest unanswered one.
+    const since = waitStarts.get(s.lead_id) ?? (s.first_reply_at ? unansweredAt.get(s.lead_id) : ms(s.first_inbound_at));
     if (!Number.isFinite(since)) continue;
-    const hours = Math.max(0, Math.floor(workingElapsedMs(since, nowMs) / HOUR));
+    const hours = Math.max(0, Math.floor(businessWaitMs(since, nowMs) / HOUR));
     const name = responsibleName({ phoneNumberId: channelByLead.get(s.lead_id)?.phone, assignedTo: lead.assigned_to, channelOwners, profiles });
     const g = groups.get(name) ?? { name, overdue: 0, at_risk: 0, count: 0, longest_hours: 0 };
     if (s.state === "overdue") g.overdue += 1; else g.at_risk += 1;

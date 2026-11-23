@@ -19,6 +19,8 @@ export function enqueueWhatsAppCapiEvent(db: Db, leadId: string, eventName: stri
 export type WhatsAppQuoteOptions = {
   attempt?: ((db: Db, row: { id: string; event_data: unknown }) => Promise<unknown>) | null;
   env?: Record<string, string | undefined>; nowSeconds?: number;
+  /** Sheet-reported quote (AED); replaces the OS quotation lookup. */
+  amount?: { value: number; currency: string } | null;
 };
 export function enqueueWhatsAppCapiForProgress(db: Db, leadId: string, progressKey: string, options?: WhatsAppQuoteOptions): Promise<Outcome>;
 export function enqueueWhatsAppQuoteForLead(db: Db, leadId: string, options?: WhatsAppQuoteOptions): Promise<Outcome>;

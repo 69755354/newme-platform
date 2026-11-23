@@ -131,7 +131,7 @@ export const WA_QUOTE_OUTBOX_TYPE = "meta_capi_lead_delivery";
  * (one row per lead, deterministic id). `attempt(db, row)` tries one delivery now; the retry tool owns it afterwards.
  */
 export async function enqueueWhatsAppQuoteForLead(db, leadId, { attempt = /** @type {Function | null} */ (null), env = process.env,
-  nowSeconds = Math.floor(Date.now() / 1000) } = {}) {
+  amount: amountOverride = /** @type {{ value: number, currency: string } | null} */ (null), nowSeconds = Math.floor(Date.now() / 1000) } = {}) {
   try {
     const lead = await db.from("leads").select("ctwa_clid, phone").eq("id", leadId).maybeSingle();
     const clid = normalizeCtwaClid(lead?.data?.ctwa_clid);
@@ -140,7 +140,8 @@ export async function enqueueWhatsAppQuoteForLead(db, leadId, { attempt = /** @t
       .eq("lead_id", leadId).eq("first_ctwa_clid", clid).limit(1).maybeSingle();
     const waba = conversation?.data?.waba_id;
     if (conversation?.error || typeof waba !== "string" || !WABA_ID.test(waba)) return "skipped";
-    const amount = await latestQuotationAmount(db, leadId);
+    // amountOverride: the sheet-reported quote (sheet-to-Meta feedback job); otherwise the OS amount.
+    const amount = amountOverride ?? await latestQuotationAmount(db, leadId);
     if (!amount) return "skipped";
     const eventId = `wa-quote:${leadId}`;
     const hashedPhone = env.WA_CAPI_SEND_HASHED_PHONE === "true" ? hashedContactKeys({ phone: lead.data.phone }).ph ?? null : null;

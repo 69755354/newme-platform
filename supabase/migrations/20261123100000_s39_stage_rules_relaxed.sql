@@ -257,6 +257,9 @@ BEGIN
 END;
 $function$;
 
+REVOKE ALL ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.recomplete_lead_milestone(uuid, text, text) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.check_milestone_order()
  RETURNS trigger
  LANGUAGE plpgsql

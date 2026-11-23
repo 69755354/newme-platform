@@ -585,13 +585,8 @@ export default function LeadSalesProcess({
 
                             {/* Contact Result */}
                             <div>
-<<<<<<< HEAD
-                              <label className="text-[10px] text-muted-foreground block mb-0.5">
-                                {t("leadDetail.contactResult") || "Contact Result"}
-=======
                               <label className="text-xs text-muted-foreground block mb-0.5">
-                                {t("leadDetail.contactResult") || "Contact Result"} *
->>>>>>> origin/main
+                                {t("leadDetail.contactResult") || "Contact Result"}
                               </label>
                               <input
                                 type="text"

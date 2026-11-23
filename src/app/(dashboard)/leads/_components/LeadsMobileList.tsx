@@ -74,13 +74,13 @@ export function LeadsMobileList({ leads, onOpen, t }: Props) {
                 <div className="flex items-center gap-1.5">
                   <span className="truncate text-sm font-medium text-foreground">{name}</span>
                   {isWhatsAppAdLead(lead) && (
-                    <span data-testid="whatsapp-ad-badge" className="shrink-0 rounded bg-emerald-500/10 px-1 py-0.5 text-[10px] font-medium text-emerald-400">{t("s37.wa.badge")}</span>
+                    <span data-testid="whatsapp-ad-badge" className="shrink-0 rounded bg-emerald-500/10 px-1 py-0.5 text-xs font-medium text-emerald-400">{t("s37.wa.badge")}</span>
                   )}
                   {lead.quotation_value != null && lead.quotation_value > 0 && (
                     <span className="ml-auto shrink-0 text-xs font-semibold text-copper-400">{fmtAED(lead.quotation_value)}</span>
                   )}
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                   <span>{t(`stageLabels.${lead.final_status || lead.stage}`)}</span>
                   <span>{t(`sourceLabels.${lead.source}`)}</span>
                   {fresh && <span data-testid="row-uncontacted" className="font-medium text-amber-500">{t("s39.list.uncontacted")}</span>}

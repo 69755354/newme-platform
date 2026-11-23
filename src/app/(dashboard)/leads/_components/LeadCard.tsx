@@ -203,7 +203,7 @@ export function LeadCard({
                 <span data-testid="whatsapp-ad-badge" className="text-xs px-1 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-700">{t("s37.wa.badge")}</span>
               )}
               {isWaitingForReply(lead) && (
-                <span data-testid="whatsapp-waiting-badge" className="text-[9px] px-1 py-0.5 rounded font-medium bg-amber-500/10 text-amber-400">{t("s39.list.waitingReply")}</span>
+                <span data-testid="whatsapp-waiting-badge" className="text-xs px-1 py-0.5 rounded font-medium bg-amber-500/10 text-amber-400">{t("s39.list.waitingReply")}</span>
               )}
             </div>
             {(!isPlaceholder(lead.property_type) || !isPlaceholder(lead.location)) && (

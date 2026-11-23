@@ -98,7 +98,7 @@ export default function LeadActionBar({ lead, repName, canLog, onLogged, t }: Pr
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-muted-foreground">{t("s39.quickLog.hint")}</p>
+          <p className="text-xs text-muted-foreground">{t("s39.quickLog.hint")}</p>
         </div>
       )}
     </section>

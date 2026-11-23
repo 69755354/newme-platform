@@ -93,6 +93,7 @@ function route(w, role = "sales") {
     "@/lib/milestones": milestones,
     "@/lib/meta-crm-events": {
       enqueueMetaCrmEventForLead: async (_db, _id, key) => { w.state.meta.push(key); },
+      enqueueMetaCrmFunnelForLead: async (_db, _id, from, to) => { (w.state.funnel ??= []).push(`${from}->${to}`); return 1; },
     },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppCapiForProgress: async () => "skipped" },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped", enqueueWebsitePurchaseForLead: async () => "skipped" },
@@ -142,6 +143,7 @@ test("a lead stuck at new skips straight to the milestone's stage in one audited
   assert.deepEqual(w.state.rpc.map(([, a]) => `${a.p_expected_stage}->${a.p_next_stage}`), [
     "new->requirement_confirmed",
   ]);
+  assert.deepEqual(w.state.funnel, ["new->requirement_confirmed"], "the skip reports every funnel step passed to Meta");
 });
 
 test("milestones without a stage of their own and leads already further on are left alone", async () => {

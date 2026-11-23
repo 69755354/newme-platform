@@ -143,7 +143,7 @@ async function generate(lead) {
     "@/lib/milestone-stage-advance.mjs": stageAdvance,
     "@/lib/first-contact-gate.mjs": firstContactGate,
     "@/lib/quote-feedback.mjs": quoteFeedback,
-    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: record("form") },
+    "@/lib/meta-crm-events": { enqueueMetaCrmEventForLead: record("form"), enqueueMetaCrmFunnelForLead: async () => 0 },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: record("whatsapp"), enqueueWebsiteQuoteForProgress: record("website") },
   });
   const testEnv = {

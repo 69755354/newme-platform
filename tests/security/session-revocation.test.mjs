@@ -257,6 +257,7 @@ test("real lead stage handler rejects an inactive old session before business ac
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "new" }] },
     // S36: the won amount step is covered by tests/unit/s36-won-route.test.mjs; inert here.
     "@/lib/won-amount.mjs": { ensureWonAmount: async () => ({ ok: true, amount: { value: 1, currency: "AED" }, wrote: false }) },
+    "@/lib/stage-error-zh.mjs": { stageErrorZh: (m) => `zh:${m}`, stageReasonsZh: (r) => r },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "skipped" },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppCapiForProgress: async () => "skipped", enqueueWhatsAppPurchaseForLead: async () => "skipped" },
     "@/lib/website-capi-valued": { enqueueWhatsAppProgressWithDelivery: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped", enqueueWebsitePurchaseForLead: async () => "skipped" },
@@ -278,7 +279,7 @@ test("real lead stage handler rejects an inactive old session before business ac
   active = true;
   const activeResponse = await stage.PATCH(request(), params);
   assert.equal(activeResponse.status, 400);
-  assert.deepEqual(await activeResponse.json(), { error: "A valid idempotency key is required" });
+  assert.deepEqual(await activeResponse.json(), { error: "A valid idempotency key is required", error_zh: "zh:A valid idempotency key is required" });
 });
 
 test("real auth-me handler rejects an inactive old token and accepts an active profile", async () => {

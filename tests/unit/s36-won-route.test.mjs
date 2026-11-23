@@ -90,6 +90,7 @@ async function patch(body, { quotationValue = null, quotes = [], contracts = [],
     "@/lib/supabase-admin": { supabaseAdmin: admin },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async () => "skipped" },
     "@/lib/won-amount.mjs": wonAmount,
+    "@/lib/stage-error-zh.mjs": { stageErrorZh: (m) => `zh:${m}`, stageReasonsZh: (r) => r },
     "@/lib/whatsapp-capi.mjs": { enqueueWhatsAppPurchaseForLead: async () => "skipped" },
     "@/lib/website-capi-valued": {
       enqueueWebsitePurchaseForLead: async () => "skipped", enqueueWebsiteQuoteForProgress: async () => "skipped", enqueueWhatsAppProgressWithDelivery: async () => "skipped",

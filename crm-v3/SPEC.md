@@ -1328,6 +1328,12 @@ This section records the remaining paths reported by `scripts/check-spec.sh` for
 - 看板赢单弹窗：`src/shared/kanban/WonDropDialog.tsx`（拖入赢单时填写金额与确认）。
 - 派发工作台改为通过接口取可转交销售名单：`src/app/api/dispatch/reps/route.ts`（管理员、老板、运营可读，规则与线索页一致，隐藏测试账号），浏览器端不再直接查询用户资料表。
 
+## 2026-11-23 S40 WhatsApp 等回复监控进简报与白天升级提醒（默认关闭）
+
+- 公司号等回复的文字与选取逻辑：`src/lib/wa-wait.mjs`（简报小节、工作时间等待时长、渠道负责人、白天提醒文案）；运行入口仍是 `scripts/daily-brief.mjs`（08:05 简报加一节“WhatsApp客户等回复”；每小时提醒任务里加“等回复超过阈值”提醒，由 `NEWME_WA_WAIT_ALERT_ENABLED=true` 打开，默认关闭，阈值 `NEWME_WA_WAIT_ALERT_HOURS` 默认 2 个工作小时）。
+- 负责人规则：渠道（`whatsapp_pilot_channels.owner_profile_id`）归属销售本人，否则线索负责人，否则“公司号”；只写姓名和数量，不写客户电话。每个等待回合只提醒一次，记录在提醒任务的当日台账里。
+- 待办小项：看板拖入丢单改走阶段接口并必须填原因（`src/shared/hooks/usePipelineDragDrop.ts`、`src/shared/kanban/WonDropDialog.tsx`、`src/lib/won-drag.mjs`）；阶段接口的拒绝原因带中文（`src/lib/stage-error-zh.mjs`，接口 `src/app/api/leads/[id]/stage/route.ts`）；报价金额的币种比较与数据库触发器一致（`src/lib/quote-amount.mjs`）。
+
 ## 2026-11-23 S38 全站视觉统一
 
 - `src/lib/status-palette.ts`（阶段/线索温度统一调色：灰、一种石板蓝、仅 hot/逾期用琥珀、成交绿，对比度达 AA）

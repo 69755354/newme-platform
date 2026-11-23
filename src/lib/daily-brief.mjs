@@ -15,6 +15,7 @@ import { isCountedLead, leadOutcome } from "./lead-metrics.mjs";
 import { isAdLead, costPerLead } from "./ads-leads.mjs";
 import { isSystemAccount } from "./system-accounts.mjs";
 import { normalizePhone } from "./lead-contact.mjs";
+import { waitSectionText } from "./wa-wait.mjs";
 
 export const UNASSIGNED_LABEL = "未分配";
 export const MAX_TEXT_CHARS = 400;
@@ -250,7 +251,7 @@ export function clip(value, max = MAX_TEXT_CHARS) {
  * The brief, one line. data: { leads (countNewLeads), people (planReminders().people), missingPhone, quotes, spend }.
  * "需要注意" appears only when something is off.
  */
-export function buildBrief({ dateKey, leads, people = [], groups = null, missingPhone = [], quotes, spend }) {
+export function buildBrief({ dateKey, leads, people = [], groups = null, missingPhone = [], quotes, spend, waits = [] }) {
   const channels = CHANNELS.map((c) => `${channelLabel(c)}${leads.byChannel[c]}`).join(" ");
   // groups (groupUncontactedForBrief) cover every uncontacted lead; people (planReminders) only those with a known salesperson.
   const shownGroups = groups ?? people.map((p) => ({ name: p.name, unassigned: false, items: p.items, oldest_hours: p.oldest_hours }));
@@ -273,6 +274,8 @@ export function buildBrief({ dateKey, leads, people = [], groups = null, missing
       : "无";
     const parts = [`${dateKey}日报`, `新线索${leads.total}条（${channels}）`, `24小时未记录联系：${who}`, `昨日报价${quotes.count}单，合计AED ${money(quotes.total)}`];
     if (spend) parts.push(`广告花费AED ${money(spend.spend)}${spend.cpl === null ? "" : `，单条线索AED ${money(spend.cpl)}`}`);
+    const waitText = waitSectionText(waits);
+    if (waitText) parts.push(waitText);
     if (attention.length) parts.push(`需要注意：${attention.join("；")}`);
     return parts.join("；");
   };

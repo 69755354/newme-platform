@@ -51,14 +51,14 @@ test("marking a lead won in the UI asks for an amount when there is none, and se
   assert.match(process_, /onWon\(stageNote, wonAmount\)/);
   assert.match(mutations, /amount: amount\.trim\(\)/);
   // Dragging onto Won goes through the same server route (the dialog asks for the note and, when missing, the amount).
-  assert.match(drag, /if \(targetStage === "won"\) \{\s*setWonPrompt\(/);
-  assert.match(drag, /submitWonFromDrag\(fetch, leadId/);
+  assert.match(drag, /if \(targetStage === "won" \|\| targetStage === "lost"\) \{\s*setWonPrompt\(/);
+  assert.match(drag, /submitStageFromDrag\(fetch, leadId/);
   assert.match(read("src/lib/won-drag.mjs"), /\/api\/leads\/\$\{encodeURIComponent\(leadId\)\}\/stage/);
   const dropBody = drag.slice(drag.indexOf("const onDrop"), drag.indexOf("const confirmWon"));
-  const beforeWon = dropBody.slice(0, dropBody.indexOf('if (targetStage === "won")'));
-  const afterWon = dropBody.slice(dropBody.indexOf('if (targetStage === "won")'));
+  const beforeWon = dropBody.slice(0, dropBody.indexOf('if (targetStage === "won" || targetStage === "lost")'));
+  const afterWon = dropBody.slice(dropBody.indexOf('if (targetStage === "won" || targetStage === "lost")'));
   assert.doesNotMatch(beforeWon, /final_status: targetStage|\.update\(/, "no direct write before the Won branch returns");
-  assert.match(afterWon.slice(0, afterWon.indexOf("return;")), /needsAmount: !leadHasWonAmount\(lead\)/);
+  assert.match(afterWon.slice(0, afterWon.indexOf("return;")), /needsAmount: targetStage === "won" && !leadHasWonAmount\(lead\)/);
   assert.doesNotMatch(drag, /Dragging cannot ask/);
   for (const page of ["src/app/(dashboard)/leads/page.tsx", "src/app/(dashboard)/pipeline/page.tsx"]) {
     assert.match(read(page), /<WonDropDialog prompt=\{wonPrompt\}/, page);

@@ -152,7 +152,7 @@ test("sheet quote: forward only, never OS-final, fresh only, first-seen date as 
 });
 
 // db returning one quotation for the quote amount, plus lead / business_events for the website path.
-function quoteDb({ lead = websiteLead, quotes = [{ total_amount: "150000.00", currency: "aed" }] } = {}) {
+function quoteDb({ lead = websiteLead, quotes = [{ total_amount: "150000.00", currency: "AED" }] } = {}) {
   const inserts = [];
   const from = (table) => {
     const q = { select: () => q, eq: () => q, not: () => q, order: () => q, limit: () => q, insert: (r) => { inserts.push(r); return q; },

@@ -1,0 +1,10 @@
+[Unit]
+Description=Every 5 minutes: speed-to-lead for new Meta form leads (customer WhatsApp template + salesperson alert)
+
+[Timer]
+OnCalendar=*:0/5
+RandomizedDelaySec=15
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -29,6 +29,8 @@ const ASSETS = {
   "/etc/systemd/system/newme-daily-brief.timer": "infra/systemd/newme-daily-brief.timer",
   "/etc/systemd/system/newme-lead-reminder.service": "infra/systemd/newme-lead-reminder.service",
   "/etc/systemd/system/newme-lead-reminder.timer": "infra/systemd/newme-lead-reminder.timer",
+  "/etc/systemd/system/newme-speed-to-lead.service": "infra/systemd/newme-speed-to-lead.service",
+  "/etc/systemd/system/newme-speed-to-lead.timer": "infra/systemd/newme-speed-to-lead.timer",
 };
 
 test("every ops asset is in the remembered (rollback) set and its source exists in the repository", () => {
@@ -50,6 +52,20 @@ test("the ops files are installed inside the open transaction and before the dae
   const opsInstall = installer.indexOf('"$ROOT/infra/alerts/newme-whatsapp-alert.sh"');
   const reload = installer.search(/^systemctl daemon-reload$/m);
   assert.ok(trap >= 0 && trap < opsInstall && opsInstall < reload);
+});
+
+test("the speed-to-lead units are installed but never enabled by the installer, alert on failure and run the switch-guarded script", () => {
+  const service = read("infra/systemd/newme-speed-to-lead.service");
+  const timer = read("infra/systemd/newme-speed-to-lead.timer");
+  assert.match(service, /^OnFailure=newme-unit-alert@%n\.service$/m);
+  assert.match(service, /^ExecStart=\/usr\/bin\/node scripts\/speed-to-lead\.mjs --execute$/m);
+  assert.match(service, /^EnvironmentFile=-\/etc\/newme\/speed-to-lead\.env$/m);
+  assert.match(service, /^EnvironmentFile=-\/etc\/newme\/customer-wa\.env$/m);
+  assert.ok(!/ENABLED=true/.test(service.replace(/^#.*$/gm, "")), "the unit must not switch itself on");
+  assert.ok(timer.includes("OnCalendar=*:0/5"));
+  assert.ok(installer.includes("infra/systemd/newme-speed-to-lead.service") && installer.includes("infra/systemd/newme-speed-to-lead.timer"));
+  assert.ok(!/systemctl enable[^\n]*newme-speed-to-lead/.test(installer.replace(/^\s*#.*$/gm, "")), "the installer must not enable the speed-to-lead timer");
+  assert.ok(existsSync(join(root, "scripts/speed-to-lead.mjs")));
 });
 
 test("optional timers are enabled only after their flag; the wa-capi timer's enablement is left as the host has it", () => {

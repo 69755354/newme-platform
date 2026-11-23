@@ -984,6 +984,8 @@ MANAGED=(
   /etc/systemd/system/newme-daily-brief.timer
   /etc/systemd/system/newme-lead-reminder.service
   /etc/systemd/system/newme-lead-reminder.timer
+  /etc/systemd/system/newme-speed-to-lead.service
+  /etc/systemd/system/newme-speed-to-lead.timer
   /etc/systemd/system/newme-weekly-ad-review.service
   /etc/systemd/system/newme-weekly-ad-review.timer
 )
@@ -1250,6 +1252,7 @@ for ops_unit in infra/backup/newme-restore-drill.service infra/backup/newme-rest
   infra/systemd/newme-meta-crm-send.service infra/systemd/newme-meta-crm-send.timer \
   infra/systemd/newme-daily-brief.service infra/systemd/newme-daily-brief.timer \
   infra/systemd/newme-lead-reminder.service infra/systemd/newme-lead-reminder.timer \
+  infra/systemd/newme-speed-to-lead.service infra/systemd/newme-speed-to-lead.timer \
   infra/systemd/newme-weekly-ad-review.service infra/systemd/newme-weekly-ad-review.timer; do
   install -D -o root -g root -m 0644 "$ROOT/$ops_unit" "/etc/systemd/system/${ops_unit##*/}"
 done
@@ -1318,6 +1321,8 @@ fi
 for brief_timer in newme-daily-brief.timer newme-lead-reminder.timer; do
   systemctl enable --now "$brief_timer" || echo "WARNING: $brief_timer could not be enabled" >&2
 done
+# newme-speed-to-lead.timer is installed but deliberately NOT enabled here: enabling it is a separate, explicit step
+# (systemctl enable --now newme-speed-to-lead.timer), and the job still needs NEWME_SPEED_TO_LEAD_ENABLED=true in /etc/newme/speed-to-lead.env.
 echo "backup=$BACKUP rollback=sudo bash $ROOT/scripts/rollback-systemd-assets.sh $BACKUP"
 INSTALL_COMMITTED=1
 trap - EXIT HUP INT TERM

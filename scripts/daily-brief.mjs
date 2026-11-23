@@ -3,6 +3,10 @@
 // sends nothing and writes nothing. Scheduled with --execute by infra/systemd/newme-daily-brief.timer and
 // newme-lead-reminder.timer; with --execute each job still does nothing unless its switch is "true":
 //   NEWME_DAILY_BRIEF_ENABLED=true     08:05 Dubai brief to the alert recipients (Sam + Tanya)
+//   NEWME_BRIEF_FEEDBACK_SECTION_ENABLED=true  (default off) adds to the brief, per salesperson: leads assigned 1+ day ago whose Day 1 feedback
+//                                      is still empty, and leads assigned 3+ days ago whose newest feedback is only a "no answer" note, with the oldest
+//                                      lead refs. Read from the Lead Register and the sales sheets with the service account; names, counts and refs only.
+//                                      A failed sheet read drops the section; the brief still goes out.
 //   NEWME_LEAD_REMINDER_ENABLED=true   hourly 09:00-21:00 Dubai reminders (profiles.phone): (1) each salesperson with leads assigned
 //                                      over 24h ago and not contacted; (2) S35 ad leads (Meta form, WhatsApp click-to-chat, website)
 //                                      not contacted within 1 hour (outside 09:00-20:00 arrival: by 10:00), to the owner, or when
@@ -19,8 +23,11 @@ import { execFile } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { dubaiDateKey } from "../src/lib/dubai-time.mjs";
 import { fetchAllRows } from "../src/lib/fetch-all-rows.mjs";
+import { FEEDBACK_REGISTER, FEEDBACK_SALES_TABS, summarizeFeedbackBacklog } from "../src/lib/sales-feedback-brief.mjs";
 import {
   adReminderNotificationRows, buildAdReminder, buildBrief, buildReminder, countNewLeads, planAdReminders, selectAdUncontacted, groupUncontactedForBrief, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
   summarizeSpend, yesterdayBounds, DEFAULT_MAX_LEAD_AGE_DAYS,
@@ -134,7 +141,26 @@ export async function loadFollowupWaits(db, data, now) {
   } catch { return []; } // the brief goes out without this section rather than not at all
 }
 
-function sendWhatsapp({ key, text, number }) {
+/** Reads the Lead Register and the sales tabs (one batch each file) with the Google service account, same file and client as the drive sync. */
+async function readFeedbackGrids(env = process.env) {
+  const { createSheetsClient, loadServiceAccount } = await import("../src/lib/google-sheets-client.mjs");
+  const saFile = env.GOOGLE_SA_FILE || (existsSync("/etc/newme/google-sheets-sa.json") ? "/etc/newme/google-sheets-sa.json" : `${homedir()}/.config/newme/google-sheets-sa.json`);
+  const sheets = createSheetsClient({ serviceAccount: loadServiceAccount(saFile), maxRequests: 12 });
+  const registerGrid = await sheets.getValues(FEEDBACK_REGISTER.spreadsheetId, `'${FEEDBACK_REGISTER.tab}'!${FEEDBACK_REGISTER.range}`);
+  const salesGrids = [];
+  for (const t of FEEDBACK_SALES_TABS) salesGrids.push(await sheets.getValues(t.spreadsheetId, `'${t.tab}'!${t.range}`));
+  return { registerGrid, salesGrids };
+}
+
+/** Sales feedback backlog for the brief; null on any failure (the brief goes out without the section). */
+export async function loadFeedbackBacklog({ now, env = process.env, readGrids = readFeedbackGrids } = {}) {
+  try {
+    const { registerGrid, salesGrids } = await readGrids(env);
+    return summarizeFeedbackBacklog(registerGrid, salesGrids, { now });
+  } catch { return null; }
+}
+
+export function sendWhatsapp({ key, text, number }) {
   const env = { ...process.env };
   if (number) {
     // One salesperson only, and never the ops Telegram chat: a missing WhatsApp delivery is a failure, not a fallback.
@@ -160,7 +186,7 @@ function writeLedger(name, day, value) {
   }
 }
 
-export async function runBrief(db, { execute = false, now = new Date(), send = sendWhatsapp, env = process.env } = {}) {
+export async function runBrief(db, { execute = false, now = new Date(), send = sendWhatsapp, env = process.env, readGrids = readFeedbackGrids } = {}) {
   // Switch first: the timer is enabled by the installer, so a switched-off run must not even read the database
   // (a read error would fail the unit and fire newme-unit-alert every day).
   if (execute && !isTrue(env.NEWME_DAILY_BRIEF_ENABLED)) return { job: "brief", mode: "disabled", sent: false };
@@ -170,9 +196,10 @@ export async function runBrief(db, { execute = false, now = new Date(), send = s
   const plan = planFrom(data, now);
   const quotes = summarizeQuotes({ quotations: extras.quotations, sheetLeads: extras.sheetLeads, leadsById: extras.leadsById, now, excludedTestIds: data.excludedTestIds });
   const spend = summarizeSpend(extras.spendRows, counts.adLeads, { now });
-  const text = buildBrief({ dateKey: data.y.key, leads: counts, people: plan.people, groups: plan.groups, missingPhone: plan.missingPhone, quotes, spend, waits: extras.waits });
+  const feedback = isTrue(env.NEWME_BRIEF_FEEDBACK_SECTION_ENABLED) ? await loadFeedbackBacklog({ now, env, readGrids }) : null;
+  const text = buildBrief({ dateKey: data.y.key, leads: counts, people: plan.people, groups: plan.groups, missingPhone: plan.missingPhone, quotes, spend, waits: extras.waits, feedback });
   const summary = { job: "brief", mode: execute ? "execute" : "dry_run", date: data.y.key, new_leads: counts.total, uncontacted: plan.groups.reduce((s, g) => s + g.items.length, 0), unassigned: plan.groups.filter((g) => g.unassigned).reduce((s, g) => s + g.items.length, 0),
-    salespeople_with_uncontacted: plan.people.length, missing_phone: plan.missingPhone.length, quotes: quotes.count, spend_line: Boolean(spend), wa_waiting_people: extras.waits.length, chars: [...text].length, sent: false };
+    salespeople_with_uncontacted: plan.people.length, missing_phone: plan.missingPhone.length, quotes: quotes.count, spend_line: Boolean(spend), wa_waiting_people: extras.waits.length, feedback_no_day1: feedback ? feedback.noFeedbackTotal : null, feedback_stale_no_answer: feedback ? feedback.staleTotal : null, chars: [...text].length, sent: false };
   if (!execute) return summary;
   if (!isTrue(env.NEWME_DAILY_BRIEF_ENABLED)) return { ...summary, mode: "disabled" };
   const today = dubaiDateKey(now);

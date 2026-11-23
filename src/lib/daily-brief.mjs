@@ -16,6 +16,7 @@ import { isAdLead, costPerLead } from "./ads-leads.mjs";
 import { isSystemAccount } from "./system-accounts.mjs";
 import { normalizePhone } from "./lead-contact.mjs";
 import { waitSectionText } from "./wa-wait.mjs";
+import { feedbackSectionText } from "./sales-feedback-brief.mjs";
 
 export const UNASSIGNED_LABEL = "未分配";
 export const MAX_TEXT_CHARS = 400;
@@ -251,7 +252,7 @@ export function clip(value, max = MAX_TEXT_CHARS) {
  * The brief, one line. data: { leads (countNewLeads), people (planReminders().people), missingPhone, quotes, spend }.
  * "需要注意" appears only when something is off.
  */
-export function buildBrief({ dateKey, leads, people = [], groups = null, missingPhone = [], quotes, spend, waits = [] }) {
+export function buildBrief({ dateKey, leads, people = [], groups = null, missingPhone = [], quotes, spend, waits = [], feedback = null }) {
   const channels = CHANNELS.map((c) => `${channelLabel(c)}${leads.byChannel[c]}`).join(" ");
   // groups (groupUncontactedForBrief) cover every uncontacted lead; people (planReminders) only those with a known salesperson.
   const shownGroups = groups ?? people.map((p) => ({ name: p.name, unassigned: false, items: p.items, oldest_hours: p.oldest_hours }));
@@ -264,7 +265,7 @@ export function buildBrief({ dateKey, leads, people = [], groups = null, missing
   if (silent.length) attention.push(`${silent.join("、")}昨日0条线索`);
   if (missingPhone.length) attention.push(`${missingPhone.map((p) => p.name).join("、")}无手机号，提醒未发`);
 
-  const build = (shown) => {
+  const build = (shown, level = "none") => {
     // The unassigned group is always spelled out, even when the list is cut short.
     const named = shownGroups.filter((g) => !g.unassigned), open = shownGroups.filter((g) => g.unassigned);
     const kept = [...named.slice(0, Math.max(0, shown - open.length)), ...open];
@@ -276,14 +277,20 @@ export function buildBrief({ dateKey, leads, people = [], groups = null, missing
     if (spend) parts.push(`广告花费AED ${money(spend.spend)}${spend.cpl === null ? "" : `，单条线索AED ${money(spend.cpl)}`}`);
     const waitText = waitSectionText(waits);
     if (waitText) parts.push(waitText);
+    const feedbackText = level === "none" ? "" : feedbackSectionText(feedback, level);
+    if (feedbackText) parts.push(feedbackText);
     if (attention.length) parts.push(`需要注意：${attention.join("；")}`);
     return parts.join("；");
   };
-  for (let shown = shownGroups.length; shown >= 3; shown -= 1) {
-    const candidate = build(shown);
-    if ([...candidate].length <= MAX_TEXT_CHARS) return candidate;
+  // The sales feedback section is the first thing given up when the text is too long: for each list length, full, then counts only, then dropped.
+  const levels = feedback?.people?.length ? ["full", "short", "none"] : ["none"];
+  for (let shown = shownGroups.length; shown >= Math.min(3, shownGroups.length); shown -= 1) {
+    for (const level of levels) {
+      const candidate = build(shown, level);
+      if ([...candidate].length <= MAX_TEXT_CHARS) return candidate;
+    }
   }
-  return clip(build(Math.min(3, shownGroups.length)));
+  return clip(build(Math.min(3, shownGroups.length), "none"));
 }
 
 /** One reminder for one salesperson: count plus customer first name, channel and age (at most five lines of detail). */

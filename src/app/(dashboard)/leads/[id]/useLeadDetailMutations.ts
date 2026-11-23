@@ -419,7 +419,8 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     });
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const reasons = Array.isArray(json?.reasons) ? json.reasons.join("; ") : "";
+      const reasonList = lang === "zh" && Array.isArray(json?.reasons_zh) ? json.reasons_zh : json?.reasons;
+      const reasons = Array.isArray(reasonList) ? reasonList.join("; ") : "";
       toast.error(reasons || (lang === "zh" ? json?.error_zh : undefined) || json?.error || t("common.saveFailed"));
       return false;
     }

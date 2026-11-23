@@ -7,7 +7,9 @@ export async function latestQuotationAmount(db, leadId) {
     .eq("lead_id", leadId).not("status", "in", "(rejected,expired)").order("created_at", { ascending: false }).limit(20);
   if (!error && Array.isArray(data)) {
     for (const row of data) {
-      const currency = row?.currency == null ? "AED" : String(row.currency).trim().toUpperCase();
+      // Exactly the database rule (coalesce(currency, 'AED') = 'AED'): no trimming and no case folding, so " aed" or "Aed" is
+      // not AED here either and this module never reports a value the trigger that keeps leads.quotation_value ignored.
+      const currency = row?.currency ?? "AED";
       const value = Number(row?.total_amount);
       if (currency === "AED" && Number.isFinite(value) && value > 0) return { value, currency: "AED" };
     }

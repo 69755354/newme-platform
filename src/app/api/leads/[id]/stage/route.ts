@@ -11,6 +11,7 @@ import { evaluateFirstContactGate, isCompleteContact } from "@/lib/first-contact
 import { PIPELINE_STAGES } from "@/shared/kanban/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { enqueueMetaCrmFunnelBetween } from "@/lib/meta-crm-events";
+import { stageErrorZh, stageReasonsZh } from "@/lib/stage-error-zh.mjs";
 import { ensureWonAmount, revertWonAmount } from "@/lib/won-amount.mjs";
 import { enqueueWhatsAppPurchaseForLead } from "@/lib/whatsapp-capi.mjs";
 import { enqueueWebsitePurchaseForLead, enqueueWebsiteQuoteForProgress, enqueueWhatsAppProgressWithDelivery } from "@/lib/website-capi-valued";
@@ -20,6 +21,16 @@ const VALID_STAGES = new Set([
   "won",
   "lost",
 ]);
+
+// Every rejection also carries its Chinese wording (error_zh, reasons_zh) so the Chinese screens never show raw English.
+function withChineseError(body: Record<string, unknown>): Record<string, unknown> {
+  if (typeof body.error !== "string") return body;
+  return {
+    ...body,
+    error_zh: typeof body.error_zh === "string" ? body.error_zh : stageErrorZh(body.error),
+    ...(Array.isArray(body.reasons) ? { reasons_zh: stageReasonsZh(body.reasons) } : {}),
+  };
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -31,7 +42,7 @@ export async function PATCH(
     const context = await getRequestAuthContext(req);
     const { supabase } = context;
     const respond = (body: Record<string, unknown>, init?: ResponseInit) =>
-      applyRequestAuthCookies(context, NextResponse.json(body, init));
+      applyRequestAuthCookies(context, NextResponse.json(withChineseError(body), init));
 
     const body = await req.json();
     const stage = String(body?.stage ?? "").trim();
@@ -129,6 +140,12 @@ export async function PATCH(
       return respond({ error: message }, { status });
     }
 
+    // A lost lead keeps its reason (the note) in leads.lost_reason so the detail page shows it; set only while empty, best effort.
+    if (stage === "lost" && (updated as { idempotent_replay?: unknown })?.idempotent_replay !== true) {
+      try { await supabaseAdmin.from("leads").update({ lost_reason: note.slice(0, 1000) }).eq("id", leadId).is("lost_reason", null); }
+      catch { /* the stage change already committed; the note is also in the audit trail */ }
+    }
+
     // Meta CRM feedback is best-effort and queued server-side; it never blocks
     // or fails a salesperson's stage change.
     // The column is read separately and tolerantly so this route keeps working
@@ -173,6 +190,6 @@ export async function PATCH(
       },
       "stage route error",
     );
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error", error_zh: stageErrorZh("Internal server error") }, { status: 500 });
   }
 }

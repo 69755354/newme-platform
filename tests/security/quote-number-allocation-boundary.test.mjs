@@ -322,3 +322,48 @@ test("both server quote entry points delegate allocation and select the inserted
     assert.ok(returnedFields.some((node) => node.name.text === "quote_no"), `${relativePath} does not consume returned quote.quote_no`);
   }
 });
+
+// S40: the browser screens never write quotations themselves. Negative twin of the test above: the same AST walk (and a
+// broader one that also catches upsert, any call shape, single or double quoted table name) finds nothing in the UI files.
+const QUOTE_UI_FILES = [
+  "src/app/(dashboard)/quotes/quote-calculator.tsx",
+  "src/app/(dashboard)/quotes/quote-wizard.tsx",
+  "src/app/(dashboard)/quotes/quotes-client.tsx",
+  "src/app/(dashboard)/quotes/quick-quote-dialog.tsx",
+];
+
+function quotationWriteCalls(sourceFile) {
+  // from("quotations").insert(...) / .upsert(...) with either quote style, directly or later in the same chain.
+  return visit(sourceFile, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
+    if (!["insert", "upsert"].includes(node.expression.name.text)) return false;
+    let receiver = node.expression.expression;
+    while (receiver) {
+      if (ts.isCallExpression(receiver) && ts.isPropertyAccessExpression(receiver.expression)) {
+        if (receiver.expression.name.text === "from" && receiver.arguments.length === 1
+          && (ts.isStringLiteral(receiver.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(receiver.arguments[0]))
+          && receiver.arguments[0].text === "quotations") return true;
+        receiver = receiver.expression.expression;
+      } else if (ts.isPropertyAccessExpression(receiver)) receiver = receiver.expression;
+      else break;
+    }
+    return false;
+  });
+}
+
+test("the quote UI files contain no quotations insert or upsert (the server routes are the only writers)", () => {
+  for (const relativePath of QUOTE_UI_FILES) {
+    const sourceFile = parse(relativePath);
+    assert.equal(quotationInsertChains(sourceFile).length, 0, `${relativePath} has an insert-select-single quotation write`);
+    assert.equal(quotationWriteCalls(sourceFile).length, 0, `${relativePath} inserts or upserts into quotations`);
+  }
+});
+
+test("the negative detector does catch insert and upsert, with single or double quotes", () => {
+  const sample = (code) => ts.createSourceFile("sample.tsx", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  assert.equal(quotationWriteCalls(sample(`db.from("quotations").insert({ a: 1 });`)).length, 1);
+  assert.equal(quotationWriteCalls(sample(`db.from('quotations').upsert({ a: 1 });`)).length, 1);
+  assert.equal(quotationWriteCalls(sample(`await supabase.from("quotations").insert(x).select("id").single();`)).length, 1);
+  assert.equal(quotationInsertChains(sample(`db.from("quotations").insert(x).select("id, quote_no").single();`)).length, 1);
+  assert.equal(quotationWriteCalls(sample(`db.from("leads").insert({ a: 1 }); db.from("quotations").select("id");`)).length, 0);
+});

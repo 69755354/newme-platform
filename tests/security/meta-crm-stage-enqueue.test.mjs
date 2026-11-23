@@ -74,6 +74,7 @@ function loadStageRoute({ rpcResult, enqueued }) {
     "@/shared/kanban/types": { PIPELINE_STAGES: [{ key: "contacted" }, { key: "requirement_confirmed" }] },
     // S36: the won amount step is covered by tests/unit/s36-won-route.test.mjs; inert here.
     "@/lib/won-amount.mjs": { ensureWonAmount: async () => ({ ok: true, amount: { value: 1, currency: "AED" }, wrote: false }) },
+    "@/lib/stage-error-zh.mjs": { stageErrorZh: (m) => `zh:${m}`, stageReasonsZh: (r) => r },
     "@/lib/meta-crm-events": { enqueueMetaCrmStageEvent: async (_db, lead, stage) => { enqueued.push([lead.id, stage]); return "queued"; } },
     "@/lib/whatsapp-capi.mjs": waStub,
     "@/lib/website-capi-valued": valuedStub,

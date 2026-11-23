@@ -146,8 +146,8 @@ DECLARE
   actor_id uuid := auth.uid();
   actor_role text;
   current_lead public.leads%ROWTYPE;
-  current_milestone public.lead_milestones%ROWTYPE;
-  recompleted public.lead_milestones%ROWTYPE;
+  current_milestone record;
+  recompleted record;
   target_order integer;
   clean_notes text := btrim(COALESCE(p_notes, ''));
 BEGIN

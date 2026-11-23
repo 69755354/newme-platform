@@ -299,7 +299,7 @@
       "$comment": "S39 (OS fix S39): six existing routines replaced in place (stage sequence trigger, first-contact gate trigger, first-contact milestone trigger, milestone order trigger, transition_lead_stage, sync_advance_lead_stage_from_sheet): a stage or milestone may be skipped going forward, leaving 'new' needs one complete contact record and no quality rating. Same signatures, security modes and pinned search_path; no table, column, policy, trigger or grant changes.",
       "version": "20261123100000",
       "file": "20261123100000_s39_stage_rules_relaxed.sql",
-      "sha256": "da94cb3ece0e769074abc3194bad9419714bf88009bc84aef676abdf95d2de12"
+      "sha256": "bbd3521912ff1abae6bd1975c53a528bcd69c250eb935c519d8486fe3e40cea0"
     }
   ],
   "companions": [

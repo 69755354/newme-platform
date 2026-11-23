@@ -30,7 +30,7 @@ export default function LeadDispatchCard({ lead, t, role }: Props) {
   return (
     <Card data-testid="lead-dispatch-card">
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm"><Route className="h-4 w-4 text-copper-400" />{t("dispatch.card.title")}</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-sm"><Route className="h-4 w-4 text-copper-700" />{t("dispatch.card.title")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1 text-xs">
         <span className={`inline-flex rounded px-1.5 py-0.5 ${STATUS_TONE[state.status] ?? ""}`}>{t(`dispatch.status.${state.status}`)}</span>

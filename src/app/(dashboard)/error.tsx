@@ -13,7 +13,7 @@ export default function DashboardError({
   return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
       <div className="w-12 h-12 rounded-full bg-rose-500/10 flex items-center justify-center">
-        <span className="text-rose-400 text-lg">!</span>
+        <span className="text-rose-700 text-lg">!</span>
       </div>
       <div className="text-center space-y-1">
         <p className="text-sm font-medium text-foreground">{t("common.somethingWentWrong")}</p>

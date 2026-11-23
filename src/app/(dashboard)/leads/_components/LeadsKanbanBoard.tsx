@@ -199,7 +199,7 @@ export const LeadsKanbanBoard = forwardRef<HTMLDivElement, Props>(function Leads
                     </span>
                   </div>
                   {totalVal > 0 && (
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {fmtAED(totalVal)}
                     </span>
                   )}

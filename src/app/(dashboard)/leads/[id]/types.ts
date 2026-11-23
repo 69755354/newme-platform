@@ -10,9 +10,7 @@ import { PIPELINE_STAGES } from "@/shared/kanban/types";
 // ─── Stage data ───
 export const STAGES: string[] = PIPELINE_STAGES.map((stage) => stage.key);
 
-export const STAGE_COLORS: Record<string, string> = Object.fromEntries(
-  PIPELINE_STAGES.map((stage) => [stage.key, stage.color])
-);
+export { STAGE_CLASS as STAGE_COLORS } from "@/lib/status-palette";
 
 export const PROBABILITIES = [10, 30, 50, 70, 90];
 

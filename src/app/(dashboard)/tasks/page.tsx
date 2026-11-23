@@ -31,16 +31,16 @@ const PAGE_SIZE = 20;
 const STATUS_VALUES = ["all", "pending", "completed", "cancelled"];
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
-  pending: { bg: "bg-amber-500/10", text: "text-amber-400", icon: <Clock className="size-3" /> },
-  completed: { bg: "bg-emerald-500/10", text: "text-emerald-400", icon: <CheckCircle2 className="size-3" /> },
+  pending: { bg: "bg-amber-500/10", text: "text-amber-700", icon: <Clock className="size-3" /> },
+  completed: { bg: "bg-emerald-500/10", text: "text-emerald-700", icon: <CheckCircle2 className="size-3" /> },
   cancelled: { bg: "bg-gray-500/10", text: "text-muted-foreground", icon: <XCircle className="size-3" /> },
 };
 
 const PRIORITY_STYLES: Record<string, string> = {
   low: "bg-slate-500/10 text-slate-400",
-  medium: "bg-blue-500/10 text-blue-400",
-  high: "bg-orange-500/10 text-orange-400",
-  urgent: "bg-rose-500/10 text-rose-400",
+  medium: "bg-blue-500/10 text-blue-700",
+  high: "bg-orange-500/10 text-orange-700",
+  urgent: "bg-rose-500/10 text-rose-700",
 };
 
 /* ─── Types ─── */
@@ -257,7 +257,7 @@ export default function TasksPage() {
                             : "—"}
                         </TableCell>
                         <TableCell>
-                          <span className={overdue ? "text-rose-400 font-medium" : ""}>
+                          <span className={overdue ? "text-rose-700 font-medium" : ""}>
                             {overdue && <AlertTriangle className="size-3 inline mr-1" />}
                             {formatDate(task.due_at, lang === "zh" ? "zh-CN" : "en-US")}
                           </span>

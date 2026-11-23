@@ -4,8 +4,10 @@
  * Pure formatting helpers for the leads dashboard. Zero business logic, zero
  * React runtime. Two utilities:
  *   - daysSince: integer day count from an ISO date string (null → null)
- *   - fmtAED: compact AED currency (M / K / full) with empty string for zero
+ *   - fmtAED: AED with thousands separators with empty string for zero
  */
+
+import { formatAED } from "@/lib/display-format.mjs";
 
 /** Whole days elapsed since `d`. Returns null when `d` is null. */
 export function daysSince(d: string | null): number | null {
@@ -13,10 +15,8 @@ export function daysSince(d: string | null): number | null {
   return Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000);
 }
 
-/** Compact AED formatter: "" for zero/null, "AED 1.2M" / "AED 45K" / "AED 9,999" otherwise. */
+/** AED formatter: "" for zero/null, "AED 12,345" (whole dirhams) otherwise. */
 export function fmtAED(v: number | null | undefined): string {
   if (v == null || v === 0) return "";
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }

@@ -61,14 +61,14 @@ export default function LeadFoldingPanel({
   t,
   lang,
 }: Props) {
-  const PANELS: { key: string; icon: string; title: string }[] = [
-    { key: "project_info", icon: "📋", title: t("leadDetail.projectInfoTitle") },
-    { key: "smart_req", icon: "🎯", title: t("leadDetail.smartReqTitle") },
-    { key: "quotation", icon: "💰", title: t("leadDetail.quotationTitle") },
-    { key: "drawings", icon: "📄", title: t("leadDetail.drawingsTitle") },
-    { key: "contract", icon: "📎", title: t("leadDetail.contractTitle") },
-    { key: "project_exec", icon: "🏗️", title: t("leadDetail.projectTitle") },
-    { key: "import_raw", icon: "🗂️", title: t("leadDetail.importRawTitle") },
+  const PANELS: { key: string; title: string }[] = [
+    { key: "project_info", title: t("leadDetail.projectInfoTitle") },
+    { key: "smart_req", title: t("leadDetail.smartReqTitle") },
+    { key: "quotation", title: t("leadDetail.quotationTitle") },
+    { key: "drawings", title: t("leadDetail.drawingsTitle") },
+    { key: "contract", title: t("leadDetail.contractTitle") },
+    { key: "project_exec", title: t("leadDetail.projectTitle") },
+    { key: "import_raw", title: t("leadDetail.importRawTitle") },
   ];
 
   // Gate: first_contact must be completed before bottom tabs are accessible
@@ -77,7 +77,7 @@ export default function LeadFoldingPanel({
 
   return (
     <div className="space-y-2">
-      {PANELS.map(({ key, icon, title }) => {
+      {PANELS.map(({ key, title }) => {
         const isOpen = openPanel === key;
         const isGated = !firstContactDone && key !== "project_info" && key !== "import_raw";
         return (
@@ -94,7 +94,6 @@ export default function LeadFoldingPanel({
               className={cn("w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors", isGated && "cursor-not-allowed")}
             >
               <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <span className="text-base leading-none">{icon}</span>
                 {title}
               </span>
               <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
@@ -174,10 +173,10 @@ export default function LeadFoldingPanel({
                         {t("leadDetail.undo")}
                       </Button>
                       {projectInfoStatus === "saved" && (
-                        <span className="text-xs text-emerald-400">{t("leadDetail.saved")}</span>
+                        <span className="text-xs text-emerald-700">{t("leadDetail.saved")}</span>
                       )}
                       {projectInfoStatus === "error" && (
-                        <span className="text-xs text-rose-400">{t("leadDetail.saveFailed")}</span>
+                        <span className="text-xs text-rose-700">{t("leadDetail.saveFailed")}</span>
                       )}
                     </div>
                   </div>

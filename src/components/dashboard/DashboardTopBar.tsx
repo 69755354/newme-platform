@@ -49,7 +49,7 @@ export function DashboardTopBar({
       {authError && (
         <button
           onClick={() => window.location.reload()}
-          className="text-xs text-rose-400 hover:text-rose-300 mr-2"
+          className="text-xs text-rose-700 hover:text-rose-700 mr-2"
         >
           {t("common.connectionErrorRetry")}
         </button>
@@ -62,12 +62,12 @@ export function DashboardTopBar({
         </div>
         <div className="text-right">
           <p className="text-xs font-medium text-foreground leading-tight">{userEmail || "..."}</p>
-          <p className="text-[10px] text-muted-foreground leading-tight">{roleLabel}</p>
+          <p className="text-xs text-muted-foreground leading-tight">{roleLabel}</p>
         </div>
       </div>
       <button
         onClick={handleLogout}
-        className="text-[10px] text-muted-foreground hover:text-rose-400 transition-colors px-2 py-1 rounded hover:bg-accent"
+        className="text-xs text-muted-foreground hover:text-rose-700 transition-colors px-2 py-1 rounded hover:bg-accent"
       >
         <LogOut className="w-3.5 h-3.5" />
       </button>

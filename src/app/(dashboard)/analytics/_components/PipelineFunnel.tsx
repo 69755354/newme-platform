@@ -58,14 +58,14 @@ function FunnelBar({
     <div className="flex items-center gap-3 py-0.5">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[11px] font-medium text-foreground truncate">
+          <span className="text-xs font-medium text-foreground truncate">
             {stage.label}
           </span>
-          <span className="text-[10px] text-muted-foreground shrink-0">
+          <span className="text-xs text-muted-foreground shrink-0">
             {stage.count}
           </span>
           {stage.isBottleneck && !isLost && (
-            <TrendingDown className="w-3 h-3 text-rose-400 shrink-0" />
+            <TrendingDown className="w-3 h-3 text-rose-700 shrink-0" />
           )}
         </div>
         <div className="w-full h-2 rounded-full bg-muted/20 overflow-hidden">
@@ -77,13 +77,13 @@ function FunnelBar({
       </div>
       {showConversion && (
         <div className="min-w-[60px] text-right">
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {stage.conversionToNext !== null ? fmtPct(stage.conversionToNext) : "—"}
           </span>
         </div>
       )}
       <div className="min-w-[40px] text-right">
-        <span className="text-[10px] text-muted-foreground">{fmtDays(stage.avgDaysInStage)}</span>
+        <span className="text-xs text-muted-foreground">{fmtDays(stage.avgDaysInStage)}</span>
       </div>
     </div>
   );
@@ -143,7 +143,7 @@ export default function PipelineFunnel() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-48 text-rose-400 text-sm">
+      <div className="flex items-center justify-center h-48 text-rose-700 text-sm">
         {error}
       </div>
     );
@@ -159,13 +159,13 @@ export default function PipelineFunnel() {
             {isManagement ? t("analytics.pipelineFunnel") : `${t("analytics.myLeads")} ${t("analytics.pipelineFunnel")}`}
           </h2>
           {data && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {data.totalLeads} {t("analytics.totalLeadsLower") || t("analytics.leadsLower")}
             </span>
           )}
         </div>
         {bottleneck && (
-          <div className="flex items-center gap-1 text-[11px] text-red-400">
+          <div className="flex items-center gap-1 text-xs text-red-700">
             <AlertTriangle className="w-3 h-3" />
             {t("analytics.bottleneck")} "{bottleneck.label}"
           </div>
@@ -175,7 +175,7 @@ export default function PipelineFunnel() {
       {/* Funnel visualization */}
       <div className="rounded-xl border border-border/50 bg-card/50 p-3 space-y-0.5">
         {/* Column headers */}
-        <div className="flex items-center gap-3 pb-2 mb-1 border-b border-border/30 text-[10px] text-muted-foreground uppercase tracking-wider">
+        <div className="flex items-center gap-3 pb-2 mb-1 border-b border-border/30 text-xs text-muted-foreground uppercase tracking-wider">
           <div className="flex-1">{t("analytics.stage")}</div>
           <div className="min-w-[60px] text-right">{t("analytics.conv")}</div>
           <div className="min-w-[40px] text-right">{t("analytics.avg")}</div>
@@ -194,7 +194,7 @@ export default function PipelineFunnel() {
 
       {/* Legend: lost stage small */}
       {data?.stages.find(s => s.key === "lost") && (
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground px-3">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground px-3">
           <span className="text-gray-400">{t("analytics.lostColon")}</span>
           <span className="font-semibold">{data.stages.find(s => s.key === "lost")?.count || 0}</span>
         </div>
@@ -206,7 +206,7 @@ export default function PipelineFunnel() {
           <div className="flex items-center gap-2">
             <div className="w-1 h-4 rounded-full bg-amber-500" />
             <h3 className="text-xs font-semibold text-foreground">{t("analytics.stuckLeads")}</h3>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               ({data.stuckLeads.length})
             </span>
           </div>
@@ -222,13 +222,13 @@ export default function PipelineFunnel() {
                   <span className="text-xs font-medium truncate">
                     {lead.customer_name || t("analytics.unnamed")}
                   </span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
+                  <span className="text-xs text-muted-foreground shrink-0">
                     ({lead.stage_label})
                   </span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <Clock className="w-2.5 h-2.5 text-amber-400" />
-                  <span className="text-[10px] text-amber-400 font-medium">
+                  <Clock className="w-2.5 h-2.5 text-amber-700" />
+                  <span className="text-xs text-amber-700 font-medium">
                     {lead.days_in_stage}d
                   </span>
                   <ChevronRight className="w-3 h-3 text-muted-foreground" />
@@ -236,7 +236,7 @@ export default function PipelineFunnel() {
               </button>
             ))}
             {data.stuckLeads.length > 5 && (
-              <p className="text-[10px] text-muted-foreground text-center pt-1">
+              <p className="text-xs text-muted-foreground text-center pt-1">
                 +{data.stuckLeads.length - 5} {t("analytics.more")}
               </p>
             )}
@@ -260,7 +260,7 @@ export default function PipelineFunnel() {
                 return (
                   <div key={stageKey} className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-red-500/5 border border-red-500/10">
                     <span className="text-xs text-muted-foreground">{stageLabel}</span>
-                    <span className="text-xs font-medium text-red-400">{count} {t("analytics.lost")}</span>
+                    <span className="text-xs font-medium text-red-700">{count} {t("analytics.lost")}</span>
                   </div>
                 );
               })}

@@ -15,7 +15,7 @@ export default function LeadWaitingBadge({ inboundAt, t }: { inboundAt: string; 
     ? t("s37.wa.waitingMinutes").replace("{n}", String(Math.max(1, Math.round(waitingMs / 60_000))))
     : t("s37.wa.waitingHours").replace("{n}", String(Math.floor(waitingMs / 3_600_000)));
   return (
-    <span data-testid="whatsapp-waiting" className="text-xs px-2 py-0.5 rounded font-medium bg-amber-500/10 text-amber-400">
+    <span data-testid="whatsapp-waiting" className="text-xs px-2 py-0.5 rounded font-medium bg-amber-500/10 text-amber-700">
       {label}
     </span>
   );

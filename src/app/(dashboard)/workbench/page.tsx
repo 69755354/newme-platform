@@ -1,5 +1,6 @@
 "use client"
 
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext"
 import { localizeServerText } from "@/lib/i18n/server-text.mjs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -75,13 +76,13 @@ interface WorkbenchData {
 }
 
 const milestoneColors: Record<string, string> = {
-  new: "bg-blue-500",
-  contacted: "bg-cyan-500",
-  qualified: "bg-violet-500",
-  proposal: "bg-amber-500",
-  negotiation: "bg-orange-500",
-  won: "bg-emerald-500",
-  lost: "bg-rose-500",
+  new: "bg-slate-400",
+  contacted: "bg-slate-500",
+  qualified: "bg-slate-500",
+  proposal: "bg-slate-600",
+  negotiation: "bg-slate-600",
+  won: "bg-emerald-600",
+  lost: "bg-stone-400",
 }
 
 import { fmtDubai } from "@/lib/utils";
@@ -275,12 +276,12 @@ export default function WorkbenchPage() {
                           {item.inbox_group && item.inbox_group !== "later" && (
                             <span
                               data-testid={`inbox-group-${item.inbox_group}`}
-                              className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
                                 item.inbox_group === "overdue"
-                                  ? "bg-red-100 text-red-700"
+                                  ? "bg-red-100 text-red-800"
                                   : item.inbox_group === "new"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-amber-100 text-amber-700"
+                                    ? "bg-slate-100 text-slate-700"
+                                    : "bg-slate-100 text-slate-700"
                               }`}
                             >
                               {t(`workbench.group.${item.inbox_group}`)}
@@ -288,7 +289,7 @@ export default function WorkbenchPage() {
                           )}
                           {item.current_milestone && (
                             <span
-                              className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium capitalize text-white ${
+                              className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium capitalize text-white ${
                                 milestoneColors[item.current_milestone] ||
                                 "bg-slate-400"
                               }`}
@@ -318,7 +319,7 @@ export default function WorkbenchPage() {
                         </div>
                         {item.next_action && (
                           <span className="line-clamp-1 text-xs text-slate-600">
-                            {item.next_action}
+                            {translatedOrRaw(t, `leads.nextActionLabels.${item.next_action}`, localizeServerText(item.next_action, lang))}
                           </span>
                         )}
                       </Link>
@@ -354,7 +355,7 @@ export default function WorkbenchPage() {
                           {localizeServerText(task.title, lang)}
                         </span>
                         {task.source && (
-                          <Badge variant="secondary" className="shrink-0 text-[10px]">
+                          <Badge variant="secondary" className="shrink-0 text-xs">
                             {taskSourceLabel(task.source)}
                           </Badge>
                         )}
@@ -559,12 +560,12 @@ export default function WorkbenchPage() {
                           </span>
                           <span className="flex shrink-0 items-center gap-1">
                             {isOverdue && (
-                              <Badge className="bg-amber-500 text-[10px] text-white">
+                              <Badge className="bg-amber-100 text-xs text-amber-800">
                                 {t("analytics.daysShort").replace("{n}", String(a.days_overdue))}
                               </Badge>
                             )}
                             {a.no_answer_flag && (
-                              <Badge className="bg-red-500 text-[10px] text-white">
+                              <Badge className="bg-red-100 text-xs text-red-800">
                                 {t("workbench.noAnswer")}
                               </Badge>
                             )}

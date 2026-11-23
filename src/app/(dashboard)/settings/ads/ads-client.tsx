@@ -50,19 +50,19 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-emerald-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.validLeads")}</p>
-          <p className="text-2xl font-bold text-emerald-400">{totals.valid}</p>
+          <p className="text-2xl font-bold text-emerald-700">{totals.valid}</p>
           <p className="text-xs text-muted-foreground">
             {t("ads.validOfRated").replace("{valid}", String(totals.valid)).replace("{rated}", String(totals.rated)).replace("{unrated}", String(totals.unrated))}
           </p>
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-purple-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.quoted")}</p>
-          <p className="text-2xl font-bold text-purple-400">{totals.quoted}</p>
+          <p className="text-2xl font-bold text-purple-700">{totals.quoted}</p>
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-emerald-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.won")}</p>
-          <p className="text-2xl font-bold text-emerald-400">{totals.won}</p>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-2xl font-bold text-emerald-700">{totals.won}</p>
+          <p className="text-xs text-muted-foreground">
             {totals.total > 0
               ? `${Math.round((totals.won / totals.total) * 100)}%`
               : ""}
@@ -70,7 +70,7 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-copper-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.value")}</p>
-          <p className="text-2xl font-bold text-copper-400">
+          <p className="text-2xl font-bold text-copper-700">
             {fmtAED(totals.value)}
           </p>
         </div>
@@ -136,9 +136,9 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
                           validRate === null
                             ? "text-muted-foreground"
                             : validRate >= 50
-                            ? "text-emerald-400"
+                            ? "text-emerald-700"
                             : validRate >= 20
-                              ? "text-amber-400"
+                              ? "text-amber-700"
                               : "text-muted-foreground"
                         }
                       >
@@ -148,23 +148,23 @@ export default function AdsClient({ sorted, totals }: AdsClientProps) {
                     <td className="text-right py-3 px-3 text-muted-foreground">{g.unrated}</td>
                     <td className="text-right py-3 px-3">{g.waAd > 0 ? g.waAd : "—"}</td>
                     <td className="text-right py-3 px-3">{g.quoted}</td>
-                    <td className="text-right py-3 px-3 font-semibold text-emerald-400">
+                    <td className="text-right py-3 px-3 font-semibold text-emerald-700">
                       {g.won}
                     </td>
                     <td className="text-right py-3 px-3">
                       <span
                         className={
                           convRate >= 20
-                            ? "text-emerald-400"
+                            ? "text-emerald-700"
                             : convRate >= 5
-                              ? "text-amber-400"
+                              ? "text-amber-700"
                               : "text-muted-foreground"
                         }
                       >
                         {convRate}%
                       </span>
                     </td>
-                    <td className="text-right py-3 px-3 text-copper-400 font-medium">
+                    <td className="text-right py-3 px-3 text-copper-700 font-medium">
                       {fmtAED(g.value)}
                     </td>
                   </tr>

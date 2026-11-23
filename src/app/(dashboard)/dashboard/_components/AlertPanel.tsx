@@ -38,7 +38,7 @@ export default function AlertPanel({ count }: { count?: number }) {
     <button
       type="button"
       onClick={() => router.push("/leads?alert=overdue")}
-      className="w-full text-left text-sm font-medium text-amber-300 hover:text-amber-200 transition-colors"
+      className="w-full text-left text-sm font-medium text-amber-700 hover:text-amber-200 transition-colors"
     >
       {t("s37.alertLine").replace("{n}", String(total))} →
     </button>

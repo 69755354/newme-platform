@@ -77,7 +77,7 @@ function WoWBadge({ change, t }: { change: WoWChange; t: (path: string) => strin
     <span
       className={cn(
         "inline-flex items-center gap-1 text-xs font-medium",
-        isUp ? "text-emerald-400" : "text-rose-400"
+        isUp ? "text-emerald-700" : "text-rose-700"
       )}
     >
       {isUp ? (
@@ -131,7 +131,7 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
 
   if (error) {
     return (
-      <div className="py-8 text-center text-sm text-rose-400">
+      <div className="py-8 text-center text-sm text-rose-700">
         {error}
       </div>
     );
@@ -172,27 +172,27 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 yAxisId="left"
-                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 yAxisId="right"
                 orientation="right"
-                tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 axisLine={false}
                 tickLine={false}
                 domain={[0, "auto"]}
               />
               <Tooltip />
               <Legend
-                wrapperStyle={{ fontSize: 10, paddingTop: 8 }}
+                wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
                 iconSize={8}
               />
               <Bar
@@ -238,7 +238,7 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
               key={card.label}
               className="p-3 rounded-lg border border-border/50 bg-card/30"
             >
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
                 {card.label}
               </p>
               <p className="text-sm font-bold text-foreground mt-0.5">

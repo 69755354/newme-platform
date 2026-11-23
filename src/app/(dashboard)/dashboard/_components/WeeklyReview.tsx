@@ -183,10 +183,10 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
         {periodLeads && (periodLeads.count ?? 0) > 0 ? <p className="mb-3 text-sm">{i18n("leadQuality")}: {periodLeads.count ?? 0}, {i18n("qGood")}: {periodLeads?.byQuality?.good ?? 0}, {i18n("qNormal")}: {periodLeads?.byQuality?.normal ?? 0}, {i18n("qPending")}: {periodLeads?.byQuality?.pending ?? 0}</p>
           : <p className="mb-3 text-sm text-muted-foreground">{i18n("noData")}</p>}
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-          {risk(i18n("red"), redCount, "bg-red-500/10 text-red-400")}
-          {risk(i18n("yellow"), yellowCount, "bg-amber-500/10 text-amber-400")}
-          {risk(i18n("highProbStale"), highProbStale, "bg-amber-500/10 text-amber-400")}
-          {risk(i18n("pendingStale"), pendingStale, "bg-amber-500/10 text-amber-400")}
+          {risk(i18n("red"), redCount, "bg-red-500/10 text-red-700")}
+          {risk(i18n("yellow"), yellowCount, "bg-amber-500/10 text-amber-700")}
+          {risk(i18n("highProbStale"), highProbStale, "bg-amber-500/10 text-amber-700")}
+          {risk(i18n("pendingStale"), pendingStale, "bg-amber-500/10 text-amber-700")}
         </div>
         <p className="mt-3 text-sm text-muted-foreground">{i18n("recovery")} {recoveryCount ?? 0} · {i18n("transfer")} {transferCount ?? 0} · {i18n("review")} {reviewCount ?? 0}</p>
       </>}
@@ -195,12 +195,12 @@ export default function WeeklyReview(props: WeeklyReviewProps) {
     <div className="rounded-xl border border-border/50 bg-card/50 p-4">
       {title(i18n("actionTitle"))}
       {isLoading ? bars : <div className="space-y-3 text-sm">
-        {riskPoolCount !== null && <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-emerald-400">{i18n("riskPool")}: {riskPoolCount ?? 0} · {locale === "zh" ? "逾期跟进" : "Overdue follow-ups"}: {overdueFollowups.length}</div>}
+        {riskPoolCount !== null && <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-emerald-700">{i18n("riskPool")}: {riskPoolCount ?? 0} · {locale === "zh" ? "逾期跟进" : "Overdue follow-ups"}: {overdueFollowups.length}</div>}
         <div><p className="mb-1 font-medium">{i18n("todayFollowups")} ({todayFollowups.length})</p>
           {todayFollowups.length > 0 ? <ul className="space-y-1 text-muted-foreground">{todayFollowups.slice(0, 3).map((lead, index) => <li key={lead?.id ?? index}>{lead?.customer_name || (locale === "zh" ? "未命名客户" : "Unnamed customer")}</li>)}</ul>
             : <p className="text-muted-foreground">{locale === "zh" ? "今天无跟进" : "No follow-ups today"}</p>}</div>
         <div><p className="mb-1 font-medium">{i18n("topActions")}</p>
-          {actions.length > 0 ? <ul className="space-y-1">{actions.map((action, index) => <li key={action?.leadId ?? index}><Link className="text-copper-400 hover:underline" href={action?.leadId ? `/leads/${action.leadId}` : "/leads"}>{action?.customerName || (locale === "zh" ? "未命名客户" : "Unnamed customer")}</Link><span className="text-muted-foreground"> · {localizeServerText(action?.reason, locale) || i18n("noData")}</span></li>)}</ul>
+          {actions.length > 0 ? <ul className="space-y-1">{actions.map((action, index) => <li key={action?.leadId ?? index}><Link className="text-copper-700 hover:underline" href={action?.leadId ? `/leads/${action.leadId}` : "/leads"}>{action?.customerName || (locale === "zh" ? "未命名客户" : "Unnamed customer")}</Link><span className="text-muted-foreground"> · {localizeServerText(action?.reason, locale) || i18n("noData")}</span></li>)}</ul>
             : <p className="text-muted-foreground">{i18n("noData")}</p>}</div>
         {allEmpty && <p className="text-muted-foreground">{i18n("noData")}</p>}
       </div>}
@@ -293,7 +293,7 @@ function WeeklyReviewApi({ language }: { language: string }) {
         </div>
       </div>
       {loading ? bars : error ? (
-        <p className="py-4 text-sm text-red-400">{t("加载失败：", "Failed to load: ")}{error}</p>
+        <p className="py-4 text-sm text-red-700">{t("加载失败：", "Failed to load: ")}{error}</p>
       ) : l1Empty ? (
         <p className="py-4 text-sm text-muted-foreground">{t("暂无数据", "No data yet")}</p>
       ) : <>
@@ -339,9 +339,9 @@ function WeeklyReviewApi({ language }: { language: string }) {
                   <td className="px-3 py-2">{row.contacted}</td>
                   <td className="px-3 py-2">{row.pendingQuality}</td>
                   <td className="px-3 py-2">{row.stageMoved}</td>
-                  <td className="px-3 py-2 text-emerald-400">{row.won}</td>
+                  <td className="px-3 py-2 text-emerald-700">{row.won}</td>
                   <td className="px-3 py-2 text-muted-foreground">{row.lost}</td>
-                  <td className="pl-3 py-2 text-red-400">{row.overdueTasks}</td>
+                  <td className="pl-3 py-2 text-red-700">{row.overdueTasks}</td>
                 </tr>
               ))}
             </tbody>
@@ -364,7 +364,7 @@ function WeeklyReviewApi({ language }: { language: string }) {
             const key = row.leadId ?? `row-${i}`;
             const name = row.leadName || (locale === "zh" ? "未命名客户" : "Unnamed");
             const inner = (
-              <span className="text-copper-400 hover:underline">{name}</span>
+              <span className="text-copper-700 hover:underline">{name}</span>
             );
             return (
               <li key={key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -489,7 +489,7 @@ function WeeklyReviewPeriod({
       >
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-2xl font-bold">{value}</p>
-        <p className="text-[11px] text-muted-foreground">{periodTag}</p>
+        <p className="text-xs text-muted-foreground">{periodTag}</p>
       </div>
     );
   };
@@ -605,9 +605,9 @@ function WeeklyReviewPeriod({
                         <td className="px-3 py-2">{row.contacted}</td>
                         <td className="px-3 py-2">{row.quality_judged}</td>
                         <td className="px-3 py-2">{row.stage_advanced}</td>
-                        <td className="px-3 py-2 text-emerald-400">{row.won}</td>
+                        <td className="px-3 py-2 text-emerald-700">{row.won}</td>
                         <td className="px-3 py-2 text-muted-foreground">{row.lost}</td>
-                        <td className="px-3 py-2 text-red-400">{row.overdue_tasks}</td>
+                        <td className="px-3 py-2 text-red-700">{row.overdue_tasks}</td>
                         <td className="pl-3 py-2 text-xs text-muted-foreground">
                           {leads.length} {t("条", "leads")}
                         </td>
@@ -641,7 +641,7 @@ function WeeklyReviewPeriod({
                                     : "";
                                   return (
                                     <li key={lead.id} className="rounded-md border border-border/40 px-3 py-2">
-                                      <Link href={`/leads/${lead.id}`} className="font-medium text-copper-400 hover:underline">
+                                      <Link href={`/leads/${lead.id}`} className="font-medium text-copper-700 hover:underline">
                                         {lead.customer_name || (locale === "zh" ? "未命名客户" : "Unnamed")}
                                       </Link>
                                       <p className="mt-1 text-muted-foreground">

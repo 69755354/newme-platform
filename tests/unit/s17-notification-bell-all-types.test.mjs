@@ -39,11 +39,9 @@ test("the constraint parser sees the full type list", () => {
   for (const t of ["contract_approved", "contract_rejected", "contract_superseded", "follow_up_reminder"]) assert.ok(types.includes(t), t);
 });
 
-test("every constrained type has a bell icon and a label key", () => {
-  const icons = objectBody(bell, "TYPE_ICONS");
+test("every constrained type has a bell label key (S38: emoji icons removed)", () => {
   const labels = objectBody(bell, "TYPE_LABELS");
   for (const type of types) {
-    assert.match(icons, new RegExp(`\\b${type}: "[^"]+"`), `${type} icon`);
     assert.match(labels, new RegExp(`\\b${type}: "notifications\\.types\\.${type}"`), `${type} label key`);
   }
 });

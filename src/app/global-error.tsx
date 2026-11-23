@@ -17,7 +17,6 @@ export default function GlobalError({
       <body>
         <div className="min-h-screen flex items-center justify-center bg-[#F5F3EF] font-sans">
           <div className="max-w-md mx-auto p-8 text-center">
-            <div className="text-6xl mb-4">💥</div>
             <h1 className="text-xl font-semibold text-gray-800 mb-2">
               Application Error
             </h1>

@@ -373,7 +373,7 @@ export default function SettingsPage() {
   const activeUnassigned = metricLeads.filter(isActiveUnassignedLead).length;
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">{t("common.loading")}</div>;
-  if (error) return <div className="p-10 text-center text-rose-400">{t("common.error")}: {error} <button onClick={fetchData} className="underline ml-4">{t("common.retry")}</button></div>;
+  if (error) return <div className="p-10 text-center text-rose-700">{t("common.error")}: {error} <button onClick={fetchData} className="underline ml-4">{t("common.retry")}</button></div>;
 
   return (
     <DashboardScrollContainer className="space-y-0">
@@ -394,7 +394,7 @@ export default function SettingsPage() {
             onClick={() => setActiveTab("data")}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "data"
-                ? "border-copper-500 text-copper-400"
+                ? "border-copper-500 text-copper-700"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -404,7 +404,7 @@ export default function SettingsPage() {
             onClick={() => setActiveTab("kpi")}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "kpi"
-                ? "border-copper-500 text-copper-400"
+                ? "border-copper-500 text-copper-700"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -414,7 +414,7 @@ export default function SettingsPage() {
             onClick={() => setActiveTab("password")}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "password"
-                ? "border-copper-500 text-copper-400"
+                ? "border-copper-500 text-copper-700"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -422,7 +422,7 @@ export default function SettingsPage() {
           </button>
           {(role === "admin" || role === "boss") && <button
             onClick={() => setActiveTab("whatsapp")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "whatsapp" ? "border-copper-500 text-copper-400" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "whatsapp" ? "border-copper-500 text-copper-700" : "border-transparent text-muted-foreground hover:text-foreground"}`}
           >WhatsApp</button>}
         </div>
       </div>
@@ -447,12 +447,12 @@ export default function SettingsPage() {
         <div className="p-4 rounded-xl border border-border/50 bg-card/50">
           <p className="text-xs text-muted-foreground">{t("settings.totalLeads")}</p>
           <p className="text-2xl font-bold text-foreground mt-1">{totalCounted}</p>
-          <p className="text-[11px] text-muted-foreground">{t("settings.totalLeadsCaption")}</p>
+          <p className="text-xs text-muted-foreground">{t("settings.totalLeadsCaption")}</p>
         </div>
         <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
-          <p className="text-xs text-amber-400">{t("settings.unassigned")}</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">{activeUnassigned}</p>
-          <p className="text-[11px] text-amber-400/70">{t("settings.unassignedCaption")}</p>
+          <p className="text-xs text-amber-700">{t("settings.unassigned")}</p>
+          <p className="text-2xl font-bold text-amber-700 mt-1">{activeUnassigned}</p>
+          <p className="text-xs text-amber-700/70">{t("settings.unassignedCaption")}</p>
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-card/50">
           <p className="text-xs text-muted-foreground">{t("settings.salesTeam")}</p>
@@ -487,7 +487,7 @@ export default function SettingsPage() {
       {/* Bulk Action Bar */}
       {selected.size > 0 && (
         <div className="flex items-center gap-3 p-3 rounded-lg bg-copper-500/10 border border-copper-500/20">
-          <span className="text-sm text-copper-400 font-medium">{selected.size} {t("settings.selected")}</span>
+          <span className="text-sm text-copper-700 font-medium">{selected.size} {t("settings.selected")}</span>
           <div className="flex items-center gap-2 ml-auto">
             <select value={targetUserId} onChange={e => setTargetUserId(e.target.value)}
               className="bg-background border border-border/50 rounded-lg px-3 py-1.5 text-xs focus:outline-none"
@@ -501,7 +501,7 @@ export default function SettingsPage() {
               className="px-3 py-1.5 text-xs font-medium bg-copper-500 text-foreground rounded-lg hover:bg-copper-600 transition-colors disabled:opacity-40"
             >{t("settings.bulkAssign")}</button>
             <button onClick={bulkUnassign} disabled={saving}
-              className="px-3 py-1.5 text-xs text-rose-400 border border-rose-500/30 rounded-lg hover:bg-rose-500/10 transition-colors"
+              className="px-3 py-1.5 text-xs text-rose-700 border border-rose-500/30 rounded-lg hover:bg-rose-500/10 transition-colors"
             >{t("settings.bulkUnassign")}</button>
           </div>
         </div>
@@ -535,11 +535,11 @@ export default function SettingsPage() {
                     </td>
                     <td className="py-2.5 px-3">
                       <p className="font-medium text-foreground text-sm">{lead.customer_name || "-"}</p>
-                      <p className="text-[11px] text-muted-foreground">{lead.phone} · {lead.location}</p>
+                      <p className="text-xs text-muted-foreground">{lead.phone} · {lead.location}</p>
                     </td>
                     <td className="py-2.5 px-3">
                       <span className={cn("text-xs px-2 py-0.5 rounded-full",
-                        lead.final_status === "won" ? "bg-emerald-500/10 text-emerald-400" :
+                        lead.final_status === "won" ? "bg-emerald-500/10 text-emerald-700" :
                         lead.final_status === "lost" ? "bg-gray-500/10 text-muted-foreground" :
                         "bg-muted text-muted-foreground"
                       )}>{t(`stages.${lead.final_status || lead.stage}`) || lead.final_status || lead.stage}</span>
@@ -568,7 +568,7 @@ export default function SettingsPage() {
                           ))}
                         </select>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">{t("settings.noProfiles")}</span>
+                        <span className="text-xs text-muted-foreground">{t("settings.noProfiles")}</span>
                       )}
                     </td>
                   </tr>
@@ -594,7 +594,7 @@ export default function SettingsPage() {
       {profiles.length >= 2 && (
         <div className="rounded-xl border border-border/50 p-5">
           <div className="flex items-center gap-2 mb-3">
-            <GripHorizontal className="w-4 h-4 text-orange-400" />
+            <GripHorizontal className="w-4 h-4 text-orange-700" />
             <h3 className="text-sm font-semibold text-foreground">{t("settings.bulkTransfer")}</h3>
           </div>
           <p className="text-xs text-muted-foreground mb-4">{t("settings.transferDesc")}</p>

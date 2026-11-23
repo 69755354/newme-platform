@@ -189,7 +189,7 @@ export default function ProductsPage() {
             >
               <Icon className="w-3.5 h-3.5" />
               {t(categoryLabelKey(cat.key))}
-              <span className="text-[10px] opacity-60 ml-0.5">({count})</span>
+              <span className="text-xs opacity-60 ml-0.5">({count})</span>
             </button>
           );
         })}
@@ -228,11 +228,11 @@ export default function ProductsPage() {
                     </p>
                     <div className="flex items-center gap-2 mt-1">
                       {p.sku && (
-                        <span className="text-[10px] font-mono text-muted-foreground/60">
+                        <span className="text-xs font-mono text-muted-foreground/60">
                           {p.sku}
                         </span>
                       )}
-                      <Badge className={cn("text-[9px] px-1 py-0 border", colorClass)}>
+                      <Badge className={cn("text-xs px-1 py-0 border", colorClass)}>
                         {t(categoryLabelKey(p.category))}
                       </Badge>
                     </div>
@@ -243,12 +243,12 @@ export default function ProductsPage() {
                 </div>
 
                 {p.description && (
-                  <p className="text-[11px] text-muted-foreground/70 mt-2 line-clamp-2 leading-relaxed">
+                  <p className="text-xs text-muted-foreground/70 mt-2 line-clamp-2 leading-relaxed">
                     {p.description}
                   </p>
                 )}
 
-                <div className="flex items-center gap-2 mt-2.5 text-[10px] text-muted-foreground/50">
+                <div className="flex items-center gap-2 mt-2.5 text-xs text-muted-foreground/50">
                   <span className="bg-muted/60 px-1.5 py-0.5 rounded">
                     {p.unit || t("products.unitPcs")}
                   </span>

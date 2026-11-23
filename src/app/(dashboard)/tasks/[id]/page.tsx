@@ -54,16 +54,16 @@ const STATUS_OPTIONS: ReadonlyArray<{
   icon: typeof Clock;
   color: string;
 }> = [
-  { value: "pending", label: "Pending", icon: Clock, color: "text-amber-400" },
-  { value: "completed", label: "Done", icon: CheckCircle2, color: "text-emerald-400" },
+  { value: "pending", label: "Pending", icon: Clock, color: "text-amber-700" },
+  { value: "completed", label: "Done", icon: CheckCircle2, color: "text-emerald-700" },
   { value: "cancelled", label: "Cancelled", icon: XCircle, color: "text-muted-foreground" },
 ];
 
 const PRIORITY_OPTIONS = [
   { value: "low", label: "Low", color: "bg-slate-500/10 text-slate-400" },
-  { value: "medium", label: "Medium", color: "bg-blue-500/10 text-blue-400" },
-  { value: "high", label: "High", color: "bg-orange-500/10 text-orange-400" },
-  { value: "urgent", label: "Urgent", color: "bg-rose-500/10 text-rose-400" },
+  { value: "medium", label: "Medium", color: "bg-blue-500/10 text-blue-700" },
+  { value: "high", label: "High", color: "bg-orange-500/10 text-orange-700" },
+  { value: "urgent", label: "Urgent", color: "bg-rose-500/10 text-rose-700" },
 ];
 
 /* ─── Helpers ─── */
@@ -430,7 +430,7 @@ export default function TaskDetailPage() {
       {blockedMutation && (
         <Card className="border-amber-500/50">
           <CardHeader>
-            <CardTitle className="text-base text-amber-300">A pending follow-up is required</CardTitle>
+            <CardTitle className="text-base text-amber-700">A pending follow-up is required</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">

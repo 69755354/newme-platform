@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAED } from "@/lib/display-format.mjs";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
@@ -52,9 +53,7 @@ interface PaymentData {
 
 /* ─── Helpers ─── */
 function fmtAED(v: number): string {
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }
 
 /* ─── Summary Card ─── */
@@ -69,15 +68,15 @@ function SummaryCard({ label, value, sub, alert }: {
       alert === "green" ? "border-emerald-500/30" :
       "border-border/50"
     )}>
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-0.5">{label}</p>
+      <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-0.5">{label}</p>
       <p className={cn(
         "text-xl font-bold leading-tight",
-        alert === "red" ? "text-red-400" :
-        alert === "yellow" ? "text-yellow-400" :
-        alert === "green" ? "text-emerald-400" :
+        alert === "red" ? "text-red-700" :
+        alert === "yellow" ? "text-yellow-700" :
+        alert === "green" ? "text-emerald-700" :
         "text-foreground"
       )}>{value}</p>
-      {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -96,9 +95,9 @@ export default function PaymentTracker() {
   const { loading: roleLoading, role, userId: identityUserId } = useRequireRole(["admin", "boss", "operator", "sales"]);
 
   const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-    paid:     { label: t("analytics.paid"),       bg: "bg-emerald-500/10", text: "text-emerald-400", dot: "bg-emerald-500" },
-    overdue:  { label: t("analytics.overdueStatus"),    bg: "bg-red-500/10",     text: "text-red-400",    dot: "bg-red-500" },
-    due_soon: { label: t("analytics.dueSoon"),   bg: "bg-yellow-500/10",  text: "text-yellow-400", dot: "bg-yellow-500" },
+    paid:     { label: t("analytics.paid"),       bg: "bg-emerald-500/10", text: "text-emerald-700", dot: "bg-emerald-500" },
+    overdue:  { label: t("analytics.overdueStatus"),    bg: "bg-red-500/10",     text: "text-red-700",    dot: "bg-red-500" },
+    due_soon: { label: t("analytics.dueSoon"),   bg: "bg-yellow-500/10",  text: "text-yellow-700", dot: "bg-yellow-500" },
     pending:  { label: t("analytics.pending"),    bg: "bg-gray-500/10",    text: "text-gray-400",   dot: "bg-gray-400" },
     cancelled:{ label: t("analytics.cancelled"),  bg: "bg-gray-500/10",    text: "text-gray-500",   dot: "bg-gray-500" },
   };
@@ -154,7 +153,7 @@ export default function PaymentTracker() {
     const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
     return (
       <span className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium",
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
         cfg.bg, cfg.text
       )}>
         <span className={cn("w-1.5 h-1.5 rounded-full", cfg.dot)} />
@@ -173,7 +172,7 @@ export default function PaymentTracker() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-48 text-rose-400 text-sm">
+      <div className="flex items-center justify-center h-48 text-rose-700 text-sm">
         {error}
       </div>
     );
@@ -249,20 +248,20 @@ export default function PaymentTracker() {
           <h3 className="text-xs font-semibold text-foreground">
             {isManagement ? t("analytics.installmentDetails") : t("analytics.myInstallments")}
           </h3>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             ({myInstallments.length})
           </span>
         </div>
 
         {myInstallments.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
-            <CheckCircle2 className="w-8 h-8 text-emerald-400/30 mb-2" />
+            <CheckCircle2 className="w-8 h-8 text-emerald-700/30 mb-2" />
             <p className="text-xs">{t("analytics.noInstallments")}</p>
           </div>
         ) : (
           <div className="rounded-xl border border-border/50 bg-card/50 overflow-hidden">
             {/* Table header — hidden on very small screens */}
-            <div className="hidden md:flex items-center gap-2 px-3 py-2 border-b border-border/30 text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+            <div className="hidden md:flex items-center gap-2 px-3 py-2 border-b border-border/30 text-xs text-muted-foreground uppercase tracking-wider font-medium">
               <div className="flex-[2]">{t("analytics.customer")}</div>
               <div className="flex-1 text-right">{t("analytics.amount")}</div>
               <div className="flex-1 text-right">{t("analytics.inst")}</div>
@@ -286,10 +285,10 @@ export default function PaymentTracker() {
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-xs font-semibold text-foreground">{fmtAED(inst.amount)}</span>
-                      <span className="text-[10px] text-muted-foreground">#{inst.seq}</span>
-                      <span className="text-[10px] text-muted-foreground">{t("analytics.dueLabel")} {inst.due_date}</span>
+                      <span className="text-xs text-muted-foreground">#{inst.seq}</span>
+                      <span className="text-xs text-muted-foreground">{t("analytics.dueLabel")} {inst.due_date}</span>
                       {inst.overdue_days > 0 && (
-                        <span className="text-[10px] text-red-400">{inst.overdue_days}{t("analytics.overdueDaysLabel")}</span>
+                        <span className="text-xs text-red-700">{inst.overdue_days}{t("analytics.overdueDaysLabel")}</span>
                       )}
                     </div>
                   </div>
@@ -298,18 +297,18 @@ export default function PaymentTracker() {
                   <div className="hidden md:flex items-center gap-2 w-full">
                     <div className="flex-[2] min-w-0">
                       <span className="text-xs font-medium truncate block">{inst.customer_name}</span>
-                      <span className="text-[10px] text-muted-foreground">{inst.contract_no}</span>
+                      <span className="text-xs text-muted-foreground">{inst.contract_no}</span>
                     </div>
                     <div className="flex-1 text-right">
                       <span className="text-xs font-semibold">{fmtAED(inst.amount)}</span>
                     </div>
                     <div className="flex-1 text-right">
-                      <span className="text-[11px] text-muted-foreground">#{inst.seq}</span>
+                      <span className="text-xs text-muted-foreground">#{inst.seq}</span>
                     </div>
                     <div className="flex-[1.5] text-right">
                       <span className={cn(
-                        "text-[11px]",
-                        inst.status === "overdue" ? "text-red-400" : "text-muted-foreground"
+                        "text-xs",
+                        inst.status === "overdue" ? "text-red-700" : "text-muted-foreground"
                       )}>{inst.due_date}</span>
                     </div>
                     <div className="flex-1 text-center">
@@ -317,9 +316,9 @@ export default function PaymentTracker() {
                     </div>
                     <div className="flex-1 text-right">
                       {inst.overdue_days > 0 ? (
-                        <span className="text-[11px] text-red-400 font-medium">{inst.overdue_days}d</span>
+                        <span className="text-xs text-red-700 font-medium">{inst.overdue_days}d</span>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </div>
                   </div>
@@ -336,9 +335,9 @@ export default function PaymentTracker() {
       {!isManagement && myOverdue.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+            <AlertTriangle className="w-3.5 h-3.5 text-red-700" />
             <h3 className="text-xs font-semibold text-foreground">{t("analytics.overdueReceivables")}</h3>
-            <span className="text-[10px] text-red-400 font-medium">({myOverdue.length})</span>
+            <span className="text-xs text-red-700 font-medium">({myOverdue.length})</span>
           </div>
           <div className="space-y-1">
             {myOverdue.slice(0, 5).map((inst) => (
@@ -349,7 +348,7 @@ export default function PaymentTracker() {
               >
                 <div className="min-w-0">
                   <p className="text-xs font-medium truncate">{inst.customer_name}</p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {fmtAED(inst.amount)} · {t("analytics.duePrefix")} {inst.due_date} · {inst.overdue_days}{t("analytics.overdueDaysLabel")}
                   </p>
                 </div>
@@ -364,9 +363,9 @@ export default function PaymentTracker() {
       {!isManagement && myDueSoon.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-yellow-400" />
+            <Clock className="w-3.5 h-3.5 text-yellow-700" />
             <h3 className="text-xs font-semibold text-foreground">{t("analytics.dueThisWeek")}</h3>
-            <span className="text-[10px] text-yellow-400 font-medium">({myDueSoon.length})</span>
+            <span className="text-xs text-yellow-700 font-medium">({myDueSoon.length})</span>
           </div>
           <div className="space-y-1">
             {myDueSoon.slice(0, 5).map((inst) => (
@@ -377,7 +376,7 @@ export default function PaymentTracker() {
               >
                 <div className="min-w-0">
                   <p className="text-xs font-medium truncate">{inst.customer_name}</p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {fmtAED(inst.amount)} · {t("analytics.duePrefix")} {inst.due_date}
                   </p>
                 </div>
@@ -396,7 +395,7 @@ export default function PaymentTracker() {
             <h3 className="text-xs font-semibold text-foreground">{t("analytics.collectionByRep")}</h3>
           </div>
           <div className="rounded-xl border border-border/50 bg-card/50 overflow-hidden">
-            <div className="hidden md:flex items-center gap-2 px-3 py-2 border-b border-border/30 text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+            <div className="hidden md:flex items-center gap-2 px-3 py-2 border-b border-border/30 text-xs text-muted-foreground uppercase tracking-wider font-medium">
               <div className="flex-[2]">{t("analytics.rep")}</div>
               <div className="flex-1 text-right">{t("analytics.signedShort")}</div>
               <div className="flex-1 text-right">{t("analytics.collectedShort")}</div>
@@ -412,20 +411,20 @@ export default function PaymentTracker() {
                 >
                   <div className="flex-1 min-w-0 md:hidden">
                     <span className="text-xs font-medium">{rep.full_name}</span>
-                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                       <span>{t("analytics.signedShort")}: {fmtAED(rep.signed_amount)}</span>
                       <span>{t("analytics.collectedShort")}: {fmtAED(rep.collected)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={cn(
-                        "text-[10px] font-medium",
-                        rep.collection_rate >= 70 ? "text-emerald-400" :
-                        rep.collection_rate >= 40 ? "text-yellow-400" : "text-red-400"
+                        "text-xs font-medium",
+                        rep.collection_rate >= 70 ? "text-emerald-700" :
+                        rep.collection_rate >= 40 ? "text-yellow-700" : "text-red-700"
                       )}>
                         {rep.collection_rate}% {t("analytics.rate").toLowerCase()}
                       </span>
                       {rep.overdue_count > 0 && (
-                        <span className="text-[10px] text-red-400">{rep.overdue_count} {t("analytics.overdueShort").toLowerCase()}</span>
+                        <span className="text-xs text-red-700">{rep.overdue_count} {t("analytics.overdueShort").toLowerCase()}</span>
                       )}
                     </div>
                   </div>
@@ -443,17 +442,17 @@ export default function PaymentTracker() {
                     <div className="flex-1 text-center">
                       <span className={cn(
                         "text-xs font-mono font-medium",
-                        rep.collection_rate >= 70 ? "text-emerald-400" :
-                        rep.collection_rate >= 40 ? "text-yellow-400" : "text-red-400"
+                        rep.collection_rate >= 70 ? "text-emerald-700" :
+                        rep.collection_rate >= 40 ? "text-yellow-700" : "text-red-700"
                       )}>
                         {rep.collection_rate}%
                       </span>
                     </div>
                     <div className="flex-1 text-right">
                       {rep.overdue_count > 0 ? (
-                        <span className="text-xs text-red-400 font-medium">{rep.overdue_count}</span>
+                        <span className="text-xs text-red-700 font-medium">{rep.overdue_count}</span>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </div>
                   </div>

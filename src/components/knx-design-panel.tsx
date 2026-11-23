@@ -35,9 +35,11 @@ const PROGRESS_LABELS: Record<string, string> = {
   knxProgressDone: "knxProgressDone",
 };
 
+import { formatAED } from "@/lib/display-format.mjs";
+
 function fmtAED(v: number | null | undefined): string {
   if (v == null || v === 0) return "AED 0";
-  return `AED ${v.toLocaleString()}`;
+  return formatAED(v);
 }
 
 export default function KnxDesignPanel({ leadId }: { leadId: string }) {

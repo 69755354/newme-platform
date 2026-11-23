@@ -37,13 +37,13 @@ interface QuoteWizardProps {
 }
 
 const ROOM_TYPES = [
-  { value: "living", label: "🛋️ Living Room" }, { value: "bedroom", label: "🛏️ Bedroom" },
-  { value: "kitchen", label: "🍳 Kitchen" }, { value: "bathroom", label: "🚿 Bathroom" },
-  { value: "corridor", label: "🚪 Corridor" }, { value: "outdoor", label: "🌿 Outdoor" },
-  { value: "garage", label: "🚗 Garage" }, { value: "study", label: "📚 Study" },
-  { value: "majlis", label: "🛋️ Majlis" }, { value: "dining", label: "🍽️ Dining" },
-  { value: "gym", label: "🏋️ Gym" }, { value: "cinema", label: "🎬 Cinema" },
-  { value: "maid", label: "🧹 Maid Room" },
+  { value: "living", label: "Living Room" }, { value: "bedroom", label: "Bedroom" },
+  { value: "kitchen", label: "Kitchen" }, { value: "bathroom", label: "Bathroom" },
+  { value: "corridor", label: "Corridor" }, { value: "outdoor", label: "Outdoor" },
+  { value: "garage", label: "Garage" }, { value: "study", label: "Study" },
+  { value: "majlis", label: "Majlis" }, { value: "dining", label: "Dining" },
+  { value: "gym", label: "Gym" }, { value: "cinema", label: "Cinema" },
+  { value: "maid", label: "Maid Room" },
 ];
 
 const STEPS = [
@@ -254,10 +254,10 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
           <button onClick={() => goStep(st.num)}
             disabled={st.num > s.step && !(st.num === s.step + 1 && canNext()) && st.num !== s.step}
             className={cn("flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all",
-              s.step === st.num ? "bg-copper-500/20 text-copper-300 border border-copper-500/30" :
-              s.step > st.num ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+              s.step === st.num ? "bg-copper-500/20 text-copper-700 border border-copper-500/30" :
+              s.step > st.num ? "bg-emerald-500/10 text-emerald-700 border border-emerald-500/20" :
               "text-muted-foreground border border-transparent")}>
-            <span className={cn("flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold",
+            <span className={cn("flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold",
               s.step === st.num ? "bg-copper-500 text-foreground" :
               s.step > st.num ? "bg-emerald-500 text-foreground" : "bg-accent/60 text-muted-foreground")}>
               {s.step > st.num ? <Check className="w-3 h-3" /> : st.num}
@@ -275,10 +275,10 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     <div className="space-y-4">
       <div className="rounded-lg border border-border/40 p-4 space-y-4">
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Home className="w-4 h-4 text-copper-400" /> Project Information</h3>
+          <Home className="w-4 h-4 text-copper-700" /> Project Information</h3>
         {!isEmbedded && (
           <div>
-            <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.calc.customerLead")} <span className="text-rose-400">*</span></label>
+            <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.calc.customerLead")} <span className="text-rose-700">*</span></label>
             <select value={s.selectedLeadId} onChange={(e) => handleLead(e.target.value)}
               className="w-full h-9 px-2.5 text-sm rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
               <option value="">{t("quotes.calc.selectCustomer")}</option>
@@ -288,21 +288,21 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.calc.customerName")} <span className="text-rose-400">*</span></label>
+            <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.calc.customerName")} <span className="text-rose-700">*</span></label>
             <Input value={s.customerName} onChange={(e) => d({ type: "N", name: e.target.value })} placeholder={t("quotes.calc.autoFillOrManual")} className="h-9 text-sm" />
           </div>
           <div>
             <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.calc.propertyType")}</label>
             <select value={s.propertyType} onChange={(e) => d({ type: "P", ptype: e.target.value as "villa" | "apartment" })}
               className="w-full h-9 px-2.5 text-sm rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-              <option value="villa">🏠 {t("quotes.calc.villa")}</option>
-              <option value="apartment">🏢 {t("quotes.calc.apartment")}</option>
+              <option value="villa">{t("quotes.calc.villa")}</option>
+              <option value="apartment">{t("quotes.calc.apartment")}</option>
             </select>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.calc.areaSqm")} <span className="text-rose-400">*</span></label>
+            <label className="text-xs font-medium text-foreground mb-1.5 block">{t("quotes.calc.areaSqm")} <span className="text-rose-700">*</span></label>
             <Input type="number" min={0} value={s.area || ""} onChange={(e) => d({ type: "A", area: parseFloat(e.target.value) || 0 })} placeholder={t("quotes.calc.enterArea")} className="h-9 text-sm" />
           </div>
           <div>
@@ -322,7 +322,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     <div className="space-y-4">
       <div className="rounded-lg border border-border/40 p-4 space-y-4">
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Layers className="w-4 h-4 text-copper-400" /> Room Layout</h3>
+          <Layers className="w-4 h-4 text-copper-700" /> Room Layout</h3>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex-1 min-w-[140px]">
             <label className="text-xs font-medium text-foreground mb-1 block">{t("quotes.type")}</label>
@@ -354,12 +354,12 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
                           <input value={rm.name} onChange={(e) => updRoom(rm.id, "name", e.target.value)}
                             className="h-7 px-2 text-xs rounded border border-border/30 bg-background text-foreground flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary" />
                           <select value={rm.type} onChange={(e) => updRoom(rm.id, "type", e.target.value)}
-                            className="h-7 px-1.5 text-[10px] rounded border border-border/30 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[90px]">
+                            className="h-7 px-1.5 text-xs rounded border border-border/30 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[90px]">
                             {ROOM_TYPES.map((rt) => <option key={rt.value} value={rt.value}>{rt.label.split(" ").slice(1).join(" ")}</option>)}
                           </select>
                         </div>
                         <button onClick={() => d({ type: "RR", roomId: rm.id })}
-                          className="p-1 rounded text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                          className="p-1 rounded text-muted-foreground hover:text-rose-700 hover:bg-rose-500/10 transition-colors"><X className="w-3.5 h-3.5" /></button>
                       </div>
                     ))}
                   </div>
@@ -373,7 +373,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
           </div>
         )}
         <div className="rounded-lg border border-dashed border-copper-500/20 bg-copper-500/5 p-3 text-center">
-          <p className="text-[10px] text-copper-400/70">📐 {t("quotes.calc.cadComingSoon")}</p>
+          <p className="text-xs text-copper-700/70">{t("quotes.calc.cadComingSoon")}</p>
         </div>
       </div>
     </div>
@@ -391,29 +391,29 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     return (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <div className="lg:col-span-1 space-y-1">
-          <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5 text-copper-400" /> Rooms</h3>
+          <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5 text-copper-700" /> Rooms</h3>
           <div className="space-y-1 max-h-[400px] overflow-y-auto">
             {s.rooms.map((rm, i) => (
               <button key={rm.id} onClick={() => d({ type: "SI", index: i })}
                 className={cn("w-full text-left px-3 py-2 rounded-lg text-xs transition-colors border",
-                  s.selectedRoomIndex === i ? "bg-copper-500/10 border-copper-500/30 text-copper-300" : "bg-accent/20 border-transparent text-foreground hover:bg-accent/40")}>
+                  s.selectedRoomIndex === i ? "bg-copper-500/10 border-copper-500/30 text-copper-700" : "bg-accent/20 border-transparent text-foreground hover:bg-accent/40")}>
                 <p className="font-medium truncate">{rm.name}</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">F{rm.floor} · AED {fmtCurrency(roomTotal(rm.id))}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">F{rm.floor} · AED {fmtCurrency(roomTotal(rm.id))}</p>
               </button>
             ))}
           </div>
           {totalDeviceCount > 0 && (
             <div className="mt-3 rounded-lg border border-copper-500/20 bg-copper-500/5 p-2.5 text-center">
-              <p className="text-[10px] text-muted-foreground">{t("quotes.totalDevices")}</p>
-              <p className="text-sm font-bold text-copper-400">{totalDeviceCount} pcs · AED {fmtCurrency(calc.subtotal)}</p>
+              <p className="text-xs text-muted-foreground">{t("quotes.totalDevices")}</p>
+              <p className="text-sm font-bold text-copper-700">{totalDeviceCount} pcs · AED {fmtCurrency(calc.subtotal)}</p>
             </div>
           )}
         </div>
         <div className="lg:col-span-3 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <Package className="w-3.5 h-3.5 text-copper-400" /> {curRoom ? `${curRoom.name} — ${t("quotes.devices")}` : "Select a room"}</h3>
-            <span className="text-[10px] text-muted-foreground">Room AED {fmtCurrency(curRoom ? roomTotal(curRoom.id) : 0)}</span>
+              <Package className="w-3.5 h-3.5 text-copper-700" /> {curRoom ? `${curRoom.name} — ${t("quotes.devices")}` : "Select a room"}</h3>
+            <span className="text-xs text-muted-foreground">Room AED {fmtCurrency(curRoom ? roomTotal(curRoom.id) : 0)}</span>
           </div>
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -426,7 +426,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
               return (
                 <Collapsible key={cat.key} open={open} onOpenChange={() => toggleSec(cat.key)} className="rounded-lg border border-border/30">
                   <CollapsibleTrigger className="flex items-center justify-between w-full px-3 py-2 text-xs font-medium text-foreground hover:bg-accent/50 rounded-t-lg transition-colors [&[data-state=closed]]:rounded-lg">
-                    <span className="flex items-center gap-1.5"><span className="text-sm">{cat.icon}</span> {cat.label}</span>
+                    <span className="flex items-center gap-1.5">{cat.label}</span>
                     {cBtn(open)}
                   </CollapsibleTrigger>
                   <CollapsibleContent className="px-2 pb-2 space-y-1">
@@ -437,7 +437,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
                           qty > 0 ? "bg-copper-500/10 border border-copper-500/20" : "hover:bg-accent/30")}>
                           <div className="flex-1 min-w-0">
                             <p className="text-foreground truncate">{dev.name}</p>
-                            <p className="text-muted-foreground text-[10px]">AED {dev.price.toLocaleString()}{dev.unit ? ` /${dev.unit}` : ""}</p>
+                            <p className="text-muted-foreground text-xs">AED {dev.price.toLocaleString()}{dev.unit ? ` /${dev.unit}` : ""}</p>
                           </div>
                           <div className="flex items-center gap-1 ml-2 shrink-0">
                             <button onClick={() => curRoom && decQ(curRoom.id, dev.id)} disabled={qty <= 0}
@@ -466,7 +466,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
   const st4 = (
     <div className="space-y-4">
       <div className="rounded-lg border border-border/40 p-4 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Calculator className="w-4 h-4 text-copper-400" /> Service Fees & Pricing</h3>
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Calculator className="w-4 h-4 text-copper-700" /> Service Fees & Pricing</h3>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-foreground">{t("quotes.discountRate")}</label>
@@ -480,15 +480,15 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
             className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-copper-500 bg-border" />
         </div>
         <div className="rounded-lg bg-accent/20 p-3 space-y-1.5">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("quotes.serviceRates")}</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("quotes.serviceRates")}</p>
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.installationLabor")}</span><span className="text-foreground font-medium">{QUOTATION_DEFAULTS.install_labor_pct}%</span></div>
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.knxCommissioning")}</span><span className="text-foreground font-medium">{QUOTATION_DEFAULTS.commissioning_pct}%</span></div>
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.projectManagement")}</span><span className="text-foreground font-medium">{QUOTATION_DEFAULTS.pm_pct}%</span></div>
         </div>
         <div className="rounded-lg border border-border/30 p-4 space-y-2">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">📊 Price Breakdown</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Price Breakdown</p>
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.deviceSubtotal")}</span><span className="text-foreground font-medium">AED {fmtCurrency(calc.subtotal)}</span></div>
-          {s.discountRate > 0 && <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.discount")} ({s.discountRate}%)</span><span className="text-rose-400 font-medium">-AED {fmtCurrency(calc.discount_amount)}</span></div>}
+          {s.discountRate > 0 && <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.discount")} ({s.discountRate}%)</span><span className="text-rose-700 font-medium">-AED {fmtCurrency(calc.discount_amount)}</span></div>}
           <Separator className="my-1" />
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.afterDiscount")}</span><span className="text-foreground font-semibold">AED {fmtCurrency(calc.after_discount)}</span></div>
           <div className="border-t border-border/20 pt-2 space-y-1">
@@ -503,7 +503,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
             <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">VAT (5%)</span><span className="text-foreground">+AED {fmtCurrency(calc.tax_amount)}</span></div>
           </div>
           <div className="border-t-2 border-copper-500/40 pt-2 mt-1">
-            <div className="flex items-center justify-between"><span className="text-sm font-bold text-foreground">{t("quotes.calc.grandTotal")}</span><span className="text-lg font-bold text-copper-400">AED {fmtCurrency(calc.total)}</span></div>
+            <div className="flex items-center justify-between"><span className="text-sm font-bold text-foreground">{t("quotes.calc.grandTotal")}</span><span className="text-lg font-bold text-copper-700">AED {fmtCurrency(calc.total)}</span></div>
           </div>
         </div>
       </div>
@@ -514,26 +514,26 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
   const st5 = (
     <div className="space-y-4">
       <div className="rounded-lg border border-border/40 p-4 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><FileText className="w-4 h-4 text-copper-400" /> Quotation Preview</h3>
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><FileText className="w-4 h-4 text-copper-700" /> Quotation Preview</h3>
         <div className="rounded-lg bg-accent/20 p-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div><p className="text-[10px] text-muted-foreground">{t("quotes.customer")}</p><p className="text-xs font-medium text-foreground">{s.customerName}</p></div>
-          <div><p className="text-[10px] text-muted-foreground">{t("quotes.property")}</p><p className="text-xs font-medium text-foreground">{s.propertyType === "villa" ? "🏠 Villa" : "🏢 Apartment"} · {s.area}㎡</p></div>
-          <div><p className="text-[10px] text-muted-foreground">{t("quotes.floors")}</p><p className="text-xs font-medium text-foreground">{s.floors}</p></div>
-          <div><p className="text-[10px] text-muted-foreground">{t("quotes.rooms")}</p><p className="text-xs font-medium text-foreground">{s.rooms.length}</p></div>
+          <div><p className="text-xs text-muted-foreground">{t("quotes.customer")}</p><p className="text-xs font-medium text-foreground">{s.customerName}</p></div>
+          <div><p className="text-xs text-muted-foreground">{t("quotes.property")}</p><p className="text-xs font-medium text-foreground">{s.propertyType === "villa" ? "Villa" : "Apartment"} · {s.area}㎡</p></div>
+          <div><p className="text-xs text-muted-foreground">{t("quotes.floors")}</p><p className="text-xs font-medium text-foreground">{s.floors}</p></div>
+          <div><p className="text-xs text-muted-foreground">{t("quotes.rooms")}</p><p className="text-xs font-medium text-foreground">{s.rooms.length}</p></div>
         </div>
         {calc.breakdown.length > 0 && (
           <div className="space-y-2">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("quotes.devices")}</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("quotes.devices")}</p>
             {calc.breakdown.map((cat) => (
               <div key={cat.category} className="rounded-lg border border-border/30">
                 <div className="px-3 py-1.5 bg-accent/20 text-xs font-medium text-foreground flex items-center justify-between">
-                  <span>{cat.category}</span><span className="text-copper-400">AED {fmtCurrency(cat.subtotal)}</span>
+                  <span>{cat.category}</span><span className="text-copper-700">AED {fmtCurrency(cat.subtotal)}</span>
                 </div>
                 <div className="px-3 py-1.5 space-y-1">
                   {cat.items.map((item) => (
-                    <div key={item.device_id} className="flex items-center justify-between text-[11px]">
+                    <div key={item.device_id} className="flex items-center justify-between text-xs">
                       <span className="text-foreground truncate mr-2">{item.name}</span>
-                      <span className="text-muted-foreground shrink-0">{item.qty} × AED {item.unit_price.toLocaleString()}<span className="text-copper-400 font-medium ml-1">= AED {fmtCurrency(item.line_total)}</span></span>
+                      <span className="text-muted-foreground shrink-0">{item.qty} × AED {item.unit_price.toLocaleString()}<span className="text-copper-700 font-medium ml-1">= AED {fmtCurrency(item.line_total)}</span></span>
                     </div>
                   ))}
                 </div>
@@ -542,7 +542,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
           </div>
         )}
         <div className="space-y-1">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("quotes.rooms")}</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("quotes.rooms")}</p>
           {s.rooms.map((rm) => {
             const rq = s.quantities[rm.id];
             const cnt = rq ? Object.values(rq).reduce((a, b) => a + b, 0) : 0;
@@ -551,11 +551,11 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
         </div>
         <div className="rounded-lg border border-copper-500/20 bg-copper-500/5 p-4 space-y-1.5">
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.deviceSubtotal")}</span><span className="text-foreground">AED {fmtCurrency(calc.subtotal)}</span></div>
-          {s.discountRate > 0 && <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.discount")} ({s.discountRate}%)</span><span className="text-rose-400">-AED {fmtCurrency(calc.discount_amount)}</span></div>}
+          {s.discountRate > 0 && <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.discount")} ({s.discountRate}%)</span><span className="text-rose-700">-AED {fmtCurrency(calc.discount_amount)}</span></div>}
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{t("quotes.services")}</span><span className="text-foreground">AED {fmtCurrency(calc.subtotal_services)}</span></div>
           <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">VAT (5%)</span><span className="text-foreground">AED {fmtCurrency(calc.tax_amount)}</span></div>
           <Separator className="my-1" />
-          <div className="flex items-center justify-between"><span className="text-sm font-bold text-foreground">{t("quotes.total")}</span><span className="text-lg font-bold text-copper-400">AED {fmtCurrency(calc.total)}</span></div>
+          <div className="flex items-center justify-between"><span className="text-sm font-bold text-foreground">{t("quotes.total")}</span><span className="text-lg font-bold text-copper-700">AED {fmtCurrency(calc.total)}</span></div>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           <Button variant="outline" size="sm" onClick={handleExp} disabled={!s.savedQuoteId} className="gap-1.5"><FileDown className="w-3.5 h-3.5" /> {t("quotes.calc.exportExcel")}</Button>
@@ -574,7 +574,7 @@ export default function QuoteWizard({ open, onOpenChange, onSaved, initialLeadId
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
       <DialogContent className="sm:max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg"><Calculator className="w-5 h-5 text-copper-400" /> {t("quotes.calc.title")}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-lg"><Calculator className="w-5 h-5 text-copper-700" /> {t("quotes.calc.title")}</DialogTitle>
           <DialogDescription>{t("quotes.calc.desc")}</DialogDescription>
         </DialogHeader>
         {stepInd}

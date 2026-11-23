@@ -88,10 +88,10 @@ export function LeadsBulkTransferBar({
         className="sticky bottom-0 z-10 bg-background/95 backdrop-blur-sm border-t -mx-4 px-4 py-2.5"
       >
         <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-copper-500/10 border border-copper-500/30">
-          <span className="text-sm font-medium text-copper-300">{t("leads.bulkSelected").replace("{n}", String(selectedCount))}</span>
+          <span className="text-sm font-medium text-copper-700">{t("leads.bulkSelected").replace("{n}", String(selectedCount))}</span>
           <div className="flex items-center gap-2">
             <button onClick={onSelectAll}
-              className="text-xs text-copper-400 hover:text-copper-300">{t("leads.selectAllCount").replace("{n}", String(totalFiltered))}</button>
+              className="text-xs text-copper-700 hover:text-copper-700">{t("leads.selectAllCount").replace("{n}", String(totalFiltered))}</button>
             <button onClick={onClear}
               className="text-xs text-muted-foreground hover:text-foreground">{t("leads.clear")}</button>
             {selectedCount > 0 && !showBulkTransfer && (

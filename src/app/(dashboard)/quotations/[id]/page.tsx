@@ -1,5 +1,6 @@
 "use client";
 
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
@@ -116,10 +117,10 @@ function getErrorMessage(error: unknown): string {
 /* ─── Status config ─── */
 const STATUS_STYLES: Record<string, { color: string; bg: string; border: string }> = {
   draft: { color: "text-muted-foreground", bg: "bg-gray-500/10", border: "border-gray-500/20" },
-  sent: { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-  accepted: { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  rejected: { color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/20" },
-  expired: { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
+  sent: { color: "text-blue-700", bg: "bg-blue-500/10", border: "border-blue-500/20" },
+  accepted: { color: "text-emerald-700", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
+  rejected: { color: "text-rose-700", bg: "bg-rose-500/10", border: "border-rose-500/20" },
+  expired: { color: "text-amber-700", bg: "bg-amber-500/10", border: "border-amber-500/20" },
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -542,7 +543,7 @@ export default function QuotationDetailPage() {
                 statusStyle.border
               )}
             >
-              {STATUS_LABELS[quotation.status] ? t(`quotes.${quotation.status}`) : quotation.status}
+              {STATUS_LABELS[quotation.status] ? t(`quotes.${quotation.status}`) : translatedOrRaw(t, `quotes.${quotation.status}`, quotation.status)}
             </Badge>
             {quotation.version && quotation.version > 1 && (
               <Badge variant="outline" className="text-xs">
@@ -673,7 +674,7 @@ export default function QuotationDetailPage() {
         <CardContent className="space-y-4">
           {/* Read-only notice: why the lines cannot be changed here */}
           {shownLock && (
-            <p role="note" className="text-sm text-amber-400 border border-amber-500/20 bg-amber-500/10 rounded-lg p-3">
+            <p role="note" className="text-sm text-amber-700 border border-amber-500/20 bg-amber-500/10 rounded-lg p-3">
               {t(`quotations.linesLocked_${shownLock}`)}
             </p>
           )}
@@ -812,7 +813,7 @@ export default function QuotationDetailPage() {
                 <p className="text-xs text-muted-foreground mb-1">
                   {t("quotations.sentAt") || "Sent At"}
                 </p>
-                <p className="text-sm text-blue-400">
+                <p className="text-sm text-blue-700">
                   {fmtDateTime(quotation.sent_at, t("locale.dateLocale"))}
                 </p>
               </div>
@@ -822,7 +823,7 @@ export default function QuotationDetailPage() {
                 <p className="text-xs text-muted-foreground mb-1">
                   {t("quotations.acceptedAt") || "Accepted At"}
                 </p>
-                <p className="text-sm text-emerald-400">
+                <p className="text-sm text-emerald-700">
                   {fmtDateTime(quotation.accepted_at, t("locale.dateLocale"))}
                 </p>
               </div>
@@ -832,7 +833,7 @@ export default function QuotationDetailPage() {
                 <p className="text-xs text-muted-foreground mb-1">
                   {t("quotations.rejectedAt") || "Rejected At"}
                 </p>
-                <p className="text-sm text-rose-400">
+                <p className="text-sm text-rose-700">
                   {fmtDateTime(quotation.rejected_at, t("locale.dateLocale"))}
                 </p>
               </div>
@@ -867,7 +868,7 @@ export default function QuotationDetailPage() {
                   size="sm"
                   onClick={() => handleStatusChange("sent")}
                   disabled={changingStatus}
-                  className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                  className="border-blue-500/30 text-blue-700 hover:bg-blue-500/10"
                 >
                   {changingStatus ? (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -883,7 +884,7 @@ export default function QuotationDetailPage() {
                   size="sm"
                   onClick={() => handleStatusChange("accepted")}
                   disabled={changingStatus}
-                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                  className="border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10"
                 >
                   {changingStatus ? (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -899,7 +900,7 @@ export default function QuotationDetailPage() {
                   size="sm"
                   onClick={() => handleStatusChange("rejected")}
                   disabled={changingStatus}
-                  className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                  className="border-rose-500/30 text-rose-700 hover:bg-rose-500/10"
                 >
                   {changingStatus ? (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -922,7 +923,7 @@ export default function QuotationDetailPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleDownloadPDF}
-                className="border-copper-500/30 text-copper-400 hover:bg-copper-500/10"
+                className="border-copper-500/30 text-copper-700 hover:bg-copper-500/10"
               >
                 <Download className="w-4 h-4 mr-2" />
                 {t("quotations.downloadPDF") || "Download PDF"}

@@ -73,7 +73,7 @@ export function LeadsPipelineSummary({
             )}
           >
             <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[10px] font-medium text-muted-foreground truncate">
+              <span className="text-xs font-medium text-muted-foreground truncate">
                 {t(`stageLabels.${s.key}`)}
               </span>
               <span className="text-xs font-bold text-foreground ml-1">
@@ -81,7 +81,7 @@ export function LeadsPipelineSummary({
               </span>
             </div>
             <div className="text-right mb-1">
-              <span className="text-[9px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 {totals.value > 0 ? fmtAED(totals.value) : "—"}
               </span>
             </div>

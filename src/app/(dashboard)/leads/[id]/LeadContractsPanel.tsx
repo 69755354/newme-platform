@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAED } from "@/lib/display-format.mjs";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, DollarSign, Calendar, Plus, CheckCircle, AlertTriangle, Clock } from "lucide-react";
@@ -47,8 +48,7 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
     return () => { alive = false; };
   }, [leadId]);
 
-  const fmtAED = (v: number) =>
-    v >= 1_000_000 ? `AED ${(v / 1_000_000).toFixed(1)}M` : `AED ${v.toLocaleString()}`;
+  const fmtAED = (v: number) => formatAED(v);
 
   if (loading) {
     return <div className="py-6 text-center text-xs text-muted-foreground">{t("common.loading")}</div>;
@@ -83,24 +83,24 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-copper-400 shrink-0" />
+                <FileText className="w-4 h-4 text-copper-700 shrink-0" />
                 <span className="font-medium text-foreground text-sm truncate">{c.contract_no}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-400">{c.status}</span>
+                <span className="text-xs px-1.5 py-0.5 rounded bg-copper-500/10 text-copper-700">{c.status}</span>
               </div>
               <span className="flex items-center gap-1 text-sm font-semibold text-foreground shrink-0">
                 <DollarSign className="w-3 h-3" />{fmtAED(c.contract_amount)}
               </span>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1.5 flex-wrap">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1.5 flex-wrap">
               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{c.contract_date?.slice(0, 10)}</span>
               {total > 0 && (
                 <span className="flex items-center gap-1">
-                  <CheckCircle className="w-3 h-3 text-emerald-400" />
+                  <CheckCircle className="w-3 h-3 text-emerald-700" />
                   {paid}/{total} {t("contracts.installments")}
                 </span>
               )}
               {c.first_payment_status && c.first_payment_status !== "paid" && (
-                <span className="flex items-center gap-1 text-amber-400">
+                <span className="flex items-center gap-1 text-amber-700">
                   <Clock className="w-3 h-3" />{t("analytics.outstanding")}
                 </span>
               )}
@@ -111,7 +111,7 @@ export default function LeadContractsPanel({ leadId }: { leadId: string }) {
       {canCreateContract && (
         <Link prefetch={false}
           href={`/contracts/new?lead_id=${leadId}`}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-copper-500/30 text-copper-400 text-xs font-medium hover:bg-copper-500/10 transition-colors mt-1"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-copper-500/30 text-copper-700 text-xs font-medium hover:bg-copper-500/10 transition-colors mt-1"
         >
           <Plus className="w-3.5 h-3.5" />{t("leadDetail.createContract")}
         </Link>

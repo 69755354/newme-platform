@@ -69,7 +69,7 @@ const STAGE_CONFIG: Record<
     label: "Basic Info",
     goal: "Get customer basic info",
     icon: User,
-    color: "text-sky-400",
+    color: "text-sky-700",
     completionColor: "bg-sky-500",
     deadlineHours: 24,
     weight: 20,
@@ -78,7 +78,7 @@ const STAGE_CONFIG: Record<
     label: "Requirements",
     goal: "Understand customer needs",
     icon: Ruler,
-    color: "text-violet-400",
+    color: "text-violet-700",
     completionColor: "bg-violet-500",
     deadlineHours: 48,
     weight: 30,
@@ -87,7 +87,7 @@ const STAGE_CONFIG: Record<
     label: "Design Proposal",
     goal: "Output design proposal to customer",
     icon: FileText,
-    color: "text-amber-400",
+    color: "text-amber-700",
     completionColor: "bg-amber-500",
     deadlineHours: 24,
     weight: 50,
@@ -96,7 +96,7 @@ const STAGE_CONFIG: Record<
     label: "Contract",
     goal: "Sign contract",
     icon: Handshake,
-    color: "text-blue-400",
+    color: "text-blue-700",
     completionColor: "bg-blue-500",
     deadlineHours: 48,
     weight: 60,
@@ -105,7 +105,7 @@ const STAGE_CONFIG: Record<
     label: "Decision",
     goal: "Customer decision",
     icon: PackageCheck,
-    color: "text-emerald-400",
+    color: "text-emerald-700",
     completionColor: "bg-emerald-500",
     deadlineHours: 72,
     weight: 80,
@@ -378,7 +378,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 className={cn(
                   "flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs cursor-pointer transition-colors",
                   needs.includes(nf.key)
-                    ? "border-copper-500/50 bg-copper-500/10 text-copper-300"
+                    ? "border-copper-500/50 bg-copper-500/10 text-copper-700"
                     : "border-gray-700/50 bg-gray-800/30 text-gray-400 hover:border-gray-600"
                 )}
               >
@@ -403,7 +403,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
 
     return (
       <div className="space-y-3">
-        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-300">
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-700">
           ⏱ Auto-triggers: 24h follow-up reminder → 48h notify management (Tanya)
         </div>
 
@@ -435,7 +435,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-xs text-emerald-400">
+            <div className="flex items-center gap-2 text-xs text-emerald-700">
               <CheckCircle2 className="w-4 h-4" />
               Proposal submitted — 24h timer started
             </div>
@@ -572,14 +572,14 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 onChange={() => updateFormField("decision", "status", "deepening_proposal")}
               />
               <div className="flex-1">
-                <span className="text-sm font-medium text-blue-300">Deepening Proposal</span>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <span className="text-sm font-medium text-blue-700">Deepening Proposal</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Customer needs more details or revisions
                 </p>
                 {status === "deepening_proposal" && (
                   <div className="mt-2 space-y-2 pl-0">
                     <div className="space-y-1">
-                      <Label className="text-[10px]">Next Expected Follow-up Time</Label>
+                      <Label className="text-xs">Next Expected Follow-up Time</Label>
                       <Input
                         type="date"
                         size={10}
@@ -592,7 +592,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px]">Follow-up Content</Label>
+                      <Label className="text-xs">Follow-up Content</Label>
                       <Textarea
                         className="min-h-[60px] text-xs"
                         placeholder="What needs to be prepared / presented..."
@@ -625,13 +625,13 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 onChange={() => updateFormField("decision", "status", "preparing_to_sign")}
               />
               <div className="flex-1">
-                <span className="text-sm font-medium text-emerald-300">Preparing to Sign</span>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <span className="text-sm font-medium text-emerald-700">Preparing to Sign</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Customer is ready to proceed with contract
                 </p>
                 {status === "preparing_to_sign" && (
                   <div className="mt-2 space-y-1 pl-0">
-                    <Label className="text-[10px]">Expected Sign Date</Label>
+                    <Label className="text-xs">Expected Sign Date</Label>
                     <Input
                       type="date"
                       size={10}
@@ -664,14 +664,14 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 onChange={() => updateFormField("decision", "status", "rejected")}
               />
               <div className="flex-1">
-                <span className="text-sm font-medium text-rose-300">Rejected</span>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <span className="text-sm font-medium text-rose-700">Rejected</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Customer declined the proposal
                 </p>
                 {status === "rejected" && (
                   <div className="mt-2 space-y-2 pl-0">
                     <div className="space-y-1">
-                      <Label className="text-[10px]">Rejection Reason</Label>
+                      <Label className="text-xs">Rejection Reason</Label>
                       <Select
                         value={data.rejection_reason || ""}
                         onValueChange={(v) =>
@@ -694,7 +694,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px]">Rejection Details</Label>
+                      <Label className="text-xs">Rejection Details</Label>
                       <Textarea
                         className="min-h-[60px] text-xs"
                         placeholder="Provide details on why the customer rejected..."
@@ -778,29 +778,29 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
               )}
             >
               {isDone ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
               ) : (
-                <Icon className={cn("w-3.5 h-3.5", isCurrent ? "text-amber-400" : config?.color || "text-gray-500")} />
+                <Icon className={cn("w-3.5 h-3.5", isCurrent ? "text-amber-700" : config?.color || "text-gray-500")} />
               )}
             </div>
             <div>
               <CardTitle className="text-sm flex items-center gap-2">
                 <span className="text-gray-300">{config?.label}</span>
-                <span className="text-[10px] text-muted-foreground font-normal">
+                <span className="text-xs text-muted-foreground font-normal">
                   {config?.weight}% weight
                 </span>
                 <Badge
                   className={cn(
-                    "text-[9px] px-1.5 py-0",
-                    isDone && "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-                    isCurrent && "bg-amber-500/15 text-amber-400 border-amber-500/20",
+                    "text-xs px-1.5 py-0",
+                    isDone && "bg-emerald-500/15 text-emerald-700 border-emerald-500/20",
+                    isCurrent && "bg-amber-500/15 text-amber-700 border-amber-500/20",
                     isFuture && "bg-gray-700/30 text-gray-500 border-gray-600/30"
                   )}
                 >
                   {isDone ? "Completed" : isCurrent ? "In Progress" : "Pending"}
                 </Badge>
               </CardTitle>
-              <CardDescription className="text-[10px]">{config?.goal}</CardDescription>
+              <CardDescription className="text-xs">{config?.goal}</CardDescription>
             </div>
           </div>
 
@@ -808,9 +808,9 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
             {isCurrent && timeLeft && (
               <div
                 className={cn(
-                  "flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full",
-                  timeLeft.expired && "text-rose-400 bg-rose-500/10",
-                  timeLeft.urgent && !timeLeft.expired && "text-amber-400 bg-amber-500/10",
+                  "flex items-center gap-1 text-xs px-2 py-0.5 rounded-full",
+                  timeLeft.expired && "text-rose-700 bg-rose-500/10",
+                  timeLeft.urgent && !timeLeft.expired && "text-amber-700 bg-amber-500/10",
                   !timeLeft.urgent && !timeLeft.expired && "text-muted-foreground bg-gray-800/50"
                 )}
               >
@@ -879,7 +879,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
 
             {isCurrent && (
               <CardFooter className="flex justify-between">
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   Fill in the required fields and click Complete
                 </span>
                 <Button
@@ -947,12 +947,12 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground">Sales Workflow</span>
-          <Badge className="text-[10px] bg-copper-500/10 text-copper-400 border-copper-500/20">
+          <Badge className="text-xs bg-copper-500/10 text-copper-700 border-copper-500/20">
             {completedCount}/{stages.length} done · {totalWeight}% progress
           </Badge>
         </div>
         {allComplete && (
-          <Badge className="text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/20">
+          <Badge className="text-xs bg-emerald-500/15 text-emerald-700 border-emerald-500/20">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             Workflow Complete
           </Badge>
@@ -1010,9 +1010,9 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                   }
                 >
                   {isCompleted ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    <CheckCircle2 className="w-5 h-5 text-emerald-700" />
                   ) : isActive ? (
-                    <Play className="w-4 h-4 text-amber-400" />
+                    <Play className="w-4 h-4 text-amber-700" />
                   ) : (
                     <Icon className={cn("w-4 h-4", config?.color || "text-gray-500")} />
                   )}
@@ -1021,11 +1021,11 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 {/* Label */}
                 <span
                   className={cn(
-                    "text-[10px] font-medium text-center leading-tight",
+                    "text-xs font-medium text-center leading-tight",
                     isCompleted
-                      ? "text-emerald-400"
+                      ? "text-emerald-700"
                       : isActive
-                      ? "text-amber-400"
+                      ? "text-amber-700"
                       : "text-gray-500"
                   )}
                 >
@@ -1033,17 +1033,17 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 </span>
 
                 {/* Weight */}
-                <span className="text-[9px] text-muted-foreground">{config?.weight}%</span>
+                <span className="text-xs text-muted-foreground">{config?.weight}%</span>
 
                 {/* Deadline indicator */}
                 {isActive && timeLeft && (
                   <div
                     className={cn(
-                      "flex items-center gap-1 text-[9px]",
+                      "flex items-center gap-1 text-xs",
                       timeLeft.expired
-                        ? "text-rose-400"
+                        ? "text-rose-700"
                         : timeLeft.urgent
-                        ? "text-amber-400"
+                        ? "text-amber-700"
                         : "text-muted-foreground"
                     )}
                   >
@@ -1057,7 +1057,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 )}
 
                 {/* Stage number */}
-                <span className="text-[8px] text-muted-foreground/50">
+                <span className="text-xs text-muted-foreground/50">
                   Stage {stage.stage_order + 1}
                 </span>
               </div>

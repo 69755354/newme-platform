@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAED } from "@/lib/display-format.mjs";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Users, Gauge } from "lucide-react";
@@ -54,9 +55,7 @@ const QUALITY_META: { key: string; labelKey: string; color: string }[] = [
 ];
 
 function fmtAED(v: number): string {
-  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(2)}M`;
-  if (v >= 1_000) return `AED ${(v / 1_000).toFixed(0)}K`;
-  return `AED ${v}`;
+  return formatAED(v);
 }
 
 /* ─── Main Component ─── */
@@ -109,7 +108,7 @@ export default function LeadSources() {
     );
   }
   if (error) {
-    return <div className="flex items-center justify-center h-48 text-rose-400 text-sm">{error}</div>;
+    return <div className="flex items-center justify-center h-48 text-rose-700 text-sm">{error}</div>;
   }
   if (!data || data.sources.length === 0) {
     return (
@@ -130,7 +129,7 @@ export default function LeadSources() {
       <div className="flex items-center gap-2">
         <div className="w-1 h-4 rounded-full bg-purple-400" />
         <h2 className="text-sm font-semibold text-foreground">{t("analytics.leadSourceAnalysis")}</h2>
-        <span className="text-[11px] text-muted-foreground">{totals.count} {t("analytics.totalLeadsLower") || t("analytics.leadsLower")}</span>
+        <span className="text-xs text-muted-foreground">{totals.count} {t("analytics.totalLeadsLower") || t("analytics.leadsLower")}</span>
       </div>
 
       {/* Overall quality distribution — stacked div bar */}
@@ -159,7 +158,7 @@ export default function LeadSources() {
             const v = totals.quality[q.key] ?? 0;
             if (v === 0) return null;
             return (
-              <span key={q.key} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <span key={q.key} className="flex items-center gap-1 text-xs text-muted-foreground">
                 <span className="w-2 h-2 rounded-full" style={{ background: q.color }} />
                 {t(q.labelKey)} <span className="font-medium text-foreground">{v}</span>
               </span>
@@ -170,7 +169,7 @@ export default function LeadSources() {
 
       {/* Per-source conversion funnel */}
       <div className="rounded-xl border border-border/50 bg-card/50 overflow-hidden">
-        <div className="grid grid-cols-12 gap-2 px-3 py-2 border-b border-border/30 text-[10px] text-muted-foreground uppercase tracking-wider">
+        <div className="grid grid-cols-12 gap-2 px-3 py-2 border-b border-border/30 text-xs text-muted-foreground uppercase tracking-wider">
           <div className="col-span-3">{t("leads.source")}</div>
           <div className="col-span-2 text-right">{t("analytics.totalLeads")}</div>
           <div className="col-span-2 text-right">{t("analytics.conversion")}</div>
@@ -193,12 +192,12 @@ export default function LeadSources() {
                   </div>
                   <div className="col-span-2 text-right text-xs text-foreground">
                     {s.count}
-                    <span className="text-[10px] text-emerald-400 ml-1">{s.won} {t("dashboard.won")}</span>
+                    <span className="text-xs text-emerald-700 ml-1">{s.won} {t("dashboard.won")}</span>
                   </div>
                   <div className="col-span-2 text-right">
                     <span className={cn(
                       "text-xs font-mono font-semibold",
-                      s.conversionRate >= (totals.conversionRate ?? 0) ? "text-emerald-400" : "text-amber-400"
+                      s.conversionRate >= (totals.conversionRate ?? 0) ? "text-emerald-700" : "text-amber-700"
                     )}>
                       {s.conversionRate}%
                     </span>
@@ -220,12 +219,12 @@ export default function LeadSources() {
                     <Users className="w-3 h-3 text-muted-foreground" />
                     <div className="flex flex-wrap gap-1">
                       {assignReps.slice(0, 3).map((a) => (
-                        <span key={a.rep_id} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        <span key={a.rep_id} className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                           {a.rep_name} · {a.count}
                         </span>
                       ))}
                       {assignReps.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">+{assignReps.length - 3}</span>
+                        <span className="text-xs text-muted-foreground">+{assignReps.length - 3}</span>
                       )}
                     </div>
                   </div>
@@ -241,8 +240,8 @@ export default function LeadSources() {
         const best = [...sources].filter((s) => s.count >= 3).sort((a, b) => b.conversionRate - a.conversionRate)[0];
         if (!best) return null;
         return (
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground px-1">
-            <TrendingUp className="w-3 h-3 text-emerald-400" />
+          <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+            <TrendingUp className="w-3 h-3 text-emerald-700" />
             {t("analytics.bestSource")}{" "}
             <span className="font-semibold text-foreground">{translatedOrRaw(t, `sourceLabels.${best.source}`, best.source)}</span>{" "}
             ({best.conversionRate}% {t("analytics.conversion")})

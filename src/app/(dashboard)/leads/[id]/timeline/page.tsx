@@ -36,8 +36,8 @@ const TYPE_OPTIONS = [
 ] as const;
 
 const TYPE_COLORS: Record<string, string> = {
-  wsa: "bg-cyan-500/10 text-cyan-400",
-  phone: "bg-emerald-500/10 text-emerald-400",
+  wsa: "bg-cyan-500/10 text-cyan-700",
+  phone: "bg-emerald-500/10 text-emerald-700",
   other: "bg-gray-500/10 text-gray-400",
 };
 
@@ -164,7 +164,7 @@ export default function LeadTimelinePage() {
                       <div className="flex items-center gap-2">
                         <Icon className="w-4 h-4 text-copper-500" />
                         <span>{getTypeLabel(log.contact_type, lang)}</span>
-                        <Badge className={cn("text-[10px]", TYPE_COLORS[log.contact_type] || TYPE_COLORS.other)}>
+                        <Badge className={cn("text-xs", TYPE_COLORS[log.contact_type] || TYPE_COLORS.other)}>
                           {lang === "zh" ? "实际动作时间" : "Action time"} {formatDateTime(log.contact_time || log.created_at, (lang === "zh" ? "zh-CN" : "en-GB"))}
                         </Badge>
                       </div>
@@ -201,7 +201,7 @@ export default function LeadTimelinePage() {
                         onClick={() => setFormType(option.value)}
                         className={cn(
                           "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors",
-                          active ? "border-copper-500 bg-copper-500/10 text-copper-400" : "border-border text-muted-foreground hover:border-copper-500/40 hover:text-foreground"
+                          active ? "border-copper-500 bg-copper-500/10 text-copper-700" : "border-border text-muted-foreground hover:border-copper-500/40 hover:text-foreground"
                         )}
                       >
                         <Icon className="h-4 w-4" />{option.label[lang]}

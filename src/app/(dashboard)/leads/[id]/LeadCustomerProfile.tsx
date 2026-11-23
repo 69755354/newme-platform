@@ -67,12 +67,12 @@ export default function LeadCustomerProfile({
     <Card className="overflow-visible border-border bg-card shadow-sm">
       <CardHeader className="border-b border-border/70 pb-3">
         <CardTitle className="text-base text-foreground flex items-center gap-2">
-          <User className="w-4 h-4 text-copper-400" /> {t("leadDetail.customerProfile")}
+          <User className="w-4 h-4 text-copper-700" /> {t("leadDetail.customerProfile")}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="grid grid-cols-1 gap-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("leadDetail.sectionCustomer")}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("leadDetail.sectionCustomer")}</p>
           <Field label={t("leadDetail.customerName")}>
             {renderInlineEdit("customer_name", t("leadDetail.customerName"))}
           </Field>
@@ -87,7 +87,7 @@ export default function LeadCustomerProfile({
                   href={whatsappHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-1 inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 text-xs"
+                  className="mt-1 inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-700 text-xs"
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
                   {t("leadDetail.whatsappChat")}
@@ -108,7 +108,7 @@ export default function LeadCustomerProfile({
           </Field>
 
           {/* Source — editable dropdown */}
-          <p className="border-t border-border/70 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("leadDetail.sectionProjectFacts")}</p>
+          <p className="border-t border-border/70 pt-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{t("leadDetail.sectionProjectFacts")}</p>
           <Field label={t("leadDetail.source")}>
             <Select
               value={lead.source || ""}
@@ -210,10 +210,10 @@ export default function LeadCustomerProfile({
             <span className="text-muted-foreground text-xs font-medium">{t("leadDetail.transferHistory") || "Transfer History"}</span>
             {transferHistory.slice(0, 5).map((tr, i) => (
               <div key={tr.id || i} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                <span className="text-[10px] mt-0.5 shrink-0">→</span>
+                <span className="text-xs mt-0.5 shrink-0">→</span>
                 <div>
                   <span data-newme-uat-sensitive="true">{tr.description || (tr.operator?.full_name ? `Reassigned by ${tr.operator.full_name}` : "Reassigned")}</span>
-                  <span className="block text-[10px] opacity-60">
+                  <span className="block text-xs opacity-60">
                     {fmtDubai(tr.created_at, { locale: t("locale.dateLocale"), month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
@@ -230,7 +230,7 @@ export default function LeadCustomerProfile({
               data-newme-uat-sensitive="true"
               onClick={() => setShowSalesDropdown(!showSalesDropdown)}
               disabled={reassigning}
-              className="flex items-center gap-1.5 text-foreground text-sm hover:text-copper-400 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 text-foreground text-sm hover:text-copper-700 transition-colors disabled:opacity-50"
             >
               <User className="w-3.5 h-3.5" />
               <span>
@@ -258,7 +258,7 @@ export default function LeadCustomerProfile({
                     onClick={() => onReassign(u.id)}
                     className={cn(
                       "w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-muted transition-colors",
-                      lead.assigned_to === u.id ? "text-copper-400" : "text-foreground"
+                      lead.assigned_to === u.id ? "text-copper-700" : "text-foreground"
                     )}
                   >
                     <span
@@ -269,7 +269,7 @@ export default function LeadCustomerProfile({
                     />
                     <div className="flex-1 min-w-0">
                       <p data-newme-uat-sensitive="true" className="truncate">{u.full_name || u.email}</p>
-                      <p className="text-[10px] text-muted-foreground">{u.role}</p>
+                      <p className="text-xs text-muted-foreground">{u.role}</p>
                     </div>
                   </button>
                 ))}

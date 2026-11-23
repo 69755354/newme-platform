@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { formatDateTime, formatShortDate } from "./display-format.mjs"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -11,13 +12,16 @@ export function cn(...inputs: ClassValue[]) {
 // explicitly (t("locale.dateLocale")). The default never reads the browser:
 // the server and the first client render must format identically, otherwise
 // React reports a hydration mismatch.
+// S38: one date style everywhere ("22 Nov" / "11月22日", plus "14:05" when the caller
+// asks for a clock time, always Dubai time). The Intl options a caller passes only
+// decide whether a time is wanted and which language; month/year spelling is no
+// longer chosen page by page. A date-only value never shows a clock time.
 export function fmtDubai(d: string | Date | null | undefined, opts?: Intl.DateTimeFormatOptions & { locale?: string }): string {
   if (!d) return "—";
   const { locale = "en-US", ...fmtOpts } = opts || {};
-  const defaults: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
-  return new Date(d).toLocaleDateString(locale, {
-    ...defaults,
-    ...fmtOpts,
-    timeZone: "Asia/Dubai",
-  });
+  const lang = locale.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const wantsTime = fmtOpts.hour !== undefined || fmtOpts.minute !== undefined || fmtOpts.timeStyle !== undefined;
+  // a caller that explicitly asks for the year (contract / quotation documents) still gets it
+  const forceYear = fmtOpts.year === "numeric";
+  return wantsTime ? formatDateTime(d, lang, new Date(), forceYear) : formatShortDate(d, lang, new Date(), forceYear);
 }

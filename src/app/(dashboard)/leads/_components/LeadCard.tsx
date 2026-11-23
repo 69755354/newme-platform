@@ -5,6 +5,7 @@
  * Complete workflow edits remain in the Lead detail page.
  */
 
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import {
   AlertTriangle, Building2, Clock, Trash2, User, Users,
 } from "lucide-react";
 import {
-  PIPELINE_STAGES, STATUS_EMOJIS, STATUS_LABELS, isPlaceholder, SOURCE_ICONS,
+  PIPELINE_STAGES, STATUS_LABELS, isPlaceholder,
 } from "../_utils/constants";
 import { daysSince, fmtAED } from "../_utils/format";
 import { isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
@@ -65,8 +66,6 @@ export function LeadCard({
   t,
 }: LeadCardProps) {
   const days = daysSince(lead.last_contact_date || lead.updated_at);
-  const isHot = lead.lead_status === "hot";
-  const isStale = days !== null && days > 7 && !lead.final_status;
   const isCrit = days !== null && days >= 14 && !lead.final_status;
   const isReassigning = reassignLeadId === lead.id;
   const statusStyle = STATUS_LABELS[lead.lead_status || ""];
@@ -82,14 +81,14 @@ export function LeadCard({
     }
 
     if (lead.stage === "new") {
-      if (!lead.last_contact_date) return { label: t("leads.actionFirstContact"), urgent: true };
+      if (!lead.last_contact_date) return { label: t("leads.actionFirstContact"), urgent: false };
       if (!lead.quality || lead.quality === "pending") {
-        return { label: t("leads.actionQuality"), urgent: true };
+        return { label: t("leads.actionQuality"), urgent: false };
       }
     }
 
     if (stageAtLeast("contacted") && !lead.phone) {
-      return { label: t("leads.actionPhone"), urgent: true };
+      return { label: t("leads.actionPhone"), urgent: false };
     }
 
     if (stageAtLeast("requirement_confirmed")) {
@@ -107,7 +106,7 @@ export function LeadCard({
           : "";
         return {
           label: `${missingRequirements[0]}${suffix}`,
-          urgent: true,
+          urgent: false,
         };
       }
     }
@@ -116,18 +115,17 @@ export function LeadCard({
       stageAtLeast("quotation_submitted")
       && !(lead.quotation_value && lead.quotation_value > 0)
     ) {
-      return { label: t("leads.actionQuotationValue"), urgent: true };
+      return { label: t("leads.actionQuotationValue"), urgent: false };
     }
 
-    if (!lead.next_action) return { label: t("leads.actionNextAction"), urgent: true };
-    if (!lead.next_followup_date) return { label: t("leads.actionFollowupDate"), urgent: true };
+    if (!lead.next_action) return { label: t("leads.actionNextAction"), urgent: false };
+    if (!lead.next_followup_date) return { label: t("leads.actionFollowupDate"), urgent: false };
 
     const nextActionKey = `leads.nextActionLabels.${lead.next_action}`;
-    const translatedNextAction = t(nextActionKey);
     return {
       label: t("leads.actionNext").replace(
         "{action}",
-        translatedNextAction === nextActionKey ? lead.next_action : translatedNextAction,
+        translatedOrRaw(t, nextActionKey, lead.next_action),
       ),
       urgent: false,
     };
@@ -189,8 +187,7 @@ export function LeadCard({
         "cursor-pointer transition-all duration-150 group relative shrink-0",
         "hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/5",
         draggingLeadId === lead.id && "opacity-40",
-        isHot && "ring-1 ring-rose-500/30",
-        isCrit ? "ring-2 ring-red-500/40" : isStale ? "ring-1 ring-amber-500/30" : "",
+        isCrit && "ring-1 ring-red-600/40",
         selected && "ring-2 ring-copper-500 bg-copper-500/5",
       )}
       onClick={handleCardClick}
@@ -201,20 +198,20 @@ export function LeadCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <p className="text-sm font-medium text-foreground truncate max-w-[180px]">{!isPlaceholder(lead.customer_name) ? lead.customer_name : (lead.phone || t("common.unnamed"))}</p>
-              {statusStyle && <span className={cn("text-[9px] px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{STATUS_EMOJIS[lead.lead_status || ""] || ""} {t(`statusLabels.${lead.lead_status || ""}`)}</span>}
+              {statusStyle && <span className={cn("text-xs px-1 py-0.5 rounded font-medium", statusStyle.bg, statusStyle.color)}>{t(`statusLabels.${lead.lead_status || ""}`)}</span>}
               {isWhatsAppAdLead(lead) && (
-                <span data-testid="whatsapp-ad-badge" className="text-[9px] px-1 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-400">{t("s37.wa.badge")}</span>
+                <span data-testid="whatsapp-ad-badge" className="text-xs px-1 py-0.5 rounded font-medium bg-emerald-500/10 text-emerald-700">{t("s37.wa.badge")}</span>
               )}
             </div>
             {(!isPlaceholder(lead.property_type) || !isPlaceholder(lead.location)) && (
-              <div className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
+              <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground mt-0.5">
                 <Building2 className="w-3 h-3 shrink-0" /><span className="min-w-0 truncate">{[lead.property_type, lead.location].filter(v => !isPlaceholder(v)).join(" · ")}</span>
               </div>
             )}
           </div>
           <div className="flex shrink-0 items-start gap-2">
             {lead.quotation_value != null && lead.quotation_value > 0 && (
-              <span className="text-xs font-semibold text-copper-400">{fmtAED(lead.quotation_value)}</span>
+              <span className="text-xs font-semibold text-copper-700">{fmtAED(lead.quotation_value)}</span>
             )}
             {(salesRole === "admin" || salesRole === "boss") && (
               <div className="flex h-5 items-center" onClick={e => e.stopPropagation()}>
@@ -231,9 +228,9 @@ export function LeadCard({
           <div
             data-testid="lead-card-action-prompt"
             className={cn(
-              "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px]",
+              "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs",
               actionPrompt.urgent
-                ? "bg-amber-500/10 text-amber-600"
+                ? "bg-amber-100 text-amber-800"
                 : "bg-muted/60 text-muted-foreground"
             )}
             title={t("leads.actionOpenDetail")}
@@ -247,8 +244,8 @@ export function LeadCard({
 
         {/* Bottom info row */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground min-w-0">
-            <span>{SOURCE_ICONS[lead.source] || "📋"} {t(`sourceLabels.${lead.source}`) || lead.source}</span>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+            <span>{translatedOrRaw(t, `sourceLabels.${lead.source}`, lead.source)}</span>
             {lead.assigned_to && (
               <>
                 <span data-newme-uat-sensitive="true" className="inline-flex items-center gap-1 min-w-0">
@@ -258,7 +255,7 @@ export function LeadCard({
                 <button
                   ref={reassignButtonRef}
                   onClick={toggleReassign}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 transition-colors hover:bg-blue-500/20"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors hover:bg-muted/70"
                   title={t("leads.transfer")}
                   aria-label={t("leads.transfer")}
                   aria-expanded={isReassigning}
@@ -270,15 +267,15 @@ export function LeadCard({
           </div>
           <div className="flex items-center gap-1">
             {days !== null && (
-              <span className={cn("text-[10px] flex items-center gap-0.5",
-                isCrit ? "text-rose-400 font-semibold" : isStale ? "text-amber-400" : "text-muted-foreground"
+              <span className={cn("text-xs flex items-center gap-0.5",
+                isCrit ? "text-red-700 font-semibold" : "text-muted-foreground"
               )}>
                 <Clock className="w-3 h-3" />{days === 0 ? t("common.today") : t("common.nDays").replace("{n}", String(days))}
               </span>
             )}
             {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
               <button title={t("common.delete") || "Delete"}
-                className="hidden h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400 group-hover:inline-flex"
+                className="hidden h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-700 group-hover:inline-flex"
                 onClick={(event) => { event.stopPropagation(); void handleDelete(lead.id, lead.assigned_to); }}>
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -300,7 +297,7 @@ export function LeadCard({
                 onClick={() => onReassign(user.id)}
                 className={cn(
                   "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
-                  lead.assigned_to === user.id ? "text-copper-400" : "text-foreground"
+                  lead.assigned_to === user.id ? "text-copper-700" : "text-foreground"
                 )}
               >
                 <span className={cn(

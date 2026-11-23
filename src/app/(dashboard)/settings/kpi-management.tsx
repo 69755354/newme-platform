@@ -136,7 +136,7 @@ export default function KpiManagement({ canWriteKpi }: { canWriteKpi: boolean })
     <div className="space-y-6">
       {/* Period selector */}
       <div className="flex items-center gap-3">
-        <Target className="w-5 h-5 text-copper-400" />
+        <Target className="w-5 h-5 text-copper-700" />
         <select
           value={period}
           onChange={(e) => {
@@ -157,7 +157,7 @@ export default function KpiManagement({ canWriteKpi }: { canWriteKpi: boolean })
       {/* Company KPI */}
       <div className="rounded-xl border border-border/50 p-5">
         <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-copper-400" />
+          <TrendingUp className="w-4 h-4 text-copper-700" />
           {t("kpi.companyTarget")}（{period}）
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -189,7 +189,7 @@ export default function KpiManagement({ canWriteKpi }: { canWriteKpi: boolean })
       {/* Sales KPI */}
       <div className="rounded-xl border border-border/50 p-5">
         <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-          <Wallet className="w-4 h-4 text-copper-400" />
+          <Wallet className="w-4 h-4 text-copper-700" />
           {t("kpi.salesTarget")}（{period}）
         </h3>
         <div className="space-y-3">

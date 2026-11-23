@@ -55,7 +55,7 @@ export default function LeadContactQualityPanel({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-red-400">{error}</div>
+          <div className="text-sm text-red-700">{error}</div>
         </CardContent>
       </Card>
     );
@@ -102,9 +102,9 @@ export default function LeadContactQualityPanel({
   const qualityAssessed = quality !== "pending";
   const qualityBadgeClass =
     quality === "good"
-      ? "bg-emerald-500/10 text-emerald-400"
+      ? "bg-emerald-500/10 text-emerald-700"
       : quality === "normal"
-        ? "bg-amber-500/10 text-amber-400"
+        ? "bg-amber-500/10 text-amber-700"
         : "bg-gray-500/10 text-muted-foreground";
 
   // Gate status: both conditions must be met
@@ -131,7 +131,7 @@ export default function LeadContactQualityPanel({
           <span>{t("leads.contactQuality") || "Contact Quality"}</span>
           <Badge className={qualityBadgeClass}>
             {quality === "good"
-              ? "✓ Good"
+              ? "Good"
               : quality === "normal"
                 ? "Normal"
                 : "Pending"}
@@ -143,15 +143,15 @@ export default function LeadContactQualityPanel({
         <div className="rounded-lg border border-border/50 p-3 space-y-2">
           <div className="flex items-center gap-2">
             {milestoneCompleted ? (
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <ShieldCheck className="h-4 w-4 text-emerald-700" />
             ) : gatePassed ? (
-              <Unlock className="h-4 w-4 text-amber-400" />
+              <Unlock className="h-4 w-4 text-amber-700" />
             ) : (
               <Lock className="h-4 w-4 text-muted-foreground" />
             )}
             <span className="text-xs font-medium">
               {milestoneCompleted
-                ? "First Contact — Unlocked ✓"
+                ? "First Contact — Unlocked "
                 : gatePassed
                   ? "Requirements Met — Pending Unlock"
                   : "First Contact — Locked"}
@@ -165,7 +165,7 @@ export default function LeadContactQualityPanel({
                 {t("leadDetail.contactRecordsValid")}
               </span>
               <span
-                className={contactsMet ? "text-emerald-400 font-medium" : "text-amber-400"}
+                className={contactsMet ? "text-emerald-700 font-medium" : "text-amber-700"}
               >
                 {contactCount}/{contactsNeeded}
               </span>
@@ -179,7 +179,7 @@ export default function LeadContactQualityPanel({
               />
             </div>
             {contactCount < contactsNeeded && (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Need {contactsNeeded - contactCount} more contact
                 {contactsNeeded - contactCount > 1 ? "s" : ""} with valid time
               </p>
@@ -191,39 +191,39 @@ export default function LeadContactQualityPanel({
             <span className="text-muted-foreground">{t("leadDetail.qualityAssessed")}</span>
             <span>
               {qualityAssessed ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 inline" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700 inline" />
               ) : (
-                <AlertTriangle className="h-3.5 w-3.5 text-amber-400 inline" />
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-700 inline" />
               )}
             </span>
           </div>
 
           {/* Summary bar */}
-          <div className="flex gap-2 text-[10px]">
+          <div className="flex gap-2 text-xs">
             <span
               className={`px-1.5 py-0.5 rounded ${
                 contactsMet
-                  ? "bg-emerald-500/10 text-emerald-400"
-                  : "bg-amber-500/10 text-amber-400"
+                  ? "bg-emerald-500/10 text-emerald-700"
+                  : "bg-amber-500/10 text-amber-700"
               }`}
             >
-              Contacts: {contactsMet ? "✓" : "✗"}
+              Contacts: {contactsMet ? "✓" : "×"}
             </span>
             <span
               className={`px-1.5 py-0.5 rounded ${
                 qualityAssessed
-                  ? "bg-emerald-500/10 text-emerald-400"
-                  : "bg-amber-500/10 text-amber-400"
+                  ? "bg-emerald-500/10 text-emerald-700"
+                  : "bg-amber-500/10 text-amber-700"
               }`}
             >
-              Quality: {qualityAssessed ? "✓" : "✗"}
+              Quality: {qualityAssessed ? "✓" : "×"}
             </span>
           </div>
         </div>
 
         {/* ── Existing status indicators ── */}
         {quality === "pending" && lead.poor_reason && (
-          <div className="flex items-start gap-2 rounded bg-amber-500/5 px-2 py-1.5 text-xs text-amber-400">
+          <div className="flex items-start gap-2 rounded bg-amber-500/5 px-2 py-1.5 text-xs text-amber-700">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
             <span>{lead.poor_reason}</span>
           </div>
@@ -231,19 +231,19 @@ export default function LeadContactQualityPanel({
 
         <div className="space-y-1.5">
           {hasNoContact && (
-            <div className="flex items-center gap-2 text-xs text-red-400">
+            <div className="flex items-center gap-2 text-xs text-red-700">
               <AlertTriangle className="h-3 w-3" />
               {t("leadDetail.noContactYet")}
             </div>
           )}
           {isOverdue && (
-            <div className="flex items-center gap-2 text-xs text-red-400">
+            <div className="flex items-center gap-2 text-xs text-red-700">
               <Clock className="h-3 w-3" />
               {t("leadDetail.followupOverdueSince").replace("{date}", fmtDubai(lead.next_followup_date!, { locale: t("locale.dateLocale") }))}
             </div>
           )}
           {!hasNoContact && !isOverdue && (
-            <div className="flex items-center gap-2 text-xs text-emerald-400">
+            <div className="flex items-center gap-2 text-xs text-emerald-700">
               <CheckCircle2 className="h-3 w-3" />
               {t("leadDetail.contactActivityNormal")}
             </div>
@@ -270,7 +270,7 @@ export default function LeadContactQualityPanel({
                     <div className="truncate">
                       {log.summary || t("leadDetail.noSummary")}
                     </div>
-                    <div className="text-[10px] text-muted-foreground">
+                    <div className="text-xs text-muted-foreground">
                       {fmtDubai(log.contact_time || log.created_at, { locale: t("locale.dateLocale") })}
                     </div>
                   </div>
@@ -317,7 +317,7 @@ export default function LeadContactQualityPanel({
                       }
                     }}
                     className={cn(
-                      "min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border transition-colors border-rose-500/30 text-rose-400",
+                      "min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border transition-colors border-rose-500/30 text-rose-700",
                       poorReason.trim().length < 3 ? "opacity-50 cursor-not-allowed" : "hover:bg-rose-500/10"
                     )}
                   >
@@ -354,19 +354,19 @@ export default function LeadContactQualityPanel({
                     }}
                     className={cn(
                       "min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border transition-colors",
-                      q === "good" ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" :
-                      "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                      q === "good" ? "border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10" :
+                      "border-amber-500/30 text-amber-700 hover:bg-amber-500/10"
                     )}
                   >
-                    {qualitySubmitting === q ? t("common.saving") : q === "good" ? `✓ ${t("leadDetail.qualityGoodBtn")}` : t("leadDetail.qualityNormalBtn")}
+                    {qualitySubmitting === q ? t("common.saving") : q === "good" ? `${t("leadDetail.qualityGoodBtn")}` : t("leadDetail.qualityNormalBtn")}
                   </button>
                 ))}
                 <button
                   onClick={() => setShowingPoorReason(true)}
                   disabled={qualitySubmitting !== null}
-                  className="min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="min-h-10 md:min-h-0 text-xs px-3 py-1.5 rounded border border-rose-500/30 text-rose-700 hover:bg-rose-500/10 transition-colors"
                 >
-                  ⚠️ {t("leadDetail.qualityPoorBtn")}
+                  {t("leadDetail.qualityPoorBtn")}
                 </button>
               </div>
             )}

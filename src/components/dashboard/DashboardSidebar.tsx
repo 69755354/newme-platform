@@ -92,7 +92,7 @@ export function DashboardSidebar({
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm text-foreground truncate">NewMe</p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t("nav.platformTitle")}
               </p>
             </div>
@@ -100,7 +100,7 @@ export function DashboardSidebar({
           </div>
           {/* Role badge */}
           <div className={cn(
-            "mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
+            "mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium",
             isManagement
               ? "bg-slate-600/10 text-slate-700 border border-slate-600/20"
               : "bg-copper-500/10 text-copper-600 border border-copper-500/20"
@@ -147,8 +147,8 @@ export function DashboardSidebar({
         {/* Footer — user + logout */}
         <div className="p-3 border-t border-border space-y-2">
           {userEmail && (
-            <div data-newme-uat-sensitive="true" className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
-              <div className="w-6 h-6 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-[10px] font-bold shrink-0">
+            <div data-newme-uat-sensitive="true" className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+              <div className="w-6 h-6 rounded-full bg-slate-600/20 flex items-center justify-center text-slate-600 text-xs font-bold shrink-0">
                 {userEmail.charAt(0).toUpperCase()}
               </div>
               <span className="truncate">{userEmail}</span>
@@ -157,7 +157,7 @@ export function DashboardSidebar({
           <div className="flex justify-end px-2">
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-rose-400 transition-colors"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-rose-700 transition-colors"
             >
               <LogOut className="w-3 h-3" />
               {t("nav.logout")}

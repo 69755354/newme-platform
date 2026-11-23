@@ -36,5 +36,8 @@ export function segmentTitle(labels, key, count, fallback) {
  */
 export function translatedOrRaw(translate, path, raw) {
   const text = translate(path);
-  return typeof text === "string" && text.trim() !== "" && text !== path ? text : String(raw ?? "");
+  if (typeof text === "string" && text.trim() !== "" && text !== path) return text;
+  const value = String(raw ?? "");
+  // S38: a stored code like "unknown_import" or "pending_ceo" is never shown as-is.
+  return /^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(value) ? humanizeKey(value) : value;
 }

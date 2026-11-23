@@ -113,12 +113,12 @@ interface QuoteDetailDialogProps {
 /* ─── Status config ─── */
 const STATUS_STYLES: Record<string, { color: string; bg: string; border: string }> = {
   draft: { color: "text-muted-foreground", bg: "bg-gray-500/10", border: "border-gray-500/20" },
-  sent: { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-  accepted: { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  rejected: { color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/20" },
-  expired: { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  contract_created: { color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20" },
-  won: { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
+  sent: { color: "text-blue-700", bg: "bg-blue-500/10", border: "border-blue-500/20" },
+  accepted: { color: "text-emerald-700", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
+  rejected: { color: "text-rose-700", bg: "bg-rose-500/10", border: "border-rose-500/20" },
+  expired: { color: "text-amber-700", bg: "bg-amber-500/10", border: "border-amber-500/20" },
+  contract_created: { color: "text-purple-700", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+  won: { color: "text-emerald-700", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
 };
 const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired", "contract_created", "won"];
 
@@ -139,7 +139,7 @@ function safeLineItems(value: unknown) {
 
 function getCategoryIcon(key: string): string {
   const cat = DEVICE_CATALOG.find((c) => c.key === key);
-  return cat?.icon ?? "📦";
+  return "";
 }
 function getCategoryLabel(key: string): string {
   const cat = DEVICE_CATALOG.find((c) => c.key === key);
@@ -336,7 +336,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-lg flex items-center gap-2">
-                <Hash className="w-4 h-4 text-copper-400" />
+                <Hash className="w-4 h-4 text-copper-700" />
                 {quote.quote_no || "—"}
               </DialogTitle>
               <p className="text-sm text-muted-foreground mt-0.5">
@@ -363,24 +363,24 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
         {/* ═══════════ Summary Bar ═══════════ */}
         <div className="grid grid-cols-5 gap-3 p-4 rounded-xl bg-muted/60 border border-border/30">
           <div className="text-center">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.devices")}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.devices")}</p>
             <p className="text-sm font-medium text-foreground">{fmtAED(devicesTotal)}</p>
           </div>
           <div className="text-center">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.discount")}</p>
-            <p className="text-sm font-medium text-rose-400">−{fmtAED(discountAmt)}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.discount")}</p>
+            <p className="text-sm font-medium text-rose-700">−{fmtAED(discountAmt)}</p>
           </div>
           <div className="text-center">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.servicesTax")}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.servicesTax")}</p>
             <p className="text-sm font-medium text-foreground">{fmtAED(estimatedServices)}</p>
           </div>
           <div className="text-center col-span-1">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.tax")}</p>
-            <p className="text-sm font-medium text-amber-400">{fmtAED(taxAmt)}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.tax")}</p>
+            <p className="text-sm font-medium text-amber-700">{fmtAED(taxAmt)}</p>
           </div>
           <div className="text-center bg-copper-500/10 rounded-lg p-2 -m-1">
-            <p className="text-[10px] text-copper-400 uppercase tracking-wider mb-0.5">{t("quotes.total")}</p>
-            <p className="text-lg font-bold text-copper-400">
+            <p className="text-xs text-copper-700 uppercase tracking-wider mb-0.5">{t("quotes.total")}</p>
+            <p className="text-lg font-bold text-copper-700">
               {fmtAED(quote.total_amount)}
             </p>
           </div>
@@ -408,7 +408,6 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                     className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/40 hover:bg-muted/60 transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">{group.icon}</span>
                       <span className="text-sm font-medium text-foreground">{group.label}</span>
                       <span className="text-xs text-muted-foreground">({group.items.length} items)</span>
                     </div>
@@ -452,29 +451,29 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
         {/* ═══════════ Info Grid ═══════════ */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.validUntil")}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.validUntil")}</p>
             <p className="text-sm text-foreground flex items-center gap-1">
               <Calendar className="w-3 h-3 text-muted-foreground" />
               {fmtDate(quote.valid_until, t("locale.dateLocale"))}
             </p>
           </div>
           <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.payment")}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.payment")}</p>
             <p className="text-sm text-foreground">{quote.payment_terms || "—"}</p>
           </div>
           <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.delivery")}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.delivery")}</p>
             <p className="text-sm text-foreground">{quote.delivery_terms || "—"}</p>
           </div>
           <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.discount")}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">{t("quotes.discount")}</p>
             <p className="text-sm text-foreground">{quote.discount_rate || 0}%</p>
           </div>
         </div>
 
         {quote.notes && (
           <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.notes")}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t("quotes.notes")}</p>
             <p className="text-sm text-foreground bg-muted/30 rounded-lg p-3">{quote.notes}</p>
           </div>
         )}
@@ -494,7 +493,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           <Button
             size="sm"
             variant="outline"
-            className="text-xs gap-1.5 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10"
+            className="text-xs gap-1.5 text-emerald-700 border-emerald-500/20 hover:bg-emerald-500/10"
             onClick={() => handleStatusChange("accepted")}
             disabled={shownStatus === "accepted"}
           >
@@ -503,7 +502,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           <Button
             size="sm"
             variant="outline"
-            className="text-xs gap-1.5 text-rose-400 border-rose-500/20 hover:bg-rose-500/10"
+            className="text-xs gap-1.5 text-rose-700 border-rose-500/20 hover:bg-rose-500/10"
             onClick={() => handleStatusChange("rejected")}
             disabled={shownStatus === "rejected"}
           >
@@ -516,7 +515,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
             <Button
               size="sm"
               variant="outline"
-              className="text-xs gap-1.5 text-purple-400 border-purple-500/20 hover:bg-purple-500/10"
+              className="text-xs gap-1.5 text-purple-700 border-purple-500/20 hover:bg-purple-500/10"
               onClick={() => setSchedule(schedule ? null : defaultSchedule(quoteTotal))}
               disabled={loadingConvert}
             >
@@ -529,7 +528,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
           {quote.contract_id && (
             <a
               href="/contracts"
-              className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs text-emerald-700 hover:text-emerald-700 transition-colors"
             >
               <ExternalLink className="w-3 h-3" />
               {quote.contract_no || "View Contract"}
@@ -572,7 +571,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
         {schedule && (
           <div className="mt-4 rounded-lg border border-purple-500/20 bg-purple-500/[0.04] p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-purple-300">{t("quotes.paymentSchedule")}</p>
+              <p className="text-xs font-medium text-purple-700">{t("quotes.paymentSchedule")}</p>
               <p className="text-xs text-muted-foreground">
                 Quotation total {fmtAED(quoteTotal)}
               </p>
@@ -608,7 +607,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-xs text-rose-400 hover:bg-rose-500/10"
+                  className="text-xs text-rose-700 hover:bg-rose-500/10"
                   onClick={() => removeInstallment(index)}
                   disabled={schedule.length <= 1}
                 >
@@ -624,7 +623,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
               <span
                 className={cn(
                   "text-xs",
-                  scheduleBalanced ? "text-emerald-400" : "text-amber-400",
+                  scheduleBalanced ? "text-emerald-700" : "text-amber-700",
                 )}
               >
                 {scheduleBalanced

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { applyPlan, buildLeadIndex, classifyRow, matchLead, parseRegister, planFeedback, FORM_EVENT } from "../../src/lib/sheet-meta-feedback.mjs";
+import { applyPlan, buildLeadIndex, classifyRow, feedbackShowsNextStep, matchLead, parseRegister, planFeedback, FORM_EVENT } from "../../src/lib/sheet-meta-feedback.mjs";
 import { parseArgs, runFeedback } from "../../scripts/sheet-meta-feedback.mjs";
 import { leadRef } from "../../src/lib/meta-ids-export.mjs";
 
@@ -162,4 +162,36 @@ test("the job never writes the sheet or OS lead fields and the unit template shi
   const env = readFileSync(new URL("../../infra/sheet-meta-feedback/sheet-meta-feedback.env.example", import.meta.url), "utf8");
   assert.match(env, /^SHEET_META_FEEDBACK_ENABLED=false$/m);
   assert.match(readFileSync(new URL("../../infra/sheet-meta-feedback/newme-sheet-meta-feedback.service", import.meta.url), "utf8"), /^# STATUS: after-flag/m);
+});
+
+test("feedback keywords: genuine next steps qualify", () => {
+  for (const t of ["Customer asked for drawings", "Sent quotation on WhatsApp", "will send the quote tomorrow", "Site visit booked for Sunday",
+    "Wants to visit his site next week", "Meeting arranged at the office", "Coming to the showroom visit on Friday", "Day1 no answer.\nDay 3: spoke, asked for a quotation"]) {
+    assert.equal(feedbackShowsNextStep(t), true, t);
+  }
+});
+
+test("feedback keywords: negatives and unreachable never qualify", () => {
+  for (const t of ["not interested", "No inquiry", "junk lead", "wrong number", "budget issue, wants a cheaper option", "no answer", "No answer, will try again",
+    "no meeting wanted", "refused quotation", "in a meeting, call back later", "", null]) {
+    assert.equal(feedbackShowsNextStep(t), false, String(t));
+  }
+});
+
+test("feedback keywords: the imported source notes block is ignored", () => {
+  assert.equal(feedbackShowsNextStep("[Imported source notes 2029]\nsent quotation and drawings"), false);
+  assert.equal(feedbackShowsNextStep("Asked for drawings\n\n[Imported source notes]\nnot interested"), true);
+});
+
+test("rules: quality, quote and feedback each qualify; explicit Not fit is only overridden by a quote", () => {
+  const rows = parseRegister([[...HEADER, "Day 1 feedback", "Later follow-ups / B2B notes"],
+    ["META-900000000000001", "Not assessed", "", "", "", "asked for drawings", ""],
+    ["META-900000000000005", "Qualified", "", "9000", "", "", "site visit booked"],
+    [`WA-${L.wa.id}`, "Not fit", "", "", "", "meeting arranged", ""]]);
+  assert.deepEqual(classifyRow(rows[0]).rules, ["feedback"]);
+  assert.deepEqual(classifyRow(rows[1]).rules, ["quality", "quote", "feedback"]);
+  assert.equal(classifyRow(rows[2]).outcome, "not_fit");
+  const plan = planFeedback(rows, index, empty());
+  assert.equal(plan.counts.leads_by_feedback, 2); assert.equal(plan.counts.leads_only_by_feedback, 1);
+  assert.equal(plan.counts.leads_by_quality, 1); assert.equal(plan.counts.leads_by_quote, 1);
 });

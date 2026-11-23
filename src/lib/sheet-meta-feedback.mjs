@@ -31,6 +31,8 @@ export function parseRegister(values) {
   const header = (values[0] ?? []).map(norm);
   const col = (name) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
   const idx = { quality: col("Lead quality"), quote: col("Quote value AED"), master: col("Master Lead ID"), source: col("Source lead ID"), stage: col("Opportunity stage") };
+  // Sales write Day 1-5 feedback (R-V) and "Later follow-ups / B2B notes" (W); optional columns, found by name.
+  const fbCols = [1, 2, 3, 4, 5].map((n) => col(`Day ${n} feedback`)).concat(col("Later follow-ups / B2B notes")).filter((i) => i >= 0);
   const missing = Object.entries(idx).filter(([k, v]) => v < 0 && k !== "stage").map(([k]) => k);
   if (missing.length) throw new Error(`Lead Register header lacks: ${missing.join(", ")}`);
   const rows = [];
@@ -38,16 +40,40 @@ export function parseRegister(values) {
     const r = values[i] ?? [];
     const master = norm(r[idx.master]); const source = norm(r[idx.source]);
     if (!master && !source) continue;
-    rows.push({ master, source, quality: lc(r[idx.quality]), quoteRaw: norm(r[idx.quote]) });
+    rows.push({ master, source, quality: lc(r[idx.quality]), quoteRaw: norm(r[idx.quote]), feedback: fbCols.map((i) => norm(r[i])).filter(Boolean).join("\n") });
   }
   return rows;
 }
 
-/** One sheet row -> what it says (never the customer): outcome qualified | not_fit | none, quote amount or null. */
+const IMPORTED_BLOCK = /\[Imported source notes[\s\S]*?(?=\n\s*\n|$)/gi;
+// A segment (sentence / line) that shows the customer is not a prospect or could not be reached never qualifies.
+const NEGATIVE = /not interested|no (in)?quiry|no enquiry|junk|wrong number|budget|no answer|not answer|no response|not respond|unreachable|not reachable|spam|fake|not looking|no need|not need|doesn'?t need|don'?t need|in a meeting|call (me )?back|cancel/i;
+// A negated next step ("no meeting", "refused quotation") is not a next step either.
+const NEGATED_STEP = /\b(no|not|without|never|refus\w*|declin\w*|rejected?)\s+(\w+\s+)?(drawings?|quot\w*|meeting|visit\w*|showroom)/i;
+const POSITIVE = /\bdrawings?\b|\bquot(e|es|ed|ing|ation|ations)\b|\bsite visit|\bvisit(ed|ing)?\s+(his|her|their|the|our|my)?\s*(site|villa|home|house|apartment|showroom|property)|\bshow ?room( visit)?\b|\bmeeting\b|\bmeet(ing)? (him|her|them|at|on)\b/i;
+
+/**
+ * Sales free text -> does it show a genuine next step (drawings, quotation, site visit, meeting, showroom visit)?
+ * The "[Imported source notes ...]" block is history, not sales feedback, and is ignored. Pure.
+ */
+export function feedbackShowsNextStep(text) {
+  const clean = String(text ?? "").replace(IMPORTED_BLOCK, " ");
+  return clean.split(/[\n.;!?]+/).some((seg) => POSITIVE.test(seg) && !NEGATIVE.test(seg) && !NEGATED_STEP.test(seg));
+}
+
+/**
+ * One sheet row -> what it says (never the customer). `rules` lists why it qualifies: quality, quote, feedback.
+ * An explicit "Not fit" is not overridden by feedback text, only by a quote amount.
+ */
 export function classifyRow(row) {
   const quote = moneyNumber(row.quoteRaw);
-  const outcome = QUALIFIED.has(row.quality) ? "qualified" : NOT_FIT.has(row.quality) ? "not_fit" : "none";
-  return { outcome, quote, badQuote: row.quoteRaw !== "" && quote === null && !/^0*(\.0+)?$/.test(row.quoteRaw.replace(/[,\s]/g, "")) };
+  const rules = [];
+  if (QUALIFIED.has(row.quality)) rules.push("quality");
+  if (quote !== null) rules.push("quote");
+  const notFit = NOT_FIT.has(row.quality);
+  if (!notFit && feedbackShowsNextStep(row.feedback)) rules.push("feedback");
+  const outcome = rules.length ? "qualified" : notFit ? "not_fit" : "none";
+  return { outcome, rules, quote, badQuote: row.quoteRaw !== "" && quote === null && !/^0*(\.0+)?$/.test(row.quoteRaw.replace(/[,\s]/g, "")) };
 }
 
 /** Lead index from OS rows {id, meta_leadgen_id, ctwa_clid, created_at, archived}. */
@@ -86,7 +112,7 @@ export function matchLead(row, index) {
  * `waba` = Set of lead ids whose click-to-WhatsApp conversation has a valid business account id.
  */
 export function planFeedback(rows, index, { existing, waba, nowMs, maxEvents = DEFAULT_MAX_EVENTS, maxLeadAgeDays = DEFAULT_MAX_LEAD_AGE_DAYS, sendLost = true }) {
-  const counts = { sheet_rows: rows.length, qualified_rows: 0, not_fit_rows: 0, quote_rows: 0, bad_quote_cells: 0, unmatched: 0, unmatched_legacy: 0, archived: 0,
+  const counts = { sheet_rows: rows.length, qualified_rows: 0, rows_by_quality: 0, rows_by_quote: 0, rows_by_feedback: 0, leads_by_quality: 0, leads_by_quote: 0, leads_by_feedback: 0, leads_only_by_quality: 0, leads_only_by_quote: 0, leads_only_by_feedback: 0, not_fit_rows: 0, quote_rows: 0, bad_quote_cells: 0, unmatched: 0, unmatched_legacy: 0, archived: 0,
     too_old: 0, already_queued: 0, not_fit_wa_no_signal: 0, no_ctwa_clid_or_leadgen: 0, wa_no_waba: 0, lost_disabled: 0, deferred_by_cap: 0, duplicate_rows: 0,
     form_qualified: 0, form_quoted: 0, form_lost: 0, wa_qualified: 0, wa_quote_valued: 0, form_quoted_os_value_known: 0 };
   const items = []; const seen = new Set(); let total = 0;
@@ -94,6 +120,7 @@ export function planFeedback(rows, index, { existing, waba, nowMs, maxEvents = D
   for (const row of rows) {
     const c = classifyRow(row);
     if (c.outcome === "qualified") counts.qualified_rows++;
+    for (const r of c.rules) counts[`rows_by_${r}`]++;
     if (c.outcome === "not_fit") counts.not_fit_rows++;
     if (c.quote) counts.quote_rows++;
     if (c.badQuote) counts.bad_quote_cells++;
@@ -105,7 +132,8 @@ export function planFeedback(rows, index, { existing, waba, nowMs, maxEvents = D
     if (lead.archived) { counts.archived++; continue; }
     const created = Date.parse(lead.created_at ?? "");
     if (!Number.isFinite(created) || nowMs - created > maxAgeMs) { counts.too_old++; continue; }
-    const qualified = c.outcome === "qualified" || c.quote !== null;
+    const qualified = c.outcome === "qualified";
+    if (qualified) { for (const r of c.rules) counts[`leads_by_${r}`]++; if (c.rules.length === 1) counts[`leads_only_by_${c.rules[0]}`]++; }
     const events = [];
     const isForm = Boolean(normalizeLeadgenId(lead.meta_leadgen_id));
     const isWa = Boolean(normalizeCtwaClid(lead.ctwa_clid)) && waba.has(lead.id);

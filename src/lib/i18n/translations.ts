@@ -430,7 +430,7 @@ export const translations = {
       recovery: "Recovery",
       transfer: "Transfer",
       review: "Review",
-      needsFollowup: "Needs follow-up",
+      needsFollowup: "All overdue follow-ups",
       noUsers: "No users",
       noUsersFound: "No users found",
       holdSince: "Hold Since",
@@ -1391,7 +1391,7 @@ export const translations = {
       actions: "Actions",
       noMatching: "No matching users",
       addNewUser: "Add New User",
-      addNewUserDesc: "Create a new user and assign a role. The user will receive an activation email.",
+      addNewUserDesc: "Create a new user and assign a role. Set an initial password and tell the person in private; they must change it at first login.",
       fullName: "Full Name",
       enterName: "Enter full name",
       password: "Password",
@@ -2247,6 +2247,20 @@ export const translations = {
         waitingMinutes: "Customer has been waiting for a reply on WhatsApp for {n} min",
       },
     },
+    // ── S42 老板数字与管理 (2026-11-24) — separate block at the end ──
+    s42: {
+      noTargets: "Signing and collection targets are not set for this month",
+      leadNotFound: "This lead does not exist, or you do not have permission to view it",
+      backToLeads: "Back to leads",
+      intake: {
+        newToday: "New today",
+        uncontacted1h: "Waiting over 1 hour, not contacted",
+        unassigned: "Unassigned",
+      },
+      ads: { scope: "{window}, by the day the lead was created · grouped {group}" },
+      a11y: { selectLead: "Select {name}" },
+      import: { sourceRequired: "{n} rows have no source and will not be imported. Fill the \"Leads from\" column and upload again." },
+    },
     // ── S39 销售愿意天天用 (2026-11-23) — separate block at the end ──
     s39: {
       actions: { title: "Quick actions", call: "Call", quickLog: "Log a contact" },
@@ -2689,7 +2703,7 @@ export const translations = {
       recovery: "回收",
       transfer: "转移",
       review: "审阅",
-      needsFollowup: "需跟进",
+      needsFollowup: "所有逾期跟进",
       noUsers: "无用户",
       noUsersFound: "未找到用户",
       holdSince: "搁置时间",
@@ -3634,7 +3648,7 @@ export const translations = {
       actions: "操作",
       noMatching: "没有匹配的用户",
       addNewUser: "添加新用户",
-      addNewUserDesc: "创建新用户并分配角色。用户将收到激活邮件。",
+      addNewUserDesc: "创建新用户并分配角色。设置初始密码并线下告知对方；首次登录会要求修改密码。",
       fullName: "姓名",
       enterName: "输入姓名",
       password: "密码",
@@ -4489,6 +4503,20 @@ export const translations = {
         waitingHours: "客户在 WhatsApp 等回复 {n} 小时",
         waitingMinutes: "客户在 WhatsApp 等回复 {n} 分钟",
       },
+    },
+    // ── S42 老板数字与管理 (2026-11-24) — 独立区块，放在末尾 ──
+    s42: {
+      noTargets: "本月签约 / 回款目标未设置",
+      leadNotFound: "线索不存在或你没有权限查看",
+      backToLeads: "返回线索列表",
+      intake: {
+        newToday: "今天进来",
+        uncontacted1h: "超过 1 小时未联系",
+        unassigned: "未分配",
+      },
+      ads: { scope: "{window}，按线索建档日 · {group}" },
+      a11y: { selectLead: "选择 {name}" },
+      import: { sourceRequired: "有 {n} 行没有来源，不会导入。请在表格的“Leads from”列补上来源后重新上传。" },
     },
     // ── S39 销售愿意天天用 (2026-11-23) — 独立区块，放在末尾 ──
     s39: {

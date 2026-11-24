@@ -219,6 +219,10 @@ export default function AdsPage() {
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-blue-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.totalLeads")}</p>
           <p className="text-2xl font-bold text-foreground">{totalStats.total}</p>
+          {/* S42 (F07④): which window and which grouping this total is counted on */}
+          <p className="text-xs text-muted-foreground mt-0.5" data-testid="ads-scope">
+            {t("s42.ads.scope").replace("{window}", days === 0 ? t("ads.windowAll") : t("ads.windowDays").replace("{n}", String(days))).replace("{group}", viewLabels[viewMode])}
+          </p>
         </div>
         <div className="p-4 rounded-xl border border-border/50 bg-gradient-to-br from-emerald-500/5 to-transparent">
           <p className="text-xs text-muted-foreground">{t("ads.validLeads")}</p>

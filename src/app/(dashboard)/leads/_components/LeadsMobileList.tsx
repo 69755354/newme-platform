@@ -55,6 +55,7 @@ export function LeadsMobileList({ leads, resetKey = "", onOpen, t }: Props) {
           {t("s39.list.sort")}
           <select
             data-testid="leads-sort-select"
+            aria-label={t("s39.list.sort")}
             value={sort}
             onChange={(event) => choose(event.target.value)}
             className="h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground"

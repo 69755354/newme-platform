@@ -110,11 +110,23 @@ export async function POST(request: NextRequest) {
     const importBatchId = crypto.randomUUID();
     const now = new Date().toISOString();
 
+    // S42 (F22): a lead without a source is never written, whatever the client sent.
+    const sourceErrors: { row: number; error: string }[] = [];
+    const rowsWithSource = allRows.filter((row) => {
+      const raw = row?.raw_import_data?.raw_source ?? row?.source;
+      if (String(raw ?? "").trim() !== "") return true;
+      sourceErrors.push({ row: Number(row?.row_number) || 0, error: "Source is required" });
+      return false;
+    });
+    if (rowsWithSource.length === 0) {
+      return NextResponse.json({ error: "Source is required for every row", errors: sourceErrors }, { status: 400 });
+    }
+
     // ─── Build lead insert rows with server-side re-validation ───
     // Duplicate client-side mapSource/mapQuality/mapStatus from preview
     // so source/quality/lead_status are ALWAYS normalized server-side,
     // even if the client sends un-normalized or malicious values.
-    const leadsToInsert = allRows.map((row) => {
+    const leadsToInsert = rowsWithSource.map((row) => {
       const rawImportData = row.raw_import_data || {};
       const rawStatus = rawImportData.raw_status ?? row.lead_status;
       const rawQuality = rawImportData.raw_quality ?? row.quality;
@@ -162,7 +174,7 @@ export async function POST(request: NextRequest) {
     // Batch insert — strip row_number before sending to Supabase
     const BATCH_SIZE = 50;
     let imported = 0;
-    const errors: { row: number; error: string }[] = [];
+    const errors: { row: number; error: string }[] = [...sourceErrors]; // S42 (F22): rows refused for a missing source
     const rowNumToLeadId = new Map<number, string>();
     let skippedDuplicates = 0;
     // Leads newly stored WITH their Meta id; only these get the initial "Lead" event.

@@ -1,6 +1,6 @@
 "use client";
 
-import { formatAED } from "@/lib/display-format.mjs";
+import { formatAED, formatShortDate } from "@/lib/display-format.mjs";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
@@ -84,7 +84,7 @@ function SummaryCard({ label, value, sub, alert }: {
 /* ─── Main Component ─── */
 export default function PaymentTracker() {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
 
   const [data, setData] = useState<PaymentData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,9 +162,10 @@ export default function PaymentTracker() {
     );
   }
 
+  // S42 (F23): placeholder states keep the loaded panel's height so the page does not shift.
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+      <div className="flex items-center justify-center min-h-[360px] text-muted-foreground text-sm">
         {t("analytics.loadingPayment")}
       </div>
     );
@@ -172,14 +173,14 @@ export default function PaymentTracker() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-48 text-rose-700 text-sm">
+      <div className="flex items-center justify-center min-h-[360px] text-rose-700 text-sm">
         {error}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-h-[360px]">
       {/* Header */}
       <div className="flex items-center gap-2">
         <div className="w-1 h-4 rounded-full bg-copper-400" />
@@ -286,7 +287,7 @@ export default function PaymentTracker() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-xs font-semibold text-foreground">{fmtAED(inst.amount)}</span>
                       <span className="text-xs text-muted-foreground">#{inst.seq}</span>
-                      <span className="text-xs text-muted-foreground">{t("analytics.dueLabel")} {inst.due_date}</span>
+                      <span className="text-xs text-muted-foreground">{t("analytics.dueLabel")} {formatShortDate(inst.due_date, lang)}</span>
                       {inst.overdue_days > 0 && (
                         <span className="text-xs text-red-700">{inst.overdue_days}{t("analytics.overdueDaysLabel")}</span>
                       )}
@@ -309,7 +310,7 @@ export default function PaymentTracker() {
                       <span className={cn(
                         "text-xs",
                         inst.status === "overdue" ? "text-red-700" : "text-muted-foreground"
-                      )}>{inst.due_date}</span>
+                      )}>{formatShortDate(inst.due_date, lang)}</span>
                     </div>
                     <div className="flex-1 text-center">
                       <StatusBadge status={inst.status} />
@@ -349,7 +350,7 @@ export default function PaymentTracker() {
                 <div className="min-w-0">
                   <p className="text-xs font-medium truncate">{inst.customer_name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {fmtAED(inst.amount)} · {t("analytics.duePrefix")} {inst.due_date} · {inst.overdue_days}{t("analytics.overdueDaysLabel")}
+                    {fmtAED(inst.amount)} · {t("analytics.duePrefix")} {formatShortDate(inst.due_date, lang)} · {inst.overdue_days}{t("analytics.overdueDaysLabel")}
                   </p>
                 </div>
                 <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
@@ -377,7 +378,7 @@ export default function PaymentTracker() {
                 <div className="min-w-0">
                   <p className="text-xs font-medium truncate">{inst.customer_name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {fmtAED(inst.amount)} · {t("analytics.duePrefix")} {inst.due_date}
+                    {fmtAED(inst.amount)} · {t("analytics.duePrefix")} {formatShortDate(inst.due_date, lang)}
                   </p>
                 </div>
                 <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />

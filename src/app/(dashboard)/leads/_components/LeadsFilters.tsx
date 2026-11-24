@@ -131,28 +131,28 @@ export function LeadsFilters({
           </button>
         )}
       </div>
-      <select value={stageFilter} onChange={(e) => onStageChange(e.target.value)}
+      <select value={stageFilter} onChange={(e) => onStageChange(e.target.value)} aria-label={t("leads.allStages")}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[130px]">
         <option value="all">{t("leads.allStages")}</option>
         {PIPELINE_STAGES.map(s => <option key={s.key} value={s.key}>{t(`stageLabels.${s.key}`)}</option>)}
       </select>
-      <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}
+      <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} aria-label={t("leads.allSources")}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[140px]">
         <option value="all">{t("leads.allSources")}</option>
         {sources.map(src => <option key={src} value={src}>{t(`sourceLabels.${src}`) || src}</option>)}
         <option value="whatsapp_ad">{t("whatsappAds.filterLabel")}</option>
       </select>
-      <select value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)}
+      <select value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)} aria-label={t("leads.allQuality")}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
         <option value="all">{t("leads.allQuality")}</option>
         {['good','normal','pending','poor'].map(q => <option key={q} value={q}>{t(`qualityLabels.${q}`)}</option>)}
       </select>
-      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label={t("leads.allStatus")}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[110px]">
         <option value="all">{t("leads.allStatus")}</option>
         {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{t(`statusLabels.${k}`)}</option>)}
       </select>
-      <select value={probabilityFilter ?? "all"} onChange={(e) => setProbabilityFilter(e.target.value === "all" ? null : parseInt(e.target.value))}
+      <select value={probabilityFilter ?? "all"} onChange={(e) => setProbabilityFilter(e.target.value === "all" ? null : parseInt(e.target.value))} aria-label={t("leads.probability")}
         className="h-9 px-2 text-xs rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[90px]">
         <option value="all">{t("leads.probability")}</option>
         {PROBABILITIES.map(p => <option key={p} value={p}>{p}%</option>)}

@@ -4,7 +4,6 @@ import { STAGE_HEX } from "@/lib/status-palette";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { whatsappHref as whatsappLink } from "@/lib/lead-contact.mjs";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import { localizeServerText } from "@/lib/i18n/server-text.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
@@ -19,6 +18,7 @@ import { summarizeLeads, type LeadSummary } from "@/lib/lead-metrics.mjs";
 import { onFetchFailure } from "@/lib/fetch-interruption";
 import { formatAED } from "@/lib/display-format.mjs";
 import { translatedOrRaw } from "@/lib/chart-labels.mjs";
+import QuickLogSheet, { type QuickLogTarget } from "@/components/leads/QuickLogSheet";
 
 /* ─── Types ─── */
 interface Lead {
@@ -137,6 +137,9 @@ export default function DashboardPage() {
   const [topActions, setTopActions] = useState<TopAction[]>([]);
   const [periodLeads, setPeriodLeads] = useState<{ count: number; byQuality: Record<string, number>; bySource: Record<string, number> } | null>(null);
   const [overdueFollowups, setOverdueFollowups] = useState<any[]>([]);
+  // S42 (F19): the "Log" button opens the lead page's quick-log sheet instead of a native browser dialog.
+  const [quickLogTarget, setQuickLogTarget] = useState<QuickLogTarget | null>(null);
+  const [summaryRefresh, setSummaryRefresh] = useState(0);
 
   const [weeklyReviewData, setWeeklyReviewData] = useState<{
     l1: { new_leads: number; contacted_leads: number; quality_judged: number; stage_advanced: number; won: number; lost: number };
@@ -241,7 +244,7 @@ export default function DashboardPage() {
         }, { signal: controller.signal });
       });
     return () => controller.abort();
-  }, [month, language]);
+  }, [month, language, summaryRefresh]);
 
   /* ─── Computed (from the server's single lead summary) ─── */
   const stats = useMemo(() => {
@@ -382,9 +385,18 @@ export default function DashboardPage() {
 
   /* ─── shared: header ─── */
   const headerTitle = isManagement ? t("dashboard.title") : t("nav.salesDashboard");
+  // S42 (F07①): "No target set · No target set" is said once, naming both targets.
   const headerSub = isManagement
-    ? `${signingTarget > 0 ? `${t("dashboard.signingTarget")} ${fmtAED(signingTarget)}` : t("dashboard.noTargetSet")} · ${collectionTarget > 0 ? `${t("dashboard.collectionTarget")} ${fmtAED(collectionTarget)}` : t("dashboard.noTargetSet")}`
-    : `${signingTarget > 0 ? `${t("dashboard.myTarget")} ${fmtAED(signingTarget)}` : t("dashboard.noTargetSet")} · ${signingPct !== null ? `${t("dashboard.pctComplete").replace("{n}", String(signingPct))}` : ""}`;
+    ? (signingTarget <= 0 && collectionTarget <= 0
+      ? t("s42.noTargets")
+      : [
+        signingTarget > 0 ? `${t("dashboard.signingTarget")} ${fmtAED(signingTarget)}` : `${t("dashboard.signingTarget")}: ${t("dashboard.noTargetSet")}`,
+        collectionTarget > 0 ? `${t("dashboard.collectionTarget")} ${fmtAED(collectionTarget)}` : `${t("dashboard.collectionTarget")}: ${t("dashboard.noTargetSet")}`,
+      ].join(" · "))
+    : [
+      signingTarget > 0 ? `${t("dashboard.myTarget")} ${fmtAED(signingTarget)}` : t("dashboard.noTargetSet"),
+      signingPct !== null ? t("dashboard.pctComplete").replace("{n}", String(signingPct)) : "",
+    ].filter(Boolean).join(" · ");
 
   const Header = (
     <div className="flex items-center justify-between flex-wrap gap-3">
@@ -451,23 +463,13 @@ export default function DashboardPage() {
     const clean = phone.replace(/[^0-9+]/g, "");
     window.open(`tel:${clean}`, "_self");
   };
-  const handleQuickLog = async (leadId: string, customerName: string, e: React.MouseEvent) => {
+  const handleQuickLog = (leadId: string, customerName: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const note = prompt(`${t("dashboard.logFollowup")} — ${customerName}`);
-    if (!note) return;
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from("activities").insert({
-        lead_id: leadId,
-        type: "followup",
-        content: note,
-        user_id: user?.id,
-        created_at: new Date().toISOString(),
-      });
-      alert(t("dashboard.activityLogged"));
-    } catch { alert(t("common.operationFailed")); }
+    setQuickLogTarget({ leadId, customerName });
   };
+  const quickLogSheet = (
+    <QuickLogSheet target={quickLogTarget} onClose={() => setQuickLogTarget(null)} onLogged={() => setSummaryRefresh((n) => n + 1)} t={t} />
+  );
   const formatWhatsApp = (phone: string | null | undefined): string => {
     if (!phone) return "";
     return phone.replace(/[^0-9+]/g, "").replace(/^0+/, "");
@@ -558,16 +560,35 @@ export default function DashboardPage() {
       .filter((r) => r.count > 0);
     const maxFunnel = Math.max(...funnelRows.map((r) => r.count), 1);
 
+    // S42 (F09): what came in today, who has been waiting over an hour, what nobody owns; each opens its list.
+    const intakeCards = [
+      { key: "newToday", label: t("s42.intake.newToday"), value: leadStats.newToday, href: "/leads?alert=created_today", alert: false },
+      { key: "uncontacted1h", label: t("s42.intake.uncontacted1h"), value: leadStats.uncontactedOver1h, href: "/leads?alert=uncontacted_1h", alert: leadStats.uncontactedOver1h > 0 },
+      { key: "unassigned", label: t("s42.intake.unassigned"), value: leadStats.unassignedActive, href: "/dispatch?tab=unassigned", alert: leadStats.unassignedActive > 0 },
+    ];
+
     return (
       <DashboardScrollContainer className="space-y-5">
         {Header}
         <AlertPanel count={leadStats.followUpOverdue} />
+
+        {/* 0. Intake today: three counters, same definitions as the lists they open */}
+        <div className="grid grid-cols-3 gap-2" data-testid="intake-counters">
+          {intakeCards.map((card) => (
+            <button key={card.key} type="button" onClick={() => router.push(card.href)}
+              className={cn("p-3 rounded-xl border bg-card/50 text-left hover:bg-accent/30 transition-colors", card.alert ? "border-amber-500/40" : "border-border/50")}>
+              <p className="text-xs text-muted-foreground font-medium leading-snug">{card.label}</p>
+              <p className={cn("text-2xl font-bold leading-tight", card.alert ? "text-amber-700" : "text-foreground")}>{card.value}</p>
+            </button>
+          ))}
+        </div>
 
         {/* 1. Today's actions come first: what to do now */}
         <div>
           <SectionHeader title={t("dashboard.todaysActions")} subtitle={topActions.length > 0 ? t("dashboard.nItems").replace("{n}", String(topActions.length)) : t("s37.allClear")} />
           {TodayActions}
         </div>
+        {quickLogSheet}
 
         {/* 2. Four core numbers */}
         <div>
@@ -741,6 +762,7 @@ export default function DashboardPage() {
           TodayActions
         )}
       </div>
+      {quickLogSheet}
 
       {/* L2: My KPI progress */}
       <div>

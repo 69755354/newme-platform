@@ -1,6 +1,7 @@
 // RBAC: user (authenticated)
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabase } from "@/lib/supabase-server"
+import { humanizeTransferText, isRawTransferActivity, transferUuids } from "@/lib/lead-transfer-text.mjs"
 
 export async function GET(
   req: NextRequest,
@@ -122,11 +123,21 @@ export async function GET(
       })
     }
 
+    // S42 (F18): "Lead reassigned from <uuid> to <uuid>" is shown with names, never ids.
+    const transferIds = new Set<string>()
+    for (const a of activitiesRes.data || []) {
+      if (isRawTransferActivity(a.content)) for (const id of transferUuids(a.content)) transferIds.add(id)
+    }
+    const transferNames = new Map<string, string>()
+    if (transferIds.size > 0) {
+      const { data: people } = await supabase.from("profiles").select("id, full_name").in("id", [...transferIds])
+      for (const p of people || []) if (p.full_name) transferNames.set(String(p.id).toLowerCase(), p.full_name)
+    }
     for (const a of activitiesRes.data || []) {
       events.push({
         id: `activity-${a.id}`,
         event_type: "activity",
-        description: a.content ?? null,
+        description: isRawTransferActivity(a.content) ? humanizeTransferText(String(a.content), (id) => transferNames.get(id)) : (a.content ?? null),
         created_at: a.created_at,
         metadata: a,
       })

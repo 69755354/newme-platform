@@ -37,7 +37,11 @@ function Facts({ t, lead, title }: { t: Translate; lead: LeadFacts | null; title
 }
 
 export default function DispatchWorkbench({ t }: { t: Translate }) {
-  const [status, setStatus] = useState<string>(ATTENTION_STATUSES[0]);
+  // S42 (F09): the cockpit links straight to a tab (/dispatch?tab=unassigned); an unknown value keeps the default.
+  const [status, setStatus] = useState<string>(() => {
+    const wanted = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab");
+    return wanted && (DISPATCH_STATUSES as readonly string[]).includes(wanted) ? wanted : ATTENTION_STATUSES[0];
+  });
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [rows, setRows] = useState<Row[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "unavailable" | "error">("loading");

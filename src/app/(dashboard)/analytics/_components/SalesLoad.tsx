@@ -361,9 +361,10 @@ export default function SalesLoad() {
       .finally(() => setLoading(false));
   }, []);
 
+  // S42 (F23): placeholder keeps the panel height so the page does not shift.
   if (loading) {
     return (
-      <div className="bg-card border border-border rounded-xl p-6">
+      <div className="bg-card border border-border rounded-xl p-6 min-h-[320px]">
         <div className="animate-pulse space-y-4">
           <div className="h-5 bg-accent rounded w-1/3" />
           <div className="h-48 bg-accent rounded" />

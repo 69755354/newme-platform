@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { leadMatchesSearch, searchDigitCandidates } from "../../src/lib/leads-search.mjs";
 import { hasRecentContact, isFreshLead, healthBadgeLevel } from "../../src/lib/lead-health.mjs";
 import { mergeTasksWithOverdue, todayThreeThings } from "../../src/lib/workbench-today.mjs";
-import { localizeNotification, notificationTypesForRole, SALES_HIDDEN_NOTIFICATION_TYPES } from "../../src/lib/notification-display.mjs";
+import { localizeNotification, notificationTypesForRole, notificationScopeForRole, SALES_HIDDEN_NOTIFICATION_TYPES, SALES_VISIBLE_NOTIFICATION_TYPES } from "../../src/lib/notification-display.mjs";
 import { translations } from "../../src/lib/i18n/translations.ts";
 
 const require = createRequire(import.meta.url);
@@ -267,7 +267,7 @@ test("S41-10 sales do not see approval traffic; status codes in bodies are trans
   assert.equal(notificationTypesForRole("operator"), null);
   const sales = notificationTypesForRole("sales");
   assert.ok(Array.isArray(sales));
-  for (const hidden of ["contract_pending_approval", "contract_created", "contract_signed", "team_member_added", "quote_created", "lead_stage_change", "lead_stage_changed"]) {
+  for (const hidden of ["contract_pending_approval", "contract_created", "team_member_added", "quote_created", "lead_stage_change", "lead_stage_changed"]) {
     assert.equal(sales.includes(hidden), false, hidden);
     assert.ok(SALES_HIDDEN_NOTIFICATION_TYPES.includes(hidden), hidden);
   }
@@ -320,4 +320,59 @@ test("S41-12 the s41 block exists in zh and en with the same keys", () => {
   const flat = (node, prefix = "") => Object.entries(node).flatMap(([k, v]) => (typeof v === "object" ? flat(v, `${prefix}${k}.`) : [`${prefix}${k}`]));
   assert.deepEqual(flat(translations.zh.s41).sort(), flat(translations.en.s41).sort());
   assert.ok(flat(translations.zh.s41).length >= 25);
+});
+
+// ── S41 review fixes: admin/boss "All" tab, superseded/signed visible, no silently vanishing types ───────────────
+test("S41-10b the bell is personal by default; only admin/boss get scope=all (server-enforced)", () => {
+  for (const role of ["admin", "boss"]) {
+    assert.equal(notificationScopeForRole(role, "all"), "all", role);
+    assert.equal(notificationScopeForRole(role, undefined), "mine", role);
+    assert.equal(notificationScopeForRole(role, "mine"), "mine", role);
+  }
+  for (const role of ["sales", "operator", "finance", "designer", undefined, null]) {
+    assert.equal(notificationScopeForRole(role, "all"), "mine", String(role));
+  }
+  const list = read("src/app/api/notifications/route.ts");
+  assert.match(list, /notificationScopeForRole\(/);
+  assert.match(list, /scope !== "all"/);
+  assert.match(list, /if \(scope !== "all"\) query = query\.eq\("user_id", user\.id\)/, "user_id filter is skipped only for scope=all");
+  assert.match(list, /canViewAll/);
+  const bell = read("src/components/NotificationBell.tsx");
+  assert.match(bell, /scope=all/);
+  assert.match(bell, /notifications\.tabMine/);
+  assert.match(bell, /notifications\.tabAll/);
+  assert.match(bell, /user_id === /, "rows of other users are never marked read");
+  for (const lang of ["zh", "en"]) {
+    assert.ok(translations[lang].notifications.tabMine, lang);
+    assert.ok(translations[lang].notifications.tabAll, lang);
+  }
+});
+
+test("S41-10c contract_superseded and contract_signed reach the sales owner", () => {
+  const sales = notificationTypesForRole("sales");
+  for (const type of ["contract_superseded", "contract_signed"]) {
+    assert.ok(sales.includes(type), type);
+    assert.equal(SALES_HIDDEN_NOTIFICATION_TYPES.includes(type), false, type);
+  }
+});
+
+test("S41-10d every notification type the database allows is classified visible or hidden for non-management roles", () => {
+  const migration = read("supabase/migrations/20261112100100_notification_warning_type.sql");
+  const block = migration.match(/v_type_allowed constant text\[\] := array\[([^\]]+)\]/);
+  assert.ok(block, "type list found in the migration");
+  const dbTypes = [...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+  assert.ok(dbTypes.length >= 20);
+  const validBlock = read("src/lib/notifications.ts").match(/VALID_NOTIFICATION_TYPES = \[([^\]]+)\]/);
+  assert.ok(validBlock);
+  const validTypes = [...validBlock[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+  for (const type of [...dbTypes, ...validTypes]) {
+    const visible = SALES_VISIBLE_NOTIFICATION_TYPES.includes(type);
+    const hidden = SALES_HIDDEN_NOTIFICATION_TYPES.includes(type);
+    assert.ok(visible !== hidden, `${type} must be in exactly one of visible/hidden`);
+  }
+});
+
+test("S41-5b a salesperson's own duplicate still gets the 'goes to admin review' line", () => {
+  const notice = read("src/components/leads/LeadDuplicateNotice.tsx");
+  assert.match(notice, /reviewRequired && \([\s\S]{0,120}leadFlow\.duplicateReview\.salesWarning/);
 });

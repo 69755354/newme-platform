@@ -105,6 +105,10 @@ export default function NotificationBell() {
   // Measured when the panel opens (refs must not be read during render).
   const [panelStyle, setPanelStyle] = useState<{ left: number; top: number; width: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  // Admin/boss only: "mine" (default) or "all" users' notifications. The badge always counts "mine".
+  const [canViewAll, setCanViewAll] = useState(false);
+  const [tab, setTab] = useState<"mine" | "all">("mine");
+  const [myId, setMyId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const dropdownContentRef = useRef<HTMLDivElement>(null);
   const { lang, t } = useLanguage();
@@ -127,10 +131,12 @@ export default function NotificationBell() {
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/notifications?limit=20");
+      const res = await fetch(tab === "all" ? "/api/notifications?limit=20&scope=all" : "/api/notifications?limit=20");
       if (res.ok) {
         const json = await res.json();
         setNotifications(json.data ?? []);
+        setCanViewAll(json.canViewAll === true);
+        setMyId(json.userId ?? null);
         // S41 (B14): the badge is the server's count over the same filtered query, not a recount of the 20 rows shown
         // (which turned "99+" into "20" the moment the panel opened).
         await fetchUnreadCount();
@@ -140,7 +146,7 @@ export default function NotificationBell() {
     } finally {
       setLoading(false);
     }
-  }, [fetchUnreadCount]);
+  }, [fetchUnreadCount, tab]);
 
   useEffect(() => {
     fetchUnreadCount();
@@ -195,7 +201,8 @@ export default function NotificationBell() {
   }
 
   function handleNotificationClick(n: Notification) {
-    if (!n.is_read) markAsRead(n.id);
+    // Rows of other users (All tab) are read-only: the update policy is self-only.
+    if (!n.is_read && (!myId || n.user_id === myId)) markAsRead(n.id);
     const link = getRelatedLink(n.type, n.related_type, n.related_id);
     if (link) router.push(link);
     setIsOpen(false);
@@ -242,7 +249,7 @@ export default function NotificationBell() {
               {t("notifications.title")}
             </h3>
             <div className="flex items-center gap-1">
-              {unreadCount > 0 && (
+              {unreadCount > 0 && tab === "mine" && (
                 <button
                   onClick={markAllAsRead}
                   className="flex items-center gap-1 text-xs text-copper-700 hover:text-copper-700 transition-colors px-2 py-1 rounded hover:bg-accent"
@@ -259,6 +266,25 @@ export default function NotificationBell() {
               </button>
             </div>
           </div>
+
+          {canViewAll && (
+            <div role="tablist" className="flex gap-1 px-3 py-2 border-b border-border">
+              {(["mine", "all"] as const).map((key) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={tab === key}
+                  onClick={() => setTab(key)}
+                  className={cn(
+                    "text-xs px-3 py-1 rounded-full transition-colors",
+                    tab === key ? "bg-accent text-foreground font-semibold" : "text-muted-foreground hover:bg-accent/50"
+                  )}
+                >
+                  {t(key === "mine" ? "notifications.tabMine" : "notifications.tabAll")}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* List */}
           <div className="overflow-y-auto max-h-[min(400px,calc(100dvh-140px))]">

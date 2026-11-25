@@ -637,6 +637,8 @@ export const translations = {
       hoursAgo: "h ago",
       daysAgo: "d ago",
       markAllRead: "Mark all read",
+      tabMine: "Mine",
+      tabAll: "All",
       loading: "Loading...",
       types: {
         lead_created: "New Lead",
@@ -2948,6 +2950,8 @@ export const translations = {
       hoursAgo: "小时前",
       daysAgo: "天前",
       markAllRead: "全部已读",
+      tabMine: "我的",
+      tabAll: "全部",
       loading: "加载中...",
       types: {
         lead_created: "新线索",

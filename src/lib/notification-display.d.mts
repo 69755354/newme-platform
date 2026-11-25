@@ -7,3 +7,4 @@ export function localizeNotification(
 export const SALES_HIDDEN_NOTIFICATION_TYPES: readonly string[];
 export const SALES_VISIBLE_NOTIFICATION_TYPES: readonly string[];
 export function notificationTypesForRole(role: string | null | undefined): string[] | null;
+export function notificationScopeForRole(role: string | null | undefined, requested?: string | null): "mine" | "all";

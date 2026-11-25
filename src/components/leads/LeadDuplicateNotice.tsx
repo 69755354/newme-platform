@@ -80,6 +80,9 @@ export function LeadDuplicateNotice({
       {hidden > 0 && (
         <p className="text-muted-foreground">{t("s41.duplicate.colleagueFollowing")}</p>
       )}
+      {reviewRequired && (
+        <p className="text-muted-foreground">{t("leadFlow.duplicateReview.salesWarning")}</p>
+      )}
       {visible.length > 0 && !reviewRequired && (
         <p className="text-muted-foreground">{t("leadFlow.duplicate.body")}</p>
       )}

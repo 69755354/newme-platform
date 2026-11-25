@@ -69,8 +69,6 @@ function localizeTrailingCode(body, t) {
 export const SALES_HIDDEN_NOTIFICATION_TYPES = Object.freeze([
   "contract_pending_approval",
   "contract_created",
-  "contract_signed",
-  "contract_superseded",
   "team_member_added",
   "quote_created",
   "lead_stage_change",
@@ -87,6 +85,8 @@ export const SALES_VISIBLE_NOTIFICATION_TYPES = Object.freeze([
   "warning",
   "contract_approved",
   "contract_rejected",
+  "contract_signed",
+  "contract_superseded",
   "payment_due",
   "payment_overdue",
   "payment_received",
@@ -108,4 +108,14 @@ export function localizeNotification(notification, t) {
     title: localize("title", notification?.title, t),
     body: localizeTrailingCode(localize("body", notification?.body, t), t),
   };
+}
+
+const ALL_SCOPE_ROLES = ["admin", "boss"];
+
+/**
+ * "mine" (default, every role) or "all" (every user's notifications). Only admin and boss are honoured for "all";
+ * any other role asking for it silently gets its own list.
+ */
+export function notificationScopeForRole(role, requested) {
+  return requested === "all" && ALL_SCOPE_ROLES.includes(role) ? "all" : "mine";
 }

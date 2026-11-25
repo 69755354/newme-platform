@@ -1,3 +1,4 @@
+import * as dubaiTimeModule from "../../src/lib/dubai-time.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -131,6 +132,7 @@ test("quotation generate executes the insert once and propagates the database qu
       requestAuthErrorResponse: (error) => ({ body: { error: error.message }, status: 401 }),
     },
     "../../../../lib/quotation-engine": { calculateQuotation: calculation },
+    "@/lib/dubai-time.mjs": dubaiTimeModule,
     "@/lib/device-catalog": { DEVICE_CATALOG: [{ devices: [{ id: "device-1" }] }] },
     "@/lib/logger": { logger: quietLogger, genReqId: () => "request-1" },
     // The bottom-up labour basis is exercised by tests/unit/quotation-labour-basis.test.mjs.

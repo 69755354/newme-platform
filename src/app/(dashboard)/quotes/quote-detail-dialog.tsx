@@ -20,7 +20,7 @@ import { normalizeQuotationLineItems } from "@/lib/quotation-rules.mjs";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 import { fmtAED } from "@/shared/utils/format";
-import { dubaiDateKey } from "@/lib/dubai-time.mjs";
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 /* ─── Types ─── */
 interface Quotation {
@@ -79,14 +79,12 @@ function round2(value: number): number {
 }
 
 function defaultSchedule(total: number): Installment[] {
-  const today = new Date();
+  const today = dubaiDateKey() as string; // N7: Dubai calendar day, not UTC
   const rows = DEFAULT_SPLIT.map((part, index) => {
-    const due = new Date(today);
-    due.setDate(due.getDate() + part.offsetDays);
     return {
       seq: index + 1,
       amount: round2(total * part.fraction),
-      due_date: due.toISOString().slice(0, 10),
+      due_date: addDaysToDateKey(today, part.offsetDays),
       description: part.description,
     };
   });
@@ -271,7 +269,7 @@ export default function QuoteDetailDialog({ open, onOpenChange, quote, onStatusC
         {
           seq: current.length + 1,
           amount: Math.max(round2(scheduleRemainder), 0),
-          due_date: dubaiDateKey() ?? new Date().toISOString().slice(0, 10),
+          due_date: dubaiDateKey() as string,
           description: "",
         },
       ];

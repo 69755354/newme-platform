@@ -36,6 +36,7 @@ import type { Lead, Task } from "./types";
 import type { ProjectInfoDraft } from "./useLeadDetailData";
 import type { Database, Json } from "@/types/database";
 import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 const STAGE_HINT_REASONS = new Set([
   "next_followup_required",
@@ -447,7 +448,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
       // P0-7: 还没有 task 时，设置 follow-up 必须创建一条 task 记录（之前会静默 no-op）。
       const { error: err } = await createFollowUpTask(supabase, {
         leadId: leadId,
-        dueAt: updates.due_at ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        dueAt: updates.due_at ?? addDaysToDateKey(dubaiDateKey() as string, 1), // N7: tomorrow in Dubai
         title: updates.title,
         assigneeId: lead?.assigned_to ?? null,
         source: "manual",

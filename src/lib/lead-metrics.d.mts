@@ -48,6 +48,7 @@ export interface LeadSummary {
   followUpOverdue: number;
   dormant: number; zeroFollowup: number;
   hot: number; quotedCount: number; valuedCount: number; riskPool: number; unassignedActive: number;
+  newToday: number; uncontactedOver1h: number;
   qualityBreakdown: Record<QualityBucket, number>;
   conversionRate: number; contactRate: number;
   stageCounts: Record<string, number>;
@@ -89,6 +90,8 @@ export function followUpOverdue(
   now?: Date | string | number,
 ): { overdue: false } | { overdue: true; dueAt: string; days: number };
 export function leadSourceKey(lead: MetricLead | null | undefined): string;
+export function isCreatedToday(lead: MetricLead | null | undefined, now?: Date | string | number): boolean;
+export function isUncontactedOver1h(lead: MetricLead | null | undefined, now?: Date | string | number): boolean;
 export function summarizeLeads(
   rows: readonly MetricLead[] | null | undefined,
   options?: { period?: Bounds | null; now?: Date | string | number },

@@ -500,9 +500,13 @@ export default function LeadDetailPage() {
   }
 
   if (notFound || !lead) {
+    // S42 (F27): the row may not exist or may be another salesperson's lead (RLS hides it); say both, offer the way back.
     return (
-      <div className="text-center py-16">
-        <p className="text-muted-foreground">{t("common.notFound")}</p>
+      <div className="text-center py-16 space-y-4">
+        <p className="text-muted-foreground">{t("s42.leadNotFound")}</p>
+        <Button variant="outline" onClick={() => router.push("/leads")}>
+          <ArrowLeft className="w-4 h-4" />{t("s42.backToLeads")}
+        </Button>
       </div>
     );
   }

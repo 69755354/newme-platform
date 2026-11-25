@@ -9,6 +9,13 @@ const ZH_PATTERNS = [
   [/^No reply \((\d+)d\)$/, (m) => `未回复（${m[1]} 天）`],
   [/^Hot lead priority$/, () => "高意向线索优先"],
   [/^New lead · awaiting first contact$/, () => "新线索 · 等待首次联系"],
+  // S42 (N8): quoted, but nobody logged the first contact yet
+  [/^Quoted · first contact not logged$/, () => "已报价，未记录首次联系"],
+  // S42 (F18): transfer sentences with names (ids are replaced before display)
+  [/^Lead reassigned from (.+) to (.+)$/, (m) => `线索从 ${m[1]} 转给 ${m[2]}`],
+  [/^Lead unassigned from (.+)$/, (m) => `线索已从 ${m[1]} 收回，待分配`],
+  [/^Lead reassigned$/, () => "线索已转交"],
+  [/^Lead unassigned$/, () => "线索已收回，待分配"],
   [/^Draft quote pending$/, () => "报价草稿待发送"],
   [/^Workflow stage overdue$/, () => "流程阶段已超期"],
   [/^Follow[- ]up$/i, () => "跟进"],

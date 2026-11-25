@@ -11,14 +11,15 @@ import PaymentTracker from "./_components/PaymentTracker";
 import AdsROI from "./_components/AdsROI";
 import { PageIdentityContext } from "@/lib/session-contexts";
 
+// S42 (F23): the dynamic placeholders reserve the same height as the loaded panels (CLS).
 const SalesLoad = dynamic(() => import("./_components/SalesLoad"), {
   ssr: false,
-  loading: () => <div className="h-64 animate-pulse bg-muted/20 rounded-lg" />,
+  loading: () => <div className="min-h-[320px] animate-pulse bg-muted/20 rounded-lg" />,
 });
 
 const WeeklyTrends = dynamic(() => import("./_components/WeeklyTrends"), {
   ssr: false,
-  loading: () => <div className="h-80 animate-pulse bg-muted/20 rounded-lg" />,
+  loading: () => <div className="min-h-[380px] animate-pulse bg-muted/20 rounded-lg" />,
 });
 
 /* ─── Shared analytics data context ─── */
@@ -81,10 +82,10 @@ export default function AnalyticsPage() {
 
           {/* Row 1: Lead Health + Sales Load */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="rounded-xl border border-border/50 bg-card/50 p-4">
+            <div className="rounded-xl border border-border/50 bg-card/50 p-4 min-h-[352px]">
               <LeadHealth />
             </div>
-            <div className="rounded-xl border border-border/50 bg-card/50 p-4">
+            <div className="rounded-xl border border-border/50 bg-card/50 p-4 min-h-[352px]">
               <SalesLoad />
             </div>
           </div>

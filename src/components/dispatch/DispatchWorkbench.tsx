@@ -6,6 +6,7 @@
 // The interface labels Show room, FB and ins are not touched here.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ATTENTION_STATUSES, DISPATCH_STATUSES, DUPLICATE_DECISIONS, buildQueueAssignRequest, canAssignFromQueue } from "@/lib/lead-dispatch.mjs";
 import { reassignFailureKey } from "@/lib/lead-reassign-feedback.mjs";
 import { buttonClass, callApi, errorText, inputClass, STATUS_TONE, textareaClass, type Translate } from "./shared";
@@ -37,7 +38,12 @@ function Facts({ t, lead, title }: { t: Translate; lead: LeadFacts | null; title
 }
 
 export default function DispatchWorkbench({ t }: { t: Translate }) {
-  const [status, setStatus] = useState<string>(ATTENTION_STATUSES[0]);
+  // S42 (F09): a link can open a tab directly (/dispatch?tab=review_phone); an unknown value keeps the default.
+  // Read through useSearchParams (same value on the server and the client), never from window in a state initializer.
+  const searchParams = useSearchParams();
+  const wantedTab = searchParams.get("tab");
+  const [status, setStatus] = useState<string>(() =>
+    wantedTab && (DISPATCH_STATUSES as readonly string[]).includes(wantedTab) ? wantedTab : ATTENTION_STATUSES[0]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [rows, setRows] = useState<Row[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "unavailable" | "error">("loading");

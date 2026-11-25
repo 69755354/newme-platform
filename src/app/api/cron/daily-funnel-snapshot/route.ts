@@ -1,6 +1,7 @@
 // RBAC: cron (x-cron-secret)
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { dubaiDateKey } from '@/lib/dubai-time.mjs'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const snapshotDate = new Date().toISOString().split('T')[0]
+    const snapshotDate = dubaiDateKey() // N7: the Dubai calendar day
 
     const { data: activeLeads, error: fetchError } = await supabaseAdmin
       .from('leads')

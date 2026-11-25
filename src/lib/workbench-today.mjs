@@ -29,10 +29,12 @@ export function mergeTasksWithOverdue(tasks = [], overdue = [], now = new Date()
 /**
  * @returns {{ uncontactedNew: { count: number, items: object[] }, dueToday: { count: number, items: object[] }, longestOverdue: object | null }}
  */
-export function todayThreeThings({ inbox = [], tasks = [], overdue = [] } = {}, now = new Date()) {
+export function todayThreeThings({ inbox = [], tasks = [], overdue = [], todayTasks = [] } = {}, now = new Date()) {
   const today = dubaiDateKey(now);
   const newItems = inbox.filter((lead) => lead?.inbox_group === "new");
-  const merged = mergeTasksWithOverdue(tasks, overdue, now);
+  // `todayTasks` is fetched on its own (Dubai today, pending): the earliest-20 lists above are filled by the backlog of a
+  // salesperson with many old tasks, so today's rows cannot be recovered from them.
+  const merged = mergeTasksWithOverdue([...todayTasks, ...tasks], overdue, now);
   const dueTodayItems = merged.filter((task) => task.due_at && dubaiDateKey(task.due_at) === today);
   const first = merged.find((task) => task.overdue) ?? null;
   let longestOverdue = null;

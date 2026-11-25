@@ -153,11 +153,19 @@ async function readFeedbackGrids(env = process.env) {
 }
 
 /** Sales feedback backlog for the brief; null on any failure (the brief goes out without the section). */
+export const FEEDBACK_READ_TIMEOUT_MS = 45_000;
+const feedbackTimeoutMs = (env) => {
+  const n = Number(env?.NEWME_BRIEF_FEEDBACK_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 120_000) : FEEDBACK_READ_TIMEOUT_MS;
+};
+/** The optional section never holds the brief back: the sheet reads get a deadline, and a timeout is the same as a failure. */
 export async function loadFeedbackBacklog({ now, env = process.env, readGrids = readFeedbackGrids } = {}) {
+  let timer;
   try {
-    const { registerGrid, salesGrids } = await readGrids(env);
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("feedback_read_timeout")), feedbackTimeoutMs(env)); });
+    const { registerGrid, salesGrids } = await Promise.race([Promise.resolve().then(() => readGrids(env)), timeout]);
     return summarizeFeedbackBacklog(registerGrid, salesGrids, { now });
-  } catch { return null; }
+  } catch { return null; } finally { clearTimeout(timer); }
 }
 
 export function sendWhatsapp({ key, text, number }) {

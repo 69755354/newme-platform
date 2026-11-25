@@ -71,6 +71,7 @@ interface WorkbenchData {
   inbox: InboxItem[]
   tasks: TaskItem[]
   overdue: TaskItem[]
+  tasks_today?: TaskItem[]
   alerts: AlertItem[]
   progress: ProgressGroup[]
   tomorrowTasks?: TomorrowTaskItem[]
@@ -177,7 +178,7 @@ export default function WorkbenchPage() {
   const progress = data?.progress ?? []
   // S41 (F04): one task list (overdue first, red) and the three numbers that matter today.
   const tasks = mergeTasksWithOverdue(rawTasks, overdue)
-  const today = todayThreeThings({ inbox, tasks: rawTasks, overdue })
+  const today = todayThreeThings({ inbox, tasks: rawTasks, overdue, todayTasks: data?.tasks_today ?? [] })
   const dateLocale = t("locale.dateLocale")
   const contactLinks = (phone: string | null | undefined) => {
     const wa = whatsappHref(phone)

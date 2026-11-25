@@ -140,52 +140,59 @@ export async function POST(request: Request) {
   // fields it was missing, a follow-up task for its owner and the Meta Lead event; nothing is inserted.
   // Any failure on this path falls through to the normal insert: a lead is never dropped.
   let mergedInto: { id: string; assigned_to: string | null } | null = null;
-  if (publicLeadDedupeEnabled() && (phoneIdentityKey(parsed.value.phone) || parsed.value.email)) {
-    const found = await findOpenLeadByContact(supabaseAdmin, { phone: parsed.value.phone, email: parsed.value.email });
-    if (found.error) {
-      logger.warn({ route: "/api/public/leads", operation: "dedupe_lookup", request_id: requestId, code: found.error }, "website_lead_dedupe_lookup_failed");
-    } else if (found.lead) {
-      const target = found.lead as { id: string; assigned_to: string | null };
-      const noteKey = websiteEventUuid("merge", eventId);
-      const note = await supabaseAdmin.from("activities").insert({
-        id: noteKey,
-        lead_id: target.id,
-        user_id: null,
-        type: "note",
-        content: `Website form submitted again (${intakeAt.slice(0, 10)}): ${parsed.value.notes || "no message"}`,
-        ai_generated: false,
-        metadata: { source: "website_form_resubmitted", event_id: eventId, intake_fingerprint: fingerprint, intake_at: intakeAt,
-          attribution: parsed.value.attribution, location: parsed.value.location, property_type: parsed.value.propertyType,
-          service_needs: parsed.value.serviceNeeds },
-      }).select("id").maybeSingle();
-      if (note.error && note.error.code !== "23505") {
-        logger.warn({ route: "/api/public/leads", operation: "dedupe_note", request_id: requestId, lead_id: target.id, code: note.error.code }, "website_lead_dedupe_note_failed");
-      } else {
-        mergedInto = target;
-        leadId = target.id;
-        const fill: Record<string, unknown> = { updated_at: intakeAt };
-        const attribution = parsed.value.attribution;
-        for (const [column, value] of Object.entries({
-          fbclid: attribution.fbclid, meta_click_id: attribution.fbc, utm_source: attribution.utmSource, utm_medium: attribution.utmMedium,
-          utm_campaign: attribution.utmCampaign, utm_content: attribution.utmContent, utm_term: attribution.utmTerm,
-          campaign_id: attribution.campaignId, campaign_name: attribution.campaignName, adset_id: attribution.adsetId,
-          adset_name: attribution.adsetName, ad_id: attribution.adId, ad_name: attribution.adName, landing_page: attribution.landingPage,
-        })) {
-          if (value) fill[column] = value;
+  try {
+    if (publicLeadDedupeEnabled() && (phoneIdentityKey(parsed.value.phone) || parsed.value.email)) {
+      const found = await findOpenLeadByContact(supabaseAdmin, { phone: parsed.value.phone, email: parsed.value.email });
+      if (found.error) {
+        logger.warn({ route: "/api/public/leads", operation: "dedupe_lookup", request_id: requestId, code: found.error }, "website_lead_dedupe_lookup_failed");
+      } else if (found.lead) {
+        const target = found.lead as { id: string; assigned_to: string | null };
+        const noteKey = websiteEventUuid("merge", eventId);
+        const note = await supabaseAdmin.from("activities").insert({
+          id: noteKey,
+          lead_id: target.id,
+          user_id: null,
+          type: "note",
+          content: `Website form submitted again (${dubaiDateKey(new Date(intakeAt)) ?? intakeAt.slice(0, 10)}): ${parsed.value.notes || "no message"}`,
+          ai_generated: false,
+          metadata: { source: "website_form_resubmitted", event_id: eventId, intake_fingerprint: fingerprint, intake_at: intakeAt,
+            attribution: parsed.value.attribution, location: parsed.value.location, property_type: parsed.value.propertyType,
+            service_needs: parsed.value.serviceNeeds },
+        }).select("id").maybeSingle();
+        if (note.error && note.error.code !== "23505") {
+          logger.warn({ route: "/api/public/leads", operation: "dedupe_note", request_id: requestId, lead_id: target.id, code: note.error.code }, "website_lead_dedupe_note_failed");
+        } else {
+          mergedInto = target;
+          leadId = target.id;
+          const fill: Record<string, unknown> = { updated_at: intakeAt };
+          const attribution = parsed.value.attribution;
+          for (const [column, value] of Object.entries({
+            fbclid: attribution.fbclid, meta_click_id: attribution.fbc, utm_source: attribution.utmSource, utm_medium: attribution.utmMedium,
+            utm_campaign: attribution.utmCampaign, utm_content: attribution.utmContent, utm_term: attribution.utmTerm,
+            campaign_id: attribution.campaignId, campaign_name: attribution.campaignName, adset_id: attribution.adsetId,
+            adset_name: attribution.adsetName, ad_id: attribution.adId, ad_name: attribution.adName, landing_page: attribution.landingPage,
+          })) {
+            if (value) fill[column] = value;
+          }
+          // Only columns that are still empty are filled: the first attribution wins, like the Meta merge.
+          const current = await supabaseAdmin.from("leads").select(Object.keys(fill).filter((k) => k !== "updated_at").join(", ") || "id").eq("id", target.id).maybeSingle();
+          const patch: Record<string, unknown> = { updated_at: intakeAt };
+          for (const [column, value] of Object.entries(fill)) {
+            if (column !== "updated_at" && current.data && !(current.data as unknown as Record<string, unknown>)[column]) patch[column] = value;
+          }
+          const updated = await supabaseAdmin.from("leads").update(patch).eq("id", target.id);
+          if (updated.error) {
+            logger.warn({ route: "/api/public/leads", operation: "dedupe_fill_attribution", request_id: requestId, lead_id: target.id, code: updated.error.code }, "website_lead_dedupe_fill_failed");
+          }
+          logger.info({ route: "/api/public/leads", operation: "dedupe_merge", request_id: requestId, lead_id: target.id }, "website_lead_merged_into_open_lead");
         }
-        // Only columns that are still empty are filled: the first attribution wins, like the Meta merge.
-        const current = await supabaseAdmin.from("leads").select(Object.keys(fill).filter((k) => k !== "updated_at").join(", ") || "id").eq("id", target.id).maybeSingle();
-        const patch: Record<string, unknown> = { updated_at: intakeAt };
-        for (const [column, value] of Object.entries(fill)) {
-          if (column !== "updated_at" && current.data && !(current.data as unknown as Record<string, unknown>)[column]) patch[column] = value;
-        }
-        const updated = await supabaseAdmin.from("leads").update(patch).eq("id", target.id);
-        if (updated.error) {
-          logger.warn({ route: "/api/public/leads", operation: "dedupe_fill_attribution", request_id: requestId, lead_id: target.id, code: updated.error.code }, "website_lead_dedupe_fill_failed");
-        }
-        logger.info({ route: "/api/public/leads", operation: "dedupe_merge", request_id: requestId, lead_id: target.id }, "website_lead_merged_into_open_lead");
       }
     }
+  } catch (error) {
+    // Anything unexpected on the dedupe path: store the submission as a normal new lead, never a 500.
+    logger.warn({ route: "/api/public/leads", operation: "dedupe", request_id: requestId, code: error instanceof Error ? error.name : "unknown" }, "website_lead_dedupe_failed");
+    mergedInto = null;
+    leadId = websiteEventUuid("lead", eventId);
   }
   let capiPayload = buildMetaCapiLeadPayload({
     leadId,
@@ -367,7 +374,7 @@ export async function POST(request: Request) {
     request_id: requestId,
     lead_id: leadId,
   }, "website_lead_created");
-  // The website bridge ignores the body; the unchanged `{ ok: true }` is kept for a stored lead, `merged` is only added when the
-  // submission was folded into an open lead (S43).
-  return response(origin, mergedInto ? { ok: true, merged: true } : { ok: true }, 201);
+  // The body is always `{ ok: true }`: whether the number or email already belongs to an open lead must not be readable by an anonymous
+  // caller (the merge is only logged above).
+  return response(origin, { ok: true }, 201);
 }

@@ -49,13 +49,19 @@ export async function GET(request: NextRequest) {
   // list leave them out (src/lib/system-accounts.mjs). The signed-in account keeps
   // its own row, and ?includeSystem=1 shows everything. Same for admin and boss.
   const includeSystem = new URL(request.url).searchParams.get("includeSystem") === "1";
-  const userQuery = supabaseAdmin
-    .from("profiles")
-    // S43: the leave-cover columns feed the team page's cover panel.
-    .select("id, email, full_name, role, is_active, last_active_at, force_password_change, cover_user_id, cover_start, cover_end");
-  const { data, error } = await (
-    includeSystem ? userQuery : excludeSystemAccountsQuery(userQuery, { viewerId: role.userId })
-  ).order("full_name", { ascending: true });
+  // S43: the leave-cover columns feed the team page's cover panel. While the S43 migration is not applied yet
+  // (Postgres 42703, undefined column) the list is read without them and the cover reads as empty, so the team
+  // page never breaks on the order of release.
+  const readUsers = (columns: string) => {
+    const userQuery = supabaseAdmin.from("profiles").select(columns);
+    return (includeSystem ? userQuery : excludeSystemAccountsQuery(userQuery, { viewerId: role.userId }))
+      .order("full_name", { ascending: true });
+  };
+  const baseColumns = "id, email, full_name, role, is_active, last_active_at, force_password_change";
+  let { data, error } = await readUsers(`${baseColumns}, cover_user_id, cover_start, cover_end`);
+  if (error?.code === "42703") {
+    ({ data, error } = await readUsers(baseColumns));
+  }
 
   if (error) {
     return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });

@@ -34,6 +34,11 @@ export function pickOpenLeadMatch(candidates, { phone, email }) {
   }) ?? null;
 }
 
+/** Escape LIKE wildcards so an address such as jo_smith@x.ae matches itself only (letter case is ignored by ilike). */
+function escapeLike(value) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
 /**
  * Look the open lead up. Returns { lead, error }: a database failure is reported, never thrown, because an
  * intake must store the submission whatever happens here (the caller falls back to inserting a new lead).
@@ -45,7 +50,7 @@ export async function findOpenLeadByContact(db, { phone, email }, columns = "id,
   if (!formEmail && !key) return { lead: null, error: null };
   const rows = [];
   if (formEmail) {
-    const byEmail = await db.from("leads").select(columns).eq("email", formEmail).eq("archived", false).is("final_status", null)
+    const byEmail = await db.from("leads").select(columns).ilike("email", escapeLike(formEmail)).eq("archived", false).is("final_status", null)
       .order("created_at", { ascending: true }).limit(20);
     if (byEmail.error) return { lead: null, error: "lead_lookup_failed" };
     rows.push(...(byEmail.data ?? []));

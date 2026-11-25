@@ -88,7 +88,10 @@ export async function loadData(db, now) {
     .in("lead_id", part).or("contact_type.is.null,contact_type.neq.note").order("id"));
   const transfers = await inChunksAll(ids, (part, withCount) => db.from("transfer_history").select("id,lead_id,to_user_id,created_at", withCount ? { count: "exact" } : undefined)
     .in("lead_id", part).order("id"));
-  const profiles = must(await db.from("profiles").select("id,full_name,phone,email,role,is_active,cover_user_id,cover_start,cover_end").eq("is_active", true));
+  // S43: the leave-cover columns may not exist yet (migration not applied: Postgres 42703); the cover then reads as empty.
+  let profilesRead = await db.from("profiles").select("id,full_name,phone,email,role,is_active,cover_user_id,cover_start,cover_end").eq("is_active", true);
+  if (profilesRead.error?.code === "42703") profilesRead = await db.from("profiles").select("id,full_name,phone,email,role,is_active").eq("is_active", true);
+  const profiles = must(profilesRead);
   return { leads, candidates, excludedTestIds, logLeadIds: new Set(logs.map((r) => r.lead_id)), transfers, profiles, y };
 }
 

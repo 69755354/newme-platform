@@ -1,4 +1,4 @@
--- NO_ROLLBACK: additive only (three nullable profile columns, two check constraints, one routine); manual undo at the end of the file.
+-- NO_ROLLBACK: additive only (three nullable profile columns, two check constraints, one index, two routines, one trigger); manual undo at the end of the file.
 -- ============================================================================
 -- OS fix S43 - leave cover (B13): a salesperson on leave names a colleague who receives the new-lead
 -- assignment notifications and reminders for the leave period.
@@ -7,6 +7,8 @@
 -- profiles.cover_start     first day of the cover (Dubai calendar date, inclusive)
 -- profiles.cover_end       last day of the cover (inclusive); both dates or neither
 -- set_leave_cover(...)     admin / boss only; validates and writes the three columns in one call.
+-- profiles_cover_admin_only  trigger: a signed-in non-admin/boss cannot write the three columns directly
+--                          (policy_profiles_update_self lets anyone update their own row); service role / no session passes.
 -- The application reads the columns through src/lib/leave-cover.mjs and only routes notifications to the
 -- cover when NEWME_LEAVE_COVER_ENABLED=true (default off): storing a cover is harmless on its own.
 -- Safe to run twice.
@@ -81,7 +83,39 @@ $fn$;
 revoke all on function public.set_leave_cover(uuid, uuid, date, date) from public, anon;
 grant execute on function public.set_leave_cover(uuid, uuid, date, date) to authenticated, service_role;
 
+-- ---------------------------------------------------------------------------
+-- The three columns are admin/boss-only also for a direct UPDATE: the self-update policy on profiles would
+-- otherwise let any signed-in user name a cover for themselves. set_leave_cover runs with the admin's
+-- auth.uid() and passes; the service role (no auth.uid()) passes.
+-- ---------------------------------------------------------------------------
+create or replace function public.trg_profiles_cover_admin_only()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, pg_temp
+as $fn$
+begin
+  if (new.cover_user_id is distinct from old.cover_user_id
+      or new.cover_start is distinct from old.cover_start
+      or new.cover_end is distinct from old.cover_end)
+     and auth.uid() is not null
+     and not exists (select 1 from public.profiles where id = auth.uid() and is_active and role in ('admin', 'boss')) then
+    raise exception using errcode = '42501', message = 'leave_cover_not_allowed';
+  end if;
+  return new;
+end
+$fn$;
+
+revoke all on function public.trg_profiles_cover_admin_only() from public, anon, authenticated;
+
+drop trigger if exists profiles_cover_admin_only on public.profiles;
+create trigger profiles_cover_admin_only
+  before update of cover_user_id, cover_start, cover_end on public.profiles
+  for each row execute function public.trg_profiles_cover_admin_only();
+
 -- Manual undo (nothing else depends on these objects):
+--   drop trigger if exists profiles_cover_admin_only on public.profiles;
+--   drop function if exists public.trg_profiles_cover_admin_only();
 --   drop function if exists public.set_leave_cover(uuid, uuid, date, date);
 --   drop index if exists public.idx_profiles_cover_user;
 --   alter table public.profiles drop constraint if exists profiles_cover_dates, drop constraint if exists profiles_cover_not_self;

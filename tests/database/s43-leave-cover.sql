@@ -2,7 +2,7 @@
 --   PGDATABASE=<replayed database> psql -v ON_ERROR_STOP=1 -q -f tests/database/s43-leave-cover.sql
 -- Runs in one transaction that is rolled back. The replay floor already holds the accounts used here
 -- (admin aaaa..., sales eeee... and cccc..., finance ffff...); nothing else is inserted.
--- Covers: the three profile columns, both check constraints, set_leave_cover posture (definer, pinned search_path,
+-- Covers: the direct-update trigger (a sales user cannot write the cover columns, admin through set_leave_cover can), the three profile columns, both check constraints, set_leave_cover posture (definer, pinned search_path,
 -- grants), admin-only access, validation (self, dates, inactive cover), set and clear.
 begin;
 
@@ -39,9 +39,15 @@ select pg_temp.expect(pg_temp.sqlstate_of($q$update public.profiles set cover_st
 -- nobody signed in
 select pg_temp.expect(pg_temp.sqlstate_of($q$select public.set_leave_cover('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '2026-12-01', '2026-12-05')$q$) = '42501', 'anonymous-refused');
 
+-- the trigger is in place and the routine is not callable by users
+select pg_temp.expect(exists (select 1 from pg_trigger where tgrelid = 'public.profiles'::regclass and tgname = 'profiles_cover_admin_only' and not tgisinternal), 'trigger-present');
+
 -- a salesperson may not set covers
 select set_config('request.jwt.claims', '{"sub":"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee","role":"authenticated","iat":' || (extract(epoch from now())::bigint + 5) || '}', true);
 select pg_temp.expect(pg_temp.sqlstate_of($q$select public.set_leave_cover('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '2026-12-01', '2026-12-05')$q$) = '42501', 'sales-refused');
+-- ... nor write the columns directly on their own row (the self-update policy allows the row, the trigger refuses the columns)
+select pg_temp.expect(pg_temp.sqlstate_of($q$update public.profiles set cover_user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc', cover_start = '2026-12-01', cover_end = '2026-12-05' where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'$q$) = '42501', 'sales-direct-update-refused');
+select pg_temp.expect((select cover_user_id is null from public.profiles where id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'), 'sales-direct-update-left-no-trace');
 -- finance neither
 select set_config('request.jwt.claims', '{"sub":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"authenticated","iat":' || (extract(epoch from now())::bigint + 5) || '}', true);
 select pg_temp.expect(pg_temp.sqlstate_of($q$select public.set_leave_cover('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'cccccccc-cccc-cccc-cccc-cccccccccccc', '2026-12-01', '2026-12-05')$q$) = '42501', 'finance-refused');

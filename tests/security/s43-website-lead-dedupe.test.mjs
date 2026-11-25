@@ -42,7 +42,7 @@ function websiteRequest(body) {
 }
 
 /** Tables: leads (with one open lead for +971 50 123 4567), activities, business_events, tasks. */
-function loadRoute({ existing = true, lookupFails = false } = {}) {
+function loadRoute({ existing = true, lookupFails = false, lookupThrows = false } = {}) {
   const rows = { leads: new Map(), activities: new Map(), business_events: new Map(), tasks: new Map() };
   if (existing) {
     rows.leads.set(EXISTING, { id: EXISTING, phone: "050 123 4567", email: null, archived: false, final_status: null, assigned_to: OWNER,
@@ -65,6 +65,7 @@ function loadRoute({ existing = true, lookupFails = false } = {}) {
           return expected === null ? found == null : String(found) === String(expected);
         }));
         if (operation === "update") { for (const row of matches) { Object.assign(row, value); updates.push({ id: row.id, ...value }); } return { data: null, error: null }; }
+        if (usedIlike && lookupThrows) throw new Error("unexpected");
         if (usedIlike && lookupFails) return { data: null, error: { code: "57014" } };
         return { data: matches, error: null };
       };
@@ -129,7 +130,8 @@ test("switch on: a 050 lead already open gets a note, the missing attribution, a
   const { route, rows, tasks, pings, updates } = loadRoute();
   const response = await route.POST(websiteRequest(submission("evt-on-1")));
   assert.equal(response.status, 201);
-  assert.deepEqual(await response.json(), { ok: true, merged: true });
+  // the anonymous caller must not learn that the number already belongs to an open lead
+  assert.deepEqual(await response.json(), { ok: true });
   assert.equal(rows.leads.size, 1, "no second open lead");
   const note = [...rows.activities.values()][0];
   assert.equal(note.lead_id, EXISTING);
@@ -171,4 +173,25 @@ test("switch on, lookup fails: the lead is stored as a new lead -- never dropped
   const response = await route.POST(websiteRequest(submission("evt-on-3")));
   assert.equal(response.status, 201);
   assert.equal(rows.leads.size, 2);
+});
+
+test("switch on, the dedupe path throws something unexpected: the submission is still stored as a new lead (201, never a 500)", async () => {
+  process.env.NEWME_PUBLIC_LEAD_DEDUPE_ENABLED = "true";
+  const { route, rows, pings } = loadRoute({ lookupThrows: true });
+  const response = await route.POST(websiteRequest(submission("evt-on-4")));
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.equal(rows.leads.size, 2);
+  assert.equal(pings.length, 1);
+});
+
+test("the merge note carries the Dubai calendar day, not the UTC day", async (t) => {
+  process.env.NEWME_PUBLIC_LEAD_DEDUPE_ENABLED = "true";
+  // 21:30 UTC on 24 Nov is 01:30 on 25 Nov in Dubai
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-24T21:30:00.000Z") });
+  const { route, rows } = loadRoute();
+  const response = await route.POST(websiteRequest(submission("evt-on-5")));
+  assert.equal(response.status, 201);
+  const note = [...rows.activities.values()][0];
+  assert.match(note.content, /^Website form submitted again \(2026-11-25\)/);
 });

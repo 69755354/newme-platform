@@ -31,7 +31,8 @@
  *   - assignedToFilter   (assigned_to exact, "all" otherwise)
  *   - followupFilter     (next_followup_date ≤ today AND no final_status)
  *   - search (trim)      (case-insensitive substring across
- *                         customer_name / phone / location / assigned_to)
+ *                         customer_name / location / assigned_to; phone by
+ *                         digits in any format — S41, lib/leads-search.mjs)
  * Final step: sort by updated_at desc.
  *
  * Behaviour contract: 100% identical filter result. Memoisation deps
@@ -43,9 +44,10 @@ import { useMemo } from "react";
 import { Lead } from "./useLeadsData";
 import { PIPELINE_STAGES } from "../_utils/constants";
 import { daysSince } from "../_utils/format";
-import { followUpOverdue, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { followUpOverdue, isActiveUnassignedLead, isCreatedToday, isUncontactedOver1h, type MetricLead } from "@/lib/lead-metrics.mjs";
 import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { WHATSAPP_AD_FILTER, isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
+import { leadMatchesSearch } from "@/lib/leads-search.mjs";
 
 export type StageTotal = { count: number; value: number };
 
@@ -104,6 +106,19 @@ export function useLeadsFiltering({
       const at = new Date();
       result = result.filter((l) => followUpOverdue(l as unknown as MetricLead, at).overdue);
     }
+    // S42 (F09): the cockpit's intake counters open these two lists (same definitions as lead-metrics).
+    if (alertFilter === "created_today") {
+      const at = new Date();
+      result = result.filter((l) => isCreatedToday(l as unknown as MetricLead, at));
+    }
+    if (alertFilter === "uncontacted_1h") {
+      const at = new Date();
+      result = result.filter((l) => isUncontactedOver1h(l as unknown as MetricLead, at));
+    }
+    // Review of #611 (P1): the cockpit "Unassigned" card opens this list; same helper as its counter (unassignedActive).
+    if (alertFilter === "unassigned") {
+      result = result.filter((l) => isActiveUnassignedLead(l as unknown as MetricLead));
+    }
     if (alertFilter === "red") {
       result = result.filter((l) => {
         const d = daysSince(l.last_contact_date || l.updated_at);
@@ -124,14 +139,8 @@ export function useLeadsFiltering({
       });
     }
     if (search.trim()) {
-      const s = search.toLowerCase().trim();
-      result = result.filter(
-        (l) =>
-          (l.customer_name || "").toLowerCase().includes(s) ||
-          (l.phone || "").includes(s) ||
-          (l.location || "").toLowerCase().includes(s) ||
-          (l.assigned_to || "").toLowerCase().includes(s)
-      );
+      // S41 (F12/OA9): a phone typed in any format finds the lead whatever format it was stored in.
+      result = result.filter((l) => leadMatchesSearch(l, search));
     }
     result.sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()

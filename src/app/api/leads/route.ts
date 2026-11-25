@@ -8,6 +8,7 @@
 // fields), no phone normalisation, no duplicate check, and a notification that
 // the page's own redirect often cancelled.
 import { NextResponse } from "next/server";
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 import type { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -17,7 +18,7 @@ import {
   requestAuthErrorResponse,
 } from "@/lib/request-auth-context";
 import { validateNewLead, LEAD_FIELD_LIMITS } from "@/lib/lead-contact.mjs";
-import { findDuplicateLeads, presentDuplicates } from "@/lib/lead-duplicates";
+import { duplicateOwnerNames, findDuplicateLeads, presentDuplicates } from "@/lib/lead-duplicates";
 import { isLeadTransferCandidate } from "@/lib/lead-transfer-candidates.mjs";
 import { createFollowUpTask } from "@/lib/tasks";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -71,7 +72,8 @@ export async function POST(request: NextRequest) {
   // to the admin/operator queue for duplicate review.
   const reviewRequired = !OVERRIDE_ROLES.includes(auth.role);
   if (duplicates.length > 0) {
-    const shown = presentDuplicates(duplicates, { id: auth.user.id, role: auth.role });
+    const viewer = { id: auth.user.id, role: auth.role };
+    const shown = presentDuplicates(duplicates, viewer, await duplicateOwnerNames(supabaseAdmin, duplicates, viewer));
     if (!override) {
       return respond({ error: "duplicate_lead", code: "DUPLICATE_LEAD", duplicates: shown, canOverride: true, reviewRequired }, { status: 409 });
     }
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
   const assigneeId = isLeadTransferCandidate({ role: auth.role, is_active: auth.profile.is_active === true })
     ? auth.user.id
     : null;
-  const followupDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const followupDate = addDaysToDateKey(dubaiDateKey() as string, 1); // N7: tomorrow in Dubai
   const { data: inserted, error: insertError } = await auth.supabase.from("leads").insert({
     source,
     customer_name: lead.customer_name,

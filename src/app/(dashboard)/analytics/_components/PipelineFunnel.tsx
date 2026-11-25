@@ -7,6 +7,7 @@ import { AlertTriangle, Users, Clock, ChevronRight, TrendingDown } from "lucide-
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { onFetchFailure } from "@/lib/fetch-interruption";
+import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 
 /* ─── Types ─── */
 interface StageData {
@@ -46,6 +47,7 @@ function FunnelBar({
   maxCount: number;
   showConversion?: boolean;
 }) {
+  const { t } = useLanguage(); // S42 (F26): stage names come from the dictionary, not the API's English labels
   const pct = maxCount > 0 ? (stage.count / maxCount) * 100 : 0;
   const isLost = stage.key === "lost";
   const barColor = isLost
@@ -59,7 +61,7 @@ function FunnelBar({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
           <span className="text-xs font-medium text-foreground truncate">
-            {stage.label}
+            {translatedOrRaw(t, `stages.${stage.key}`, stage.label)}
           </span>
           <span className="text-xs text-muted-foreground shrink-0">
             {stage.count}
@@ -133,9 +135,10 @@ export default function PipelineFunnel() {
     return data?.stages.find(s => s.isBottleneck);
   }, [data]);
 
+  // S42 (F23): placeholder states keep the loaded panel's height so the page does not shift.
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+      <div className="flex items-center justify-center min-h-[420px] text-muted-foreground text-sm">
         {t("analytics.loadingFunnel")}
       </div>
     );
@@ -143,7 +146,7 @@ export default function PipelineFunnel() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-48 text-rose-700 text-sm">
+      <div className="flex items-center justify-center min-h-[420px] text-rose-700 text-sm">
         {error}
       </div>
     );
@@ -167,7 +170,7 @@ export default function PipelineFunnel() {
         {bottleneck && (
           <div className="flex items-center gap-1 text-xs text-red-700">
             <AlertTriangle className="w-3 h-3" />
-            {t("analytics.bottleneck")} "{bottleneck.label}"
+            {t("analytics.bottleneck")} "{translatedOrRaw(t, `stages.${bottleneck.key}`, bottleneck.label)}"
           </div>
         )}
       </div>
@@ -256,7 +259,7 @@ export default function PipelineFunnel() {
               .sort(([, a], [, b]) => b - a)
               .slice(0, 3)
               .map(([stageKey, count]) => {
-                const stageLabel = stageKey === "unknown" ? t("analytics.stageUnknown") : (data.stages.find(s => s.key === stageKey)?.label || stageKey);
+                const stageLabel = stageKey === "unknown" ? t("analytics.stageUnknown") : translatedOrRaw(t, `stages.${stageKey}`, data.stages.find(s => s.key === stageKey)?.label || stageKey);
                 return (
                   <div key={stageKey} className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-red-500/5 border border-red-500/10">
                     <span className="text-xs text-muted-foreground">{stageLabel}</span>

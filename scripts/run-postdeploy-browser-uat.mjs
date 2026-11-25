@@ -657,9 +657,10 @@ export const CANONICAL_NAV_BY_ROLE = Object.freeze({
     "/dashboard", "/leads", "/dispatch", "/quotes", "/cable-costing", "/contracts",
     "/pipeline", "/opportunities", "/visits", "/analytics", "/ads", "/products", "/projects", "/settings",
   ]),
+  // S41 (F16): six primary items, then the five under the collapsed "More" group, in nav.ts declaration order.
   sales: Object.freeze([
-    "/workbench", "/leads", "/opportunities", "/visits", "/quotes", "/cable-costing", "/contracts",
-    "/payments", "/pipeline", "/analytics", "/products",
+    "/workbench", "/leads", "/quotes", "/contracts", "/payments", "/pipeline",
+    "/opportunities", "/visits", "/cable-costing", "/analytics", "/products",
   ]),
 });
 
@@ -921,6 +922,10 @@ async function runSession({ browser, input, credential, locale, runnerSourceSha2
 
     await recordStep("navigation_visible", async () => {
       const expected = canonicalNavigation(credential.role);
+      // S41 (F16): the sales sidebar keeps its secondary pages under a collapsed "More" group; open it so every link
+      // of the contract is rendered before the list is compared.
+      const moreToggle = page.locator('aside [data-testid="nav-more"]');
+      if (await moreToggle.count() !== 0 && (await moreToggle.getAttribute("aria-expanded")) !== "true") await moreToggle.click();
       for (const href of expected) await visible(page.locator(`aside a[href="${href}"]`), "navigation_control_missing");
       const visibleHrefs = await page.locator("aside nav a[href]").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
       if (JSON.stringify(visibleHrefs) !== JSON.stringify(expected)) fail("navigation_contract_mismatch");

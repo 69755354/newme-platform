@@ -3,9 +3,12 @@
 // S39: the three big actions at the top of a lead: Call (tel:), WhatsApp (wa.me with the greeting already typed, in the
 // customer's language, with the salesperson's name) and "记一笔" (quick log: one tap on the method + an optional note;
 // it counts as the contact, and a new lead becomes "contacted").
+// S41 (F06): a second row "记报价金额" opens the amount-only quote dialog right under the three buttons, so the quote
+// entry is on the first phone screen; and after a Call / WhatsApp tap the bar asks "记为已联系？" so the contact gets
+// logged with one more tap instead of being forgotten.
 
 import { useState } from "react";
-import { MessageCircle, NotebookPen, Phone } from "lucide-react";
+import { DollarSign, MessageCircle, NotebookPen, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { telHref } from "@/lib/lead-contact.mjs";
 import { quickLogBody, whatsappLinkWithGreeting } from "@/lib/lead-actions.mjs";
@@ -16,26 +19,32 @@ interface Props {
   repName: string | null;
   canLog: boolean;
   onLogged: () => void | Promise<void>;
+  /** S41: opens the amount-only quote dialog; absent = no quote entry (viewer cannot log on this lead). */
+  onQuickQuote?: () => void;
   t: (key: string) => string;
 }
 
+type ContactMethod = "phone" | "whatsapp";
+
 const BIG = "flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-sm font-semibold transition-colors";
 
-export default function LeadActionBar({ lead, repName, canLog, onLogged, t }: Props) {
+export default function LeadActionBar({ lead, repName, canLog, onLogged, onQuickQuote, t }: Props) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  // S41: the method of the Call / WhatsApp link just tapped, waiting for "mark as contacted?".
+  const [pendingMethod, setPendingMethod] = useState<ContactMethod | null>(null);
   const tel = telHref(lead.phone);
   const wa = whatsappLinkWithGreeting(lead, repName);
 
-  const log = async (method: string) => {
+  const log = async (method: string, noteText = note) => {
     if (saving) return;
     setSaving(true);
     try {
       const response = await fetch(`/api/leads/${lead.id}/contacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(quickLogBody(method, note)),
+        body: JSON.stringify(quickLogBody(method, noteText)),
       });
       if (!response.ok) {
         toast.error(t("common.saveFailed"));
@@ -44,6 +53,7 @@ export default function LeadActionBar({ lead, repName, canLog, onLogged, t }: Pr
       toast.success(t("s39.quickLog.saved"));
       setNote("");
       setOpen(false);
+      setPendingMethod(null);
       await onLogged();
     } catch {
       toast.error(t("common.saveFailed"));
@@ -56,7 +66,7 @@ export default function LeadActionBar({ lead, repName, canLog, onLogged, t }: Pr
     <section data-testid="lead-action-bar" aria-label={t("s39.actions.title")} className="space-y-2 rounded-xl border border-border bg-card p-2 shadow-sm">
       <div className="flex gap-2">
         {tel ? (
-          <a data-testid="action-call" href={tel} className={`${BIG} border-copper-500/40 bg-copper-500/10 text-copper-400 hover:bg-copper-500/20`}>
+          <a data-testid="action-call" href={tel} onClick={() => setPendingMethod("phone")} className={`${BIG} border-copper-500/40 bg-copper-500/10 text-copper-400 hover:bg-copper-500/20`}>
             <Phone className="h-5 w-5" />{t("s39.actions.call")}
           </a>
         ) : (
@@ -65,7 +75,7 @@ export default function LeadActionBar({ lead, repName, canLog, onLogged, t }: Pr
           </span>
         )}
         {wa ? (
-          <a data-testid="action-whatsapp" href={wa} target="_blank" rel="noopener noreferrer" className={`${BIG} border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20`}>
+          <a data-testid="action-whatsapp" href={wa} target="_blank" rel="noopener noreferrer" onClick={() => setPendingMethod("whatsapp")} className={`${BIG} border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20`}>
             <MessageCircle className="h-5 w-5" />WhatsApp
           </a>
         ) : (
@@ -80,6 +90,25 @@ export default function LeadActionBar({ lead, repName, canLog, onLogged, t }: Pr
           </button>
         )}
       </div>
+      {canLog && pendingMethod && (
+        <div data-testid="mark-contacted" role="status" className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 text-sm">
+          <span className="flex-1 font-medium">{t("s41.actions.markContacted")}</span>
+          <button type="button" data-testid="mark-contacted-yes" disabled={saving} onClick={() => void log(pendingMethod, "")}
+            className="min-h-10 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-50">
+            {saving ? "…" : t("s41.actions.yes")}
+          </button>
+          <button type="button" data-testid="mark-contacted-no" disabled={saving} onClick={() => setPendingMethod(null)}
+            className="min-h-10 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50">
+            {t("s41.actions.no")}
+          </button>
+        </div>
+      )}
+      {canLog && onQuickQuote && (
+        <button type="button" data-testid="action-quick-quote" onClick={onQuickQuote}
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-copper-500/30 bg-background px-3 text-sm font-medium text-copper-700 hover:bg-copper-500/10">
+          <DollarSign className="h-4 w-4" />{t("s41.actions.quickQuote")}
+        </button>
+      )}
       {open && canLog && (
         <div data-testid="quick-log-panel" className="space-y-2 rounded-lg bg-muted/30 p-2">
           <input

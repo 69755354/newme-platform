@@ -32,7 +32,7 @@ function loadPreview(role = "admin") {
   finally { Module._load = previous; }
 }
 async function preview(value, key = "Meta Lead ID", role = "admin") {
-  const row = { "Client Name": "Internal fixture", "Phone": "+971501234567", ...(value === undefined ? {} : { [key]: value }) };
+  const row = { "Client Name": "Internal fixture", "Phone": "+971501234567", "Leads from": "FB", ...(value === undefined ? {} : { [key]: value }) };
   return loadPreview(role).POST(new Request("http://localhost/api/leads/import/preview", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows: [row] }),
   }));

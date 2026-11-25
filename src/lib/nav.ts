@@ -53,6 +53,8 @@ export interface NavItem {
   icon: ElementType;
   /** Roles this item is shown to. Absent means every role holding the array. */
   roles?: readonly string[];
+  /** S41 (F16): "more" puts the item under the collapsed "More" group of the sidebar; absent = primary item. */
+  group?: "more";
 }
 
 // ─── Management nav — 5 core + settings ───
@@ -87,19 +89,22 @@ export const MGMT_NAV: NavItem[] = [
   { href: "/settings",  labelKey: "mgmtSettings", icon: Settings },
 ];
 
-// ─── Sales nav — personal scope, 8 items ───
+// ─── Sales nav — personal scope: 6 primary items, the rest under "More" (S41, F16/N3) ───
+// A salesperson's daily loop is workbench → leads → quote → contract → payment → my numbers. Opportunities, visits,
+// cable costing, analytics and the product catalogue stay reachable under the collapsed "More" group (group: "more");
+// every item is still in this one array so the guard/proxy coupling tests see each link a sales user can reach.
 export const SALES_NAV: NavItem[] = [
   { href: "/workbench", labelKey: "salesWorkbench", icon: Briefcase },
   { href: "/leads",     labelKey: "salesLeads", icon: Users },
-  { href: "/opportunities", labelKey: "salesOpportunities", icon: Target },
-  { href: "/visits",    labelKey: "salesVisits", icon: MapPin },
   { href: "/quotes",    labelKey: "salesQuotes", icon: Calculator },
-  { href: "/cable-costing", labelKey: "cableCosting", icon: Cable },
   { href: "/contracts", labelKey: "salesContracts", icon: FileText },
   { href: "/payments",  labelKey: "salesPayments", icon: CreditCard },
   { href: "/pipeline",  labelKey: "salesPipeline", icon: TrendingUp },
-  { href: "/analytics", labelKey: "salesAnalytics", icon: BarChart3 },
-  { href: "/products",  labelKey: "salesProducts", icon: Package },
+  { href: "/opportunities", labelKey: "salesOpportunities", icon: Target, group: "more" },
+  { href: "/visits",    labelKey: "salesVisits", icon: MapPin, group: "more" },
+  { href: "/cable-costing", labelKey: "cableCosting", icon: Cable, group: "more" },
+  { href: "/analytics", labelKey: "salesAnalytics", icon: BarChart3, group: "more" },
+  { href: "/products",  labelKey: "salesProducts", icon: Package, group: "more" },
 ];
 
 // ─── Finance nav — contracts, payments and the self-service costing tool ───
@@ -143,4 +148,14 @@ const NAV_ARRAYS = { MGMT_NAV, SALES_NAV, FINANCE_NAV, DESIGNER_NAV } as const;
 export function navForRole(role: string | null | undefined): NavItem[] {
   const base = NAV_ARRAYS[(role && NAV_ARRAY_FOR_ROLE[role]) || "SALES_NAV"];
   return base.filter((item) => !item.roles || item.roles.includes(role ?? ""));
+}
+
+/** S41: the items shown flat at the top of the sidebar. */
+export function primaryNavItems(items: NavItem[]): NavItem[] {
+  return items.filter((item) => item.group !== "more");
+}
+
+/** S41: the items under the collapsed "More" group (empty for every role but sales today). */
+export function moreNavItems(items: NavItem[]): NavItem[] {
+  return items.filter((item) => item.group === "more");
 }

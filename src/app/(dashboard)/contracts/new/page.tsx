@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { logFetchFailure } from "@/lib/fetch-interruption";
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 
 const DEFAULT_PCTS = [50, 30, 20];
 const DEFAULT_DAYS = [0, 30, 60];
@@ -164,12 +165,11 @@ function NewContractPageInner() {
         ? totalCents - allocatedCents
         : Math.round((totalCents * pctList[i]) / 100);
       allocatedCents += instCents;
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + dayList[i]);
+      // N7: due dates are Dubai calendar days (UTC rolled back a day between 00:00 and 04:00 Dubai).
       installments.push({
         seq: i + 1,
         amount: instCents / 100,
-        due_date: dueDate.toISOString().slice(0, 10),
+        due_date: addDaysToDateKey(dubaiDateKey() as string, dayList[i]),
         description: i === 0 ? t("contracts.installmentFirst") : isLast ? t("contracts.installmentLast") : t("contracts.installmentNth").replace("{n}", String(i + 1)),
       });
     }

@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { MILESTONE_DESCRIPTIONS } from "@/lib/milestones";
 import { dubaiInputToIso, dubaiInputValue } from "@/lib/dubai-time.mjs";
+import { isRawTransferActivity } from "@/lib/lead-transfer-text.mjs";
 import type {
   Activity,
   BusinessEvent,
@@ -166,8 +167,10 @@ export default function LeadTimeline({
   // Activity + business events + follow_up_logs feed (newest first).
   // P0-1: follow_up_logs (incl. 'note' and 'import_note') are merged in so the
   // timeline shows every follow-up entry. Chat is rendered separately above.
+  // S42 (F18): the machine-written "Lead reassigned from <uuid> to <uuid>" activity duplicates the
+  // transfer business event rendered below with names; the raw row is not shown.
   const allItems: FeedItem[] = [
-    ...activities.map((a) => ({ ...a, _type: "activity" as const })),
+    ...activities.filter((a) => !isRawTransferActivity(a.content)).map((a) => ({ ...a, _type: "activity" as const })),
     ...events.map((e) => ({
       id: e.id,
       type: e.event_type,

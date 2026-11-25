@@ -1,6 +1,7 @@
 // RBAC: user (admin, boss) + service_role
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { createClient } from "@supabase/supabase-js";
 import {
   applyRequestAuthCookies,
@@ -54,7 +55,7 @@ function priceManualQuote(raw: unknown): { quote: ManualQuote } | { error: strin
   const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 500) : null);
   const validUntil = typeof m.valid_until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.valid_until)
     ? m.valid_until
-    : new Date(Date.now() + 30 * 86_400_000).toISOString().split("T")[0];
+    : addDaysToDateKey(dubaiDateKey() as string, 30); // N7: 30 Dubai days
   return { quote: { subtotal, discount_rate: discountRate, discount_amount: discountAmount, tax_rate: taxRate, tax_amount: taxAmount, total,
     currency, valid_until: validUntil, payment_terms: text(m.payment_terms), delivery_terms: text(m.delivery_terms) } };
 }

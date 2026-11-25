@@ -11,7 +11,7 @@ import {
   AlertTriangle, Phone, MessageSquare, FileText,
 } from "lucide-react";
 import Link from "next/link";
-import { addLeadNote } from "@/app/actions/lead";
+import QuickLogSheet, { type QuickLogTarget } from "@/components/leads/QuickLogSheet";
 import { chartLabel, segmentTitle } from "@/lib/chart-labels.mjs";
 
 /* ─── Types ─── */
@@ -220,20 +220,12 @@ function OverdueTable({ items, stageLabels, t }: {
 }
 
 /* ─── Overdue List (Sales) ─── */
-function SalesOverdueList({ items, stageLabels, t }: {
-  items: OverdueItem[]; stageLabels: Record<string, string>; t: any;
+function SalesOverdueList({ items, stageLabels, t, onLogged }: {
+  items: OverdueItem[]; stageLabels: Record<string, string>; t: any; onLogged: () => void;
 }) {
-
-  const addNote = async (leadId: string) => {
-    const note = prompt(t("analytics.quickNotePrompt"));
-    if (!note) return;
-    const ok = await addLeadNote(leadId, note);
-    if (ok) {
-      alert(t("analytics.noteAdded"));
-    } else {
-      alert(t("analytics.noteAddFailed"));
-    }
-  };
+  // S42 (F19): the note button opens the lead page's quick-log sheet (method + optional note) and records a contact.
+  const [quickLogTarget, setQuickLogTarget] = useState<QuickLogTarget | null>(null);
+  const addNote = (item: OverdueItem) => setQuickLogTarget({ leadId: item.id, customerName: item.customer_name || t("analytics.unnamed") });
 
   return (
     <div className="bg-card border border-border rounded-xl p-4">
@@ -271,9 +263,10 @@ function SalesOverdueList({ items, stageLabels, t }: {
                 <MessageSquare className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => addNote(item.id)}
+                onClick={() => addNote(item)}
                 className="p-1.5 rounded-lg bg-blue-500/10 text-blue-700 hover:bg-blue-500/20 transition-colors"
-                title={t("analytics.addNote")}
+                title={t("s39.actions.quickLog")}
+                aria-label={t("s39.actions.quickLog")}
               >
                 <FileText className="w-3.5 h-3.5" />
               </button>
@@ -286,6 +279,7 @@ function SalesOverdueList({ items, stageLabels, t }: {
           </div>
         )}
       </div>
+      <QuickLogSheet target={quickLogTarget} onClose={() => setQuickLogTarget(null)} onLogged={onLogged} t={t} />
     </div>
   );
 }
@@ -304,6 +298,7 @@ export default function LeadHealth() {
   const [data, setData] = useState<LeadHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
     fetch("/api/dashboard/lead-health")
@@ -314,11 +309,12 @@ export default function LeadHealth() {
       })
       .catch((e) => onFetchFailure(e, () => setError(e.message)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refresh]);
 
+  // S42 (F23): loading, error and loaded states share a minimum height so the page does not jump.
   if (loading) {
     return (
-      <div className="bg-card border border-border rounded-xl p-6">
+      <div className="bg-card border border-border rounded-xl p-6 min-h-[320px]">
         <div className="animate-pulse space-y-4">
           <div className="h-5 bg-accent rounded w-1/3" />
           <div className="grid grid-cols-2 gap-3">
@@ -331,7 +327,7 @@ export default function LeadHealth() {
 
   if (error || !data) {
     return (
-      <div className="bg-card border border-border rounded-xl p-6">
+      <div className="bg-card border border-border rounded-xl p-6 min-h-[320px]">
         <p className="text-sm text-rose-700">{t("analytics.loadFailed")}</p>
       </div>
     );
@@ -339,7 +335,7 @@ export default function LeadHealth() {
 
   if (isCEO) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 min-h-[320px]">
         <h2 className="text-base font-semibold text-foreground">{t("analytics.leadHealth")}</h2>
 
         {/* Stat cards */}
@@ -385,7 +381,7 @@ export default function LeadHealth() {
 
   // ── Sales view ──
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-h-[320px]">
       <h2 className="text-base font-semibold text-foreground">{t("analytics.myLeadHealth")}</h2>
 
       {/* Stat cards */}
@@ -424,7 +420,7 @@ export default function LeadHealth() {
       <QualityBar breakdown={data.qualityBreakdown} total={data.totalLeads} qualityLabels={getQualityLabels(t)} title={t("analytics.qualityDistribution")} />
 
       {/* Overdue with action buttons */}
-      <SalesOverdueList items={data.overdue} stageLabels={STAGE_I18N_KEYS} t={t} />
+      <SalesOverdueList items={data.overdue} stageLabels={STAGE_I18N_KEYS} t={t} onLogged={() => setRefresh((n) => n + 1)} />
     </div>
   );
 }

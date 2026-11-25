@@ -96,9 +96,10 @@ export default function TeamPerformance() {
     return Math.max(...data.repStats.map((r) => r.revenue), 1);
   }, [data]);
 
+  // S42 (F23): placeholder keeps the panel height so the page does not shift.
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+      <div className="flex items-center justify-center min-h-[192px] text-muted-foreground text-sm">
         {t("analytics.loading")}
       </div>
     );

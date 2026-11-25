@@ -99,6 +99,22 @@ export function isActiveUnassignedLead(lead) {
   return isActiveLead(lead) && !lead.assigned_to;
 }
 
+const HOUR_MS = 3600 * 1000;
+
+/** S42 (F09): created on today's Dubai calendar day (archived leads never count). */
+export function isCreatedToday(lead, now = new Date()) {
+  if (!isCountedLead(lead) || !lead?.created_at) return false;
+  const key = dubaiDateKey(lead.created_at);
+  return key !== null && key === dubaiDateKey(now);
+}
+
+/** S42 (F09): still open, not contacted (same definition as the contact rate: isContactedLead), older than one hour. */
+export function isUncontactedOver1h(lead, now = new Date()) {
+  if (!isActiveLead(lead) || !lead.created_at || isContactedLead(lead)) return false;
+  const age = new Date(now).getTime() - new Date(lead.created_at).getTime();
+  return Number.isFinite(age) && age >= HOUR_MS;
+}
+
 /**
  * Temperature of a lead at `now`, computed from facts rather than read from the
  * stored column (a trigger only fires on update, so a stored value goes stale
@@ -282,6 +298,9 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     valuedCount: 0,       // active leads that actually carry a quotation value
     riskPool: 0,          // active leads with no next follow-up date, or one that has passed
     unassignedActive: 0,  // active leads nobody owns
+    // S42 (F09): the three cockpit counters above "today's actions".
+    newToday: 0,          // created on today's Dubai day (isCreatedToday)
+    uncontactedOver1h: 0, // active, never contacted, older than an hour (isUncontactedOver1h)
   };
   const todayKey = dubaiDateKey(now);
   const qualityBreakdown = Object.fromEntries(QUALITY_BUCKETS.map((k) => [k, 0]));
@@ -310,7 +329,11 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     if (periodWon) { s.periodWonCount++; s.periodWonValue += value; }
     if (lead.created_at && nowMs - new Date(lead.created_at).getTime() < 7 * 24 * 3600 * 1000) s.newLast7Days++;
     qualityBreakdown[qualityBucket(lead)]++;
-    if (!lead.followup_count || !lead.last_contact_date) s.zeroFollowup++;
+    // S42 (F07/N4): "zero follow-up" means not contacted, by the one definition the contact rate uses
+    // (isContactedLead: a stage past new, a follow-up, or a contact date). So contacted + zeroFollowup == total.
+    if (!contacted) s.zeroFollowup++;
+    if (isCreatedToday(lead, now)) s.newToday++;
+    if (isUncontactedOver1h(lead, now)) s.uncontactedOver1h++;
     {
       const sinceContact = dubaiDaysBetween(lead.last_contact_date, now);
       const temperature = effectiveLeadStatus(lead, now);
@@ -324,7 +347,8 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
       s.active++;
       s.pipelineValue += value;
       if (value > 0) s.valuedCount++;
-      if (!lead.assigned_to) s.unassignedActive++;
+      // Same helper as the /leads?alert=unassigned list the cockpit card opens (review of #611, P1).
+      if (isActiveUnassignedLead(lead)) s.unassignedActive++;
       {
         const due = lead.next_followup_date ? String(lead.next_followup_date).slice(0, 10) : null;
         if (!due || (todayKey && due < todayKey)) s.riskPool++;

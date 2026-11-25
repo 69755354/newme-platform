@@ -513,7 +513,7 @@ export default function LeadDetailPage() {
         <p className="text-muted-foreground">{limitedRole ? t("s43.lead.salesOnly") : t("s43.lead.notFoundOrNoAccess")}</p>
         {!limitedRole && (
           <Button variant="outline" size="sm" onClick={() => router.push("/leads")}>
-            <ArrowLeft className="w-3.5 h-3.5 mr-1" />{t("s43.lead.backToList")}
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" />{t("s42.backToLeads")}
           </Button>
         )}
       </div>

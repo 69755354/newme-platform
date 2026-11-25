@@ -265,7 +265,7 @@ function SalesOverdueList({ items, stageLabels, t, onLogged }: {
               <button
                 onClick={() => addNote(item)}
                 className="p-1.5 rounded-lg bg-blue-500/10 text-blue-700 hover:bg-blue-500/20 transition-colors"
-                title={t("analytics.addNote")}
+                title={t("s39.actions.quickLog")}
                 aria-label={t("s39.actions.quickLog")}
               >
                 <FileText className="w-3.5 h-3.5" />

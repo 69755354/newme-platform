@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { isCreatedToday, isUncontactedOver1h, summarizeLeads } from "../../src/lib/lead-metrics.mjs";
+import { isActiveUnassignedLead, isContactedLead, isCreatedToday, isUncontactedOver1h, summarizeLeads } from "../../src/lib/lead-metrics.mjs";
 import { humanizeTransferText, isRawTransferActivity, transferUuids } from "../../src/lib/lead-transfer-text.mjs";
 import { localizeServerText } from "../../src/lib/i18n/server-text.mjs";
 import { addDaysToDateKey, dubaiDateKey } from "../../src/lib/dubai-time.mjs";
@@ -57,7 +57,7 @@ test("S42 cockpit shows the three counters with links to the matching lists", ()
   assert.match(page, /leadStats\.unassignedActive/);
   assert.match(page, /\/leads\?alert=created_today/);
   assert.match(page, /\/leads\?alert=uncontacted_1h/);
-  assert.match(page, /\/dispatch\?tab=unassigned/);
+  assert.match(page, /\/leads\?alert=unassigned/); // review P1: same list as the counter, not the dispatch tab
   const filtering = read("src/app/(dashboard)/leads/_hooks/useLeadsFiltering.ts");
   assert.match(filtering, /alertFilter === "created_today"/);
   assert.match(filtering, /alertFilter === "uncontacted_1h"/);
@@ -251,4 +251,74 @@ test("S42 every s42.* key used in the interface exists in both languages", () =>
     assert.ok(new RegExp(`\\b${leaf}:`).test(enBlock), `en ${key}`);
     assert.ok(new RegExp(`\\b${leaf}:`).test(zhBlock), `zh ${key}`);
   }
+});
+
+// ── Review of PR #611 (P1-1, P2-1, P2-2, P3-1..3) ─────────────────────────────────────────────────────────────────
+// P1-1: the cockpit "Unassigned" card and the list it opens must count the same leads: one shared predicate.
+test("S42 review P1: cockpit 'unassigned' and the /leads?alert=unassigned filter use one predicate (isActiveUnassignedLead)", () => {
+  const rows = [
+    lead({ id: "open-nobody" }),                                            // counted
+    lead({ id: "open-owned", assigned_to: "u1" }),
+    lead({ id: "won-nobody", final_status: "won" }),                        // closed: not counted
+    lead({ id: "arch-nobody", archived: true }),                            // archived: not counted
+    lead({ id: "quoted-nobody", stage: "quotation_submitted" }),            // counted (any open stage)
+  ];
+  const s = summarizeLeads(rows, { now: NOW });
+  const viaPredicate = rows.filter((l) => isActiveUnassignedLead(l)).map((l) => l.id);
+  assert.deepEqual(viaPredicate, ["open-nobody", "quoted-nobody"]);
+  assert.equal(s.unassignedActive, viaPredicate.length, "the counter is the predicate applied to the same rows");
+  const page = read("src/app/(dashboard)/dashboard/page.tsx");
+  assert.match(page, /\/leads\?alert=unassigned/, "the card opens the leads list, not the dispatch tab");
+  assert.doesNotMatch(page, /\/dispatch\?tab=unassigned/);
+  const filtering = read("src/app/(dashboard)/leads/_hooks/useLeadsFiltering.ts");
+  assert.match(filtering, /alertFilter === "unassigned"/);
+  assert.match(filtering, /isActiveUnassignedLead\(/, "the list filter calls the same helper as the counter");
+  const metrics = read("src/lib/lead-metrics.mjs");
+  assert.match(metrics, /if \(isActiveUnassignedLead\(lead\)\) s\.unassignedActive\+\+/, "the counter calls the helper, not a copy of it");
+});
+
+// P2-1: "not contacted" is the system's existing definition (stage past new, or a follow-up, or a contact date).
+test("S42 review P2a: a lead at a stage past 'new' with no last_contact_date is contacted (not 1h-miss, not zero follow-up)", () => {
+  const rows = [
+    lead({ id: "stage-only", stage: "contacted", last_contact_date: null, followup_count: 0, created_at: "2026-11-20T08:00:00Z" }),
+    lead({ id: "count-only", stage: "new", last_contact_date: null, followup_count: 1, created_at: "2026-11-20T08:00:00Z" }),
+    lead({ id: "truly-new", stage: "new", last_contact_date: null, followup_count: 0, created_at: "2026-11-20T08:00:00Z" }),
+  ];
+  assert.equal(isContactedLead(rows[0]), true);
+  assert.equal(isUncontactedOver1h(rows[0], NOW), false, "stage past new counts as contacted even without a contact date");
+  assert.equal(isUncontactedOver1h(rows[1], NOW), false, "a follow-up counts as contacted");
+  assert.equal(isUncontactedOver1h(rows[2], NOW), true);
+  const s = summarizeLeads(rows, { now: NOW });
+  assert.equal(s.contacted, 2);
+  assert.equal(s.zeroFollowup, 1, "zero follow-up = not contacted, so contacted + zeroFollowup == total");
+  assert.equal(s.contacted + s.zeroFollowup, s.total);
+  assert.equal(s.uncontactedOver1h, 1);
+  const metrics = read("src/lib/lead-metrics.mjs");
+  assert.match(metrics, /if \(!contacted\) s\.zeroFollowup\+\+/, "zero follow-up reuses isContactedLead, not a copy");
+  assert.match(metrics, /isContactedLead\(lead\)\) return false;/, "isUncontactedOver1h reuses isContactedLead");
+});
+
+// P2-2: the dispatch tab from the URL must not be read inside the useState initializer (hydration mismatch).
+test("S42 review P2b: DispatchWorkbench reads ?tab via useSearchParams, not window in a state initializer", () => {
+  const dispatch = read("src/components/dispatch/DispatchWorkbench.tsx");
+  assert.match(dispatch, /useSearchParams\(\)/);
+  assert.doesNotMatch(dispatch, /window\.location\.search/);
+  const client = read("src/app/(dashboard)/dispatch/dispatch-client.tsx");
+  assert.match(client, /<Suspense/, "useSearchParams needs a Suspense boundary above it");
+});
+
+// P3-1..3: chips with one-click clear for the three cockpit filters; contact-log wording; lowercase group in EN.
+test("S42 review P3: chips for created_today / uncontacted_1h / unassigned, contact-log tooltip, lowercase EN group", () => {
+  const filters = read("src/app/(dashboard)/leads/_components/LeadsFilters.tsx");
+  for (const key of ["created_today", "uncontacted_1h", "unassigned"]) {
+    assert.match(filters, new RegExp(`alertFilter === "${key}" && \\(\\n\\s*<button onClick=\\{\\(\\) => setAlertFilter\\("all"\\)\\}`), `chip with clear for ${key}`);
+  }
+  assert.match(filters, /s42\.intake\.newToday/);
+  assert.match(filters, /s42\.intake\.uncontacted1h/);
+  assert.match(filters, /s42\.intake\.unassigned/);
+  const health = read("src/app/(dashboard)/analytics/_components/LeadHealth.tsx");
+  assert.doesNotMatch(health, /title=\{t\("analytics\.addNote"\)\}/, "the button logs a customer contact, so its tooltip must say so");
+  assert.match(health, /title=\{t\("s39\.actions\.quickLog"\)\}/);
+  const ads = read("src/app/(dashboard)/ads/page.tsx");
+  assert.match(ads, /lang === "en" \? [^\n]*toLowerCase\(\)/, "EN scope line lowercases the group label (\"grouped by campaign\")");
 });

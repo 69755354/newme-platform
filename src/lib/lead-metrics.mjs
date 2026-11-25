@@ -108,9 +108,9 @@ export function isCreatedToday(lead, now = new Date()) {
   return key !== null && key === dubaiDateKey(now);
 }
 
-/** S42 (F09): still open, never contacted, and older than one hour: the "speed to lead" miss. */
+/** S42 (F09): still open, not contacted (same definition as the contact rate: isContactedLead), older than one hour. */
 export function isUncontactedOver1h(lead, now = new Date()) {
-  if (!isActiveLead(lead) || lead.last_contact_date || !lead.created_at) return false;
+  if (!isActiveLead(lead) || !lead.created_at || isContactedLead(lead)) return false;
   const age = new Date(now).getTime() - new Date(lead.created_at).getTime();
   return Number.isFinite(age) && age >= HOUR_MS;
 }
@@ -329,9 +329,9 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
     if (periodWon) { s.periodWonCount++; s.periodWonValue += value; }
     if (lead.created_at && nowMs - new Date(lead.created_at).getTime() < 7 * 24 * 3600 * 1000) s.newLast7Days++;
     qualityBreakdown[qualityBucket(lead)]++;
-    // S42 (F07/N4): "zero follow-up" means never contacted. A quick log or a quote sets last_contact_date
-    // without bumping followup_count, so the counter alone said "100% zero follow-up".
-    if (!lead.last_contact_date) s.zeroFollowup++;
+    // S42 (F07/N4): "zero follow-up" means not contacted, by the one definition the contact rate uses
+    // (isContactedLead: a stage past new, a follow-up, or a contact date). So contacted + zeroFollowup == total.
+    if (!contacted) s.zeroFollowup++;
     if (isCreatedToday(lead, now)) s.newToday++;
     if (isUncontactedOver1h(lead, now)) s.uncontactedOver1h++;
     {
@@ -347,7 +347,8 @@ export function summarizeLeads(rows, { period = null, now = new Date() } = {}) {
       s.active++;
       s.pipelineValue += value;
       if (value > 0) s.valuedCount++;
-      if (!lead.assigned_to) s.unassignedActive++;
+      // Same helper as the /leads?alert=unassigned list the cockpit card opens (review of #611, P1).
+      if (isActiveUnassignedLead(lead)) s.unassignedActive++;
       {
         const due = lead.next_followup_date ? String(lead.next_followup_date).slice(0, 10) : null;
         if (!due || (todayKey && due < todayKey)) s.riskPool++;

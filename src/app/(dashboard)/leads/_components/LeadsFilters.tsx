@@ -171,6 +171,25 @@ export function LeadsFilters({
           <AlertTriangle className="w-3 h-3" />{t("dashboard.redAlerts")} <X className="w-3 h-3" />
         </button>
       )}
+      {/* S42: the cockpit's intake cards open these three lists; the chip names the filter and clears it in one tap. */}
+      {alertFilter === "created_today" && (
+        <button onClick={() => setAlertFilter("all")}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
+          <Calendar className="w-3 h-3" />{t("s42.intake.newToday")} <X className="w-3 h-3" />
+        </button>
+      )}
+      {alertFilter === "uncontacted_1h" && (
+        <button onClick={() => setAlertFilter("all")}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-100 text-amber-800 hover:bg-amber-200">
+          <Clock className="w-3 h-3" />{t("s42.intake.uncontacted1h")} <X className="w-3 h-3" />
+        </button>
+      )}
+      {alertFilter === "unassigned" && (
+        <button onClick={() => setAlertFilter("all")}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-100 text-amber-800 hover:bg-amber-200">
+          <Users className="w-3 h-3" />{t("s42.intake.unassigned")} <X className="w-3 h-3" />
+        </button>
+      )}
       {recoveryFilter && (
         <button onClick={() => setRecoveryFilter(false)}
           className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 hover:bg-slate-200">

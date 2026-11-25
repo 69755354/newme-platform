@@ -564,7 +564,7 @@ export default function DashboardPage() {
     const intakeCards = [
       { key: "newToday", label: t("s42.intake.newToday"), value: leadStats.newToday, href: "/leads?alert=created_today", alert: false },
       { key: "uncontacted1h", label: t("s42.intake.uncontacted1h"), value: leadStats.uncontactedOver1h, href: "/leads?alert=uncontacted_1h", alert: leadStats.uncontactedOver1h > 0 },
-      { key: "unassigned", label: t("s42.intake.unassigned"), value: leadStats.unassignedActive, href: "/dispatch?tab=unassigned", alert: leadStats.unassignedActive > 0 },
+      { key: "unassigned", label: t("s42.intake.unassigned"), value: leadStats.unassignedActive, href: "/leads?alert=unassigned", alert: leadStats.unassignedActive > 0 },
     ];
 
     return (

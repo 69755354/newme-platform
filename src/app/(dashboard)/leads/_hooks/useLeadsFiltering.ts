@@ -43,7 +43,7 @@ import { useMemo } from "react";
 import { Lead } from "./useLeadsData";
 import { PIPELINE_STAGES } from "../_utils/constants";
 import { daysSince } from "../_utils/format";
-import { followUpOverdue, isCreatedToday, isUncontactedOver1h, type MetricLead } from "@/lib/lead-metrics.mjs";
+import { followUpOverdue, isActiveUnassignedLead, isCreatedToday, isUncontactedOver1h, type MetricLead } from "@/lib/lead-metrics.mjs";
 import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { WHATSAPP_AD_FILTER, isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
 
@@ -112,6 +112,10 @@ export function useLeadsFiltering({
     if (alertFilter === "uncontacted_1h") {
       const at = new Date();
       result = result.filter((l) => isUncontactedOver1h(l as unknown as MetricLead, at));
+    }
+    // Review of #611 (P1): the cockpit "Unassigned" card opens this list; same helper as its counter (unassignedActive).
+    if (alertFilter === "unassigned") {
+      result = result.filter((l) => isActiveUnassignedLead(l as unknown as MetricLead));
     }
     if (alertFilter === "red") {
       result = result.filter((l) => {

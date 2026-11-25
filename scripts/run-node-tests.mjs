@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 function testEnvironment() {
   const env = { ...process.env };
@@ -58,7 +59,16 @@ export function runAll(plan, run, log = console.error) {
   return { failures, exitCode: failures.length ? 1 : 0 };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
+// Compared by real path: a symlinked directory or a path with spaces/escapes must still run the tests.
+export function isMainModule(argv1, metaUrl) {
+  try {
+    return Boolean(argv1) && fs.realpathSync(argv1) === fs.realpathSync(fileURLToPath(metaUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule(process.argv[1], import.meta.url)) {
   const plan = planBatches(fs.globSync("tests/**/*.test.mjs").sort());
   const { exitCode } = runAll(plan, (files) =>
     spawnSync(

@@ -1,11 +1,11 @@
 // S44: small follow-ups left open by earlier reviews. Synthetic data only.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { planBatches, runAll } from "../../scripts/run-node-tests.mjs";
+import { isMainModule, planBatches, runAll } from "../../scripts/run-node-tests.mjs";
 import { isNoAnswer, summarizeFeedbackBacklog } from "../../src/lib/sales-feedback-brief.mjs";
 import { buildLeadIndex, parseRegister, planFeedback, rowExclusion } from "../../src/lib/sheet-meta-feedback.mjs";
 import { todayThreeThings } from "../../src/lib/workbench-today.mjs";
@@ -30,6 +30,18 @@ test("S44-1 runner: a failing ordinary batch does not skip the Module._load test
   assert.deepEqual(failTwo.failures.map((f) => f.name), ["loader", "loader"]);
   assert.equal(runAll(plan, () => ({ status: 0 }), () => {}).exitCode, 0);
   assert.equal(runAll(plan, (files) => (files[0].endsWith("c.test.mjs") ? { signal: "SIGKILL" } : { status: 0 }), () => {}).exitCode, 1);
+});
+
+test("S44-1 runner: the main-module check uses real paths (symlinked directory, spaces in the path)", () => {
+  const base = mkdtempSync(`${tmpdir()}/s44 main-`);
+  mkdirSync(`${base}/real dir`);
+  writeFileSync(`${base}/real dir/x.mjs`, "");
+  symlinkSync(`${base}/real dir`, `${base}/link`);
+  const meta = `file://${encodeURI(`${base}/real dir/x.mjs`)}`;
+  assert.equal(isMainModule(`${base}/link/x.mjs`, meta), true);
+  assert.equal(isMainModule(`${base}/real dir/x.mjs`, meta), true);
+  assert.equal(isMainModule(`${base}/other.mjs`, meta), false);
+  assert.equal(isMainModule(undefined, meta), false);
 });
 
 // ── 2. sheet meta feedback skips test / held rows ─────────────────────────────────────────────────────────────────
@@ -131,6 +143,8 @@ test("S44-5 speed-to-lead: the in-flight marker is on disk before Meta is contac
   const db = () => fakeDb({ leads: [lead()], lead_dispatch_state: [], profiles });
   await runSpeedToLead(db(), { execute: true, now: SNOW, env, send: async () => true, sendCustomer: interrupted });
   assert.equal(seenInFlight, true);
+  const dry = await runSpeedToLead(db(), { now: SNOW, env, send: async () => true, sendCustomer: interrupted });
+  assert.equal(dry.ack_inflight_unsettled, 1, "an unsettled in-flight acknowledgement is counted in the summary");
   await runSpeedToLead(db(), { execute: true, now: new Date(SNOW.getTime() + 300_000), env, send: async () => true, sendCustomer: interrupted });
   assert.equal(graph, 1, "the next timer run does not send the same acknowledgement again");
   // A definite refusal from Meta (nothing was sent) clears the marker, so the normal retry rule still applies.

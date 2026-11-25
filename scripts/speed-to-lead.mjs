@@ -72,7 +72,7 @@ export async function runSpeedToLead(db, { execute = false, now = new Date(), se
   // message may have gone out, so it is never sent again.
   const open = (key) => !ledger[key]?.done && !ledger[key]?.inflight && (ledger[key]?.tries ?? 0) < MAX_TRIES;
   const summary = { job: "speed-to-lead", mode: execute ? "execute" : "dry_run", candidates: 0, waiting_for_owner: 0, ack_due: 0, ack_skipped_bad_number: 0, ack_skipped_no_credentials: 0,
-    alert_due: 0, ack_sent: 0, alert_sent: 0, failed: 0 };
+    alert_due: 0, ack_inflight_unsettled: Object.values(ledger).filter((e) => e?.inflight && !e?.done).length, ack_sent: 0, alert_sent: 0, failed: 0 };
   const hasToken = Boolean(env.CUSTOMER_WA_ACCESS_TOKEN);
   const work = [];
   for (const lead of selectFormLeads(data.leads, { now, excludedTestIds: data.excludedTestIds })) {

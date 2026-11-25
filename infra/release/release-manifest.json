@@ -300,6 +300,24 @@
       "version": "20261123100000",
       "file": "20261123100000_s39_stage_rules_relaxed.sql",
       "sha256": "f37603f9e7a0550b3795d6eb7e06a55220eef6c4caccb5b51ba7bf817415f435"
+    },
+    {
+      "$comment": "S46 (OS fix S46): drops the row-level-security policy policy_leads_delete_sales on public.leads so only admin and boss (policy_leads_delete_admin) can delete a lead. No table, column, function or grant changes.",
+      "version": "20261126000100",
+      "file": "20261126000100_s46_leads_delete_admin_boss_only.sql",
+      "sha256": "cba585e1c2dfe8c08c7c64212be499834663fed30e45f110b1818f63daa37bcb"
+    },
+    {
+      "$comment": "S46 (OS fix S46): trigger routine public.check_milestone_order() replaced in place: a reopened milestone (completed_at null) no longer counts as done. Same signature, security mode and pinned search_path; no table, column, policy or grant changes.",
+      "version": "20261126000200",
+      "file": "20261126000200_s46_milestone_order_ignores_reopened.sql",
+      "sha256": "7b0acdce349ac897b7292df7045186b7c9f6795ba155920db076c6df88bfd2b9"
+    },
+    {
+      "$comment": "S46 (OS fix S46): public.sync_lead_quotation_value(uuid,numeric) and public.trg_sync_lead_quotation_value() replaced in place (old quotation currency checked before the lead value is cleared, foreign-currency contracts stay out of the AED lead value, the lead row is locked before recomputing); trigger trg_contract_sync_lead_value recreated to also watch contracts.currency. No data written, no grant changes.",
+      "version": "20261126000300",
+      "file": "20261126000300_s46_quotation_value_currency_and_lock.sql",
+      "sha256": "b1898311781df704e7622c497f843162425af19128c59dead91f0e0e3b4e32df"
     }
   ],
   "companions": [
@@ -690,6 +708,21 @@
           "name": "s39-stage-rules-relaxed",
           "expect": true,
           "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%S39: a stage may be skipped%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.transition_lead_stage(uuid,text,text,text,uuid)')) AND (SELECT count(*)=1 AND bool_and(p.prosrc LIKE '%Stage can only move forward%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.trg_check_stage_sequence()')) AND (SELECT count(*)=1 AND bool_and(p.prosrc NOT LIKE '%NEW.quality%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.trg_check_first_contact_gate()')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.prosrc LIKE '%skipping a milestone going forward%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.check_milestone_order()')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.prosrc NOT LIKE '%v_lead.quality%') AND bool_and(has_function_privilege('service_role',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_advance_lead_stage_from_sheet(uuid,text,text)')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%An earlier milestone must be completed first%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.recomplete_lead_milestone(uuid,text,text)')),false)"
+        },
+        {
+          "name": "s46-leads-delete-admin-boss-only",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=0 FROM pg_catalog.pg_policies WHERE schemaname='public' AND tablename='leads' AND policyname='policy_leads_delete_sales') AND (SELECT count(*)=1 FROM pg_catalog.pg_policies WHERE schemaname='public' AND tablename='leads' AND policyname='policy_leads_delete_admin' AND cmd='DELETE'),false)"
+        },
+        {
+          "name": "s46-milestone-order-ignores-reopened",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%completed_at IS NOT NULL%') AND bool_and(p.prosrc LIKE '%skipping a milestone going forward%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.check_milestone_order()')),false)"
+        },
+        {
+          "name": "s46-quotation-value-currency-and-lock",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%for update%') AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_lead_quotation_value(uuid,numeric)')) AND (SELECT count(*)=1 AND bool_and(pg_catalog.pg_get_triggerdef(t.oid) LIKE '%currency%') FROM pg_catalog.pg_trigger t WHERE t.tgname='trg_contract_sync_lead_value' AND t.tgenabled='O' AND NOT t.tgisinternal),false)"
         }
       ]
     }

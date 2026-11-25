@@ -305,3 +305,33 @@ test("review: with two channels the waiting conversation's owner answers for the
   ];
   assert.equal(summarizeFollowupWaits({ states, leads, conversations, channelOwners: owners, profiles, now: MON_NOON })[0].name, "Ayana");
 });
+
+// --- S45: a salesperson's own phone or call is invisible on the company number --------------------------------------------
+test("S45: salesFollowedUpSince reads OS follow-up evidence after the customer's last message", async () => {
+  const { salesFollowedUpSince } = await import("../../src/lib/wa-wait.mjs");
+  const lastIn = Date.parse("2026-11-23T05:30:00Z");
+  const lead = { id: "l1", stage: "new", last_contact_date: null, updated_at: iso("2026-11-23T05:00:00Z") };
+  assert.equal(salesFollowedUpSince(lead, [], lastIn), false);
+  assert.equal(salesFollowedUpSince(lead, [{ contact_type: "call", contact_time: iso("2026-11-23T06:00:00Z") }], lastIn), true);
+  assert.equal(salesFollowedUpSince(lead, [{ contact_type: "call", contact_time: iso("2026-11-23T05:00:00Z") }], lastIn), false, "an older log does not count");
+  assert.equal(salesFollowedUpSince(lead, [{ contact_type: "note", created_at: iso("2026-11-23T06:00:00Z") }], lastIn), false, "a note is not a contact");
+  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-23" }, [], lastIn), true);
+  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-20" }, [], lastIn), false);
+  assert.equal(salesFollowedUpSince({ ...lead, stage: "contacted", updated_at: iso("2026-11-23T07:00:00Z") }, [], lastIn), true);
+  assert.equal(salesFollowedUpSince({ ...lead, stage: "contacted", updated_at: iso("2026-11-23T05:00:00Z") }, [], lastIn), false, "stage moved before the message");
+});
+
+test("S45: runner skips a lead the salesperson already followed up, and the alert text does not claim nobody replied", async () => {
+  process.env.NEWME_BRIEF_STATE_DIR = mkdtempSync(`${tmpdir()}/brief-`);
+  const { runReminders } = await import("../../scripts/daily-brief.mjs");
+  const on = { NEWME_WA_WAIT_ALERT_ENABLED: "true" };
+  const t = tables();
+  t.follow_up_logs = [{ id: 1, lead_id: "l1", contact_type: "call", contact_time: iso("2026-11-23T06:00:00Z"), created_at: iso("2026-11-23T06:00:00Z") }];
+  const skipped = await runReminders(fakeDb(t), { now: NOW, env: on });
+  assert.equal(skipped.wa_wait_due, 0);
+  const sent = [];
+  const open = await runReminders(fakeDb(tables()), { execute: true, now: NOW, send: async (m) => { sent.push(m); return true; }, env: on });
+  assert.equal(open.wa_wait_sent, 1);
+  assert.match(sent[0].text, /公司号上还没有回复，请确认销售是否已用自己手机或电话联系/);
+  assert.ok(!sent[0].text.includes("请尽快回复"));
+});

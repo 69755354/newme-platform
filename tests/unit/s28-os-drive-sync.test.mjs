@@ -442,3 +442,23 @@ test("S30: a NAS upload failure counts in worker health and reconcile reports th
   assert.match(readFileSync(ok.summary.report, "utf8"), /nas_unconfirmed_spool_days: 0/);
   assert.equal(ok.exitCode, 0);
 });
+
+test("S45: unmatched / unwritten click ids are warnings (exit 0, listed in the report); real drift still exits 1", async () => {
+  const leads = [lead(1), lead(2), lead(3)];
+  // lead 1 has a sheet row, lead 2 has none (unmatched), lead 3 has a row whose column X the worker has not filled yet
+  const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001"), sRow("+971500000003")]) });
+  await t.run();
+  t.sheets.grids[SALES][2][23] = ""; // the write for lead 3 is outstanding when the nightly runs
+  const opts = { osReader: reader(leads), sheets: t.sheets, io: t.io, now: () => t.clock.t };
+  const warn = console.warn; const logged = []; console.warn = (m) => logged.push(m);
+  let r; try { r = await runReconcile(opts); } finally { console.warn = warn; }
+  assert.equal(r.exitCode, 0); assert.equal(r.summary.drift, false); assert.ok(r.summary.warnings >= 1);
+  assert.ok(logged.some((m) => /WARNING/.test(m)));
+  const text = readFileSync(r.summary.report, "utf8");
+  assert.match(text, /WARNING: some click ids are not matched into column X \(unmatched=1/); assert.match(text, /ok \(with warnings\)/);
+  assert.ok(!text.includes("971500"));
+  // a real data-loss condition (the sheet lost a Meta registry row) still fails
+  t.sheets.grids[META].length = 1;
+  const bad = await runReconcile(opts);
+  assert.equal(bad.exitCode, 1); assert.equal(bad.summary.drift, true);
+});

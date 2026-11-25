@@ -34,7 +34,7 @@ import {
 } from "../src/lib/daily-brief.mjs";
 
 import {
-  WAIT_ALERT_KEY, WAIT_ALERT_MAX_AGE_DAYS, buildWaitAlert, channelOwnerMap, isUnanswered, planWaitAlert, resolveWaitAlertHours, selectWaiting, summarizeFollowupWaits,
+  WAIT_ALERT_KEY, WAIT_ALERT_MAX_AGE_DAYS, buildWaitAlert, channelOwnerMap, isUnanswered, planWaitAlert, resolveWaitAlertHours, salesFollowedUpSince, selectWaiting, summarizeFollowupWaits,
 } from "../src/lib/wa-wait.mjs";
 
 const SENDER = process.env.NEWME_ALERT_SENDER || "/usr/local/libexec/newme/newme-whatsapp-alert.sh";
@@ -240,8 +240,18 @@ export async function planWaitAlerts(db, data, now, env) {
   const done = waLedgerKeys(now);
   const unanswered = rows.filter((c) => isUnanswered(c) && !done.has(`${c.id}:${c.last_outbound_at ? Date.parse(c.last_outbound_at) : 0}`));
   const leadIds = [...new Set(unanswered.map((c) => c.lead_id).filter(Boolean))];
-  const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
+  const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source,stage,last_contact_date,updated_at").in("id", part));
   const ignored = new Set(leads.filter((l) => l.archived || l.final_status || l.source === "synthetic_qa" || data.excludedTestIds.has(l.id)).map((l) => l.id));
+  // S45: the company number cannot see replies from a salesperson's own phone or a call. A lead already followed up in OS after the
+  // customer's last message is not "waiting" (follow-up log, contact date, stage moved on).
+  const logs = await inChunksAll(leadIds, (part, withCount) => db.from("follow_up_logs").select("id,lead_id,contact_type,contact_time,created_at", withCount ? { count: "exact" } : undefined)
+    .in("lead_id", part).or("contact_type.is.null,contact_type.neq.note").order("id"));
+  const logsByLead = new Map();
+  for (const l of logs) logsByLead.set(l.lead_id, [...(logsByLead.get(l.lead_id) ?? []), l]);
+  const leadById = new Map(leads.map((l) => [l.id, l]));
+  for (const c of unanswered) {
+    if (c.lead_id && salesFollowedUpSince(leadById.get(c.lead_id), logsByLead.get(c.lead_id) ?? [], Date.parse(c.last_inbound_at))) ignored.add(c.lead_id);
+  }
   const waitStarts = new Map();
   const open = [];
   for (const c of unanswered.filter((x) => !(x.lead_id && ignored.has(x.lead_id))).sort((a, b) => Date.parse(a.last_inbound_at) - Date.parse(b.last_inbound_at))) {

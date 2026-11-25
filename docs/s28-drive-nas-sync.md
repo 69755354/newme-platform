@@ -40,7 +40,7 @@ OS 只是小测试环境，云盘表格和 NAS 才是销售真实在用的。所
 沿用已有的 `infra/meta-ids/newme-meta-ids-export.sh`（每天 02:10 把 Meta 编号总表 CSV 推到 NAS /newme-os-backup/exports/meta-ids-YYYYMMDD.csv，并在服务器本地 /var/lib/newme-meta-ids 留 60 天）。本程序不重复做，对账时直接读这份本地副本（与推到 NAS 的内容相同）。
 
 ## 五、每晚对账（--reconcile）
-全量读 OS，对比：OS 与表格的行数、缺行、过期行、表格里多出的行、重复键；OS 与最新那份每日快照（行数，快照里有而 OS 没有的行）；Home-owners 的点击编号覆盖（已有、待写、没匹配、有歧义、因人工手填而跳过的数量）；工作程序健康度（最近成功时间、连续失败次数、待匹配数量）。报告是纯文本，写到 `/var/lib/newme-os-drive-sync/reports/reconcile-YYYYMMDD.txt`（0600），只有数字和少量 lead_ref，没有电话。出现差异、最近成功超过 60 分钟或连续失败 ≥3 时退出码非零（单元带 OnFailure 告警）。
+全量读 OS，对比：OS 与表格的行数、缺行、过期行、表格里多出的行、重复键；OS 与最新那份每日快照（行数，快照里有而 OS 没有的行）；Home-owners 的点击编号覆盖（已有、待写、没匹配、有歧义、因人工手填而跳过的数量）；工作程序健康度（最近成功时间、连续失败次数、待匹配数量）。报告是纯文本，写到 `/var/lib/newme-os-drive-sync/reports/reconcile-YYYYMMDD.txt`（0600），只有数字和少量 lead_ref，没有电话。Meta 编号行数对不上、最近成功超过 60 分钟、连续失败 ≥3 或 NAS 有未确认日子时退出码非零；点击编号没匹配进 X 列（没匹配、有歧义、手填跳过、待写入）只算警告，写进报告和日志，退出码为 0（单元带 OnFailure 告警）。
 
 ## 六、安全与隐私
 - 不在日志、报告、NAS 记录里出现密钥、电话、完整点击编号以外的个人信息；失败只打印错误代码。

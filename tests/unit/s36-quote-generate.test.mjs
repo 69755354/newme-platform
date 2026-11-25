@@ -3,6 +3,7 @@
 // through the same server side effects.
 //
 // This file replaces the module loader for one load, so scripts/run-node-tests.mjs runs it in its own process.
+import * as dubaiTimeModule from "../../src/lib/dubai-time.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -78,6 +79,7 @@ async function post(body, { lead = { stage: "new", contacts: [] }, role = "admin
       requestAuthErrorResponse: (e) => ({ body: { error: e.message }, status: 401 }),
     },
     "../../../../lib/quotation-engine": engine,
+    "@/lib/dubai-time.mjs": dubaiTimeModule,
     "@/lib/device-catalog": { DEVICE_CATALOG: [{ devices: [{ id: "device-1" }] }] },
     "@/lib/logger": { logger, genReqId: () => "request-1" },
     "@/lib/quotation-labour-request": { buildBottomUpLabourRequest: () => undefined },

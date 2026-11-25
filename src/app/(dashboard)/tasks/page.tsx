@@ -80,6 +80,8 @@ export default function TasksPage() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
+  // S41 (F15): assignee names resolved by the server for this page (a salesperson's profiles read may be scoped).
+  const [assignees, setAssignees] = useState<ProfileInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
@@ -104,9 +106,12 @@ export default function TasksPage() {
 
   // Profile name lookup
   const profileNameMap: Record<string, string> = {};
-  profiles.forEach((p) => {
+  [...profiles, ...assignees].forEach((p) => {
     if (p.id && p.full_name) profileNameMap[p.id] = p.full_name;
   });
+  // Never an id: a known name, or a neutral label.
+  const assigneeLabel = (id: string | null) =>
+    id ? profileNameMap[id] || t("s41.tasks.unknownAssignee") : t("s41.tasks.unassigned");
 
   /* ─── Fetch tasks from BFF API ─── */
   const fetchTasks = useCallback(async () => {
@@ -127,6 +132,7 @@ export default function TasksPage() {
       const json = await res.json();
       setTasks((json.tasks ?? []) as Task[]);
       setProfiles((json.profiles ?? []) as ProfileInfo[]);
+      setAssignees((json.assignees ?? []) as ProfileInfo[]);
       setTotalCount(json.totalCount ?? 0);
     } catch (err: unknown) {
       onFetchFailure(err, () => {
@@ -226,6 +232,42 @@ export default function TasksPage() {
                 <p className="text-sm">{t("tasks.noTasks")}</p>
               </div>
             ) : (
+              <>
+              {/* S41 (F15/V8): phone layout (<768px) — one card per task, nothing truncated off-screen. */}
+              <ul data-testid="tasks-mobile-cards" className="md:hidden divide-y">
+                {tasks.map((task) => {
+                  const s = STATUS_STYLES[task.status] || STATUS_STYLES.pending;
+                  const overdue = isOverdue(task.due_at, task.status);
+                  return (
+                    <li key={task.id}>
+                      <button
+                        type="button"
+                        className="w-full px-4 py-3 text-left hover:bg-muted/30"
+                        onClick={() => { window.location.href = `/tasks/${task.id}`; }}
+                      >
+                        <p className="text-sm font-medium">{task.title}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {t("tasks.assignedTo")}: {assigneeLabel(task.assignee_id)}
+                        </p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                          <span className={overdue ? "text-rose-700 font-medium" : "text-muted-foreground"}>
+                            {overdue && <AlertTriangle className="size-3 inline mr-1" />}
+                            {formatDate(task.due_at, lang === "zh" ? "zh-CN" : "en-US")}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${s.bg} ${s.text}`}>
+                            {s.icon}
+                            {statusLabels[task.status] || task.status.replace("_", " ")}
+                          </span>
+                          <span className={`inline-block rounded-full px-2 py-0.5 font-medium ${PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium}`}>
+                            {priorityLabels[task.priority] || task.priority}
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -252,9 +294,7 @@ export default function TasksPage() {
                           {task.title}
                         </TableCell>
                         <TableCell>
-                          {task.assignee_id
-                            ? profileNameMap[task.assignee_id] || task.assignee_id.slice(0, 8)
-                            : "—"}
+                          {assigneeLabel(task.assignee_id)}
                         </TableCell>
                         <TableCell>
                           <span className={overdue ? "text-rose-700 font-medium" : ""}>
@@ -282,6 +322,8 @@ export default function TasksPage() {
                   })}
                 </TableBody>
               </Table>
+              </div>
+              </>
             )}
           </CardContent>
 

@@ -24,6 +24,7 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import { toast } from "sonner";
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 import {
   ClipboardCheck, PenTool, FileText, Handshake, PackageCheck,
   Play, CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronUp,
@@ -420,7 +421,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                 updateFormField(
                   "design_proposal",
                   "follow_up_date",
-                  new Date(Date.now() + 24 * 3600 * 1000).toISOString().split("T")[0]
+                  addDaysToDateKey(dubaiDateKey() as string, 1) // N7: tomorrow in Dubai
                 );
               }}
               className="bg-amber-500 hover:bg-amber-600 text-black font-semibold"
@@ -447,7 +448,7 @@ export default function LeadWorkflow({ leadId }: LeadWorkflowProps) {
                   value={
                     data.submitted_at
                       ? data.submitted_at.split("T")[0]
-                      : new Date().toISOString().split("T")[0]
+                      : (dubaiDateKey() as string)
                   }
                   onChange={(e) =>
                     updateFormField("design_proposal", "submitted_at", e.target.value)

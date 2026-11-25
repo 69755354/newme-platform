@@ -6,6 +6,7 @@
 import { DEVICE_CATALOG, QUOTATION_DEFAULTS, buildDeviceLookup } from "./device-catalog";
 import { resolveInstallLabour } from "./quotation-labour-basis.mjs";
 import { clampDiscountRate } from "./quotation-rules.mjs";
+import { addDaysToDateKey, dubaiDateKey } from "./dubai-time.mjs";
 import type {
   BottomUpLabourRequest,
   InstallLabourBasis,
@@ -157,9 +158,8 @@ export function calculateQuotation(input: CalculateInput): CalculateResult {
   const total = Math.round((taxable + taxAmount) * 100) / 100;
 
   // Valid until date
-  const validUntil = new Date();
-  validUntil.setDate(validUntil.getDate() + QUOTATION_DEFAULTS.validity_days);
-  const validUntilStr = validUntil.toISOString().split("T")[0];
+  // N7: Dubai calendar day, not UTC
+  const validUntilStr = addDaysToDateKey(dubaiDateKey() as string, QUOTATION_DEFAULTS.validity_days);
 
   // Build devices_json (full detail for DB storage)
   const devicesJson: Record<string, any> = {};

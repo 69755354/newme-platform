@@ -6,6 +6,7 @@
 // Never logs or returns customer answers; callers only see aggregate outcomes.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { intakePhone, phoneIdentityKey } from "./lead-contact.mjs";
+import { addDaysToDateKey, dubaiDateKey } from "./dubai-time.mjs";
 import { isolateTestLead } from "./meta-lead-test-isolation.mjs";
 
 export const MAX_LEADGEN_WEBHOOK_BYTES = 256 * 1024;
@@ -110,7 +111,7 @@ export function mapMetaLeadToRow(lead, { formName = null, now = new Date() } = {
   const createdAt = Number.isFinite(created) ? new Date(created).toISOString() : now.toISOString();
   const platform = String(lead.platform ?? "").toLowerCase();
   const source = platform === "ig" || platform === "instagram" ? "ins" : "fb";
-  const followup = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const followup = addDaysToDateKey(dubaiDateKey(now), 1); // N7: tomorrow in Dubai
   return {
     meta_leadgen_id: leadgenId,
     source,

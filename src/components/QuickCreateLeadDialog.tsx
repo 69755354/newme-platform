@@ -24,7 +24,8 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
+  /** S41 (F17): receives the new lead id so the caller can open it right away. */
+  onCreated: (id: string) => void;
 }
 
 const SOURCE_OPTIONS = [
@@ -86,7 +87,7 @@ export default function QuickCreateLeadDialog({ open, onOpenChange, onCreated }:
       }
       resetForm();
       onOpenChange(false);
-      onCreated();
+      onCreated(result.id);
     } catch {
       setError(t("leads.createFailed"));
     } finally {

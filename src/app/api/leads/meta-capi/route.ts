@@ -1,6 +1,7 @@
 // RBAC: public
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { addDaysToDateKey, dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { enqueueMetaCrmStageEvent, normalizeLeadgenId } from "@/lib/meta-crm-events";
 
 /**
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       location,
       lead_status: "hot",
       next_action: "call",
-      next_followup_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      next_followup_date: addDaysToDateKey(dubaiDateKey() as string, 1), // N7: tomorrow in Dubai
       meta_campaign: custom_data?.campaign_name || null,
       meta_click_id: user_data?.fbc || null,
       meta_ad_id: custom_data?.ad_id || null,

@@ -204,6 +204,8 @@ export const translations = {
       roleFinance: "Finance",
       roleDesigner: "Designer",
       financePayments: "Payments",
+      // ── OS fix S41: secondary group of the sales sidebar ──
+      more: "More",
     },
     // Cable & pulling-labour costing (employee self-service estimating tool).
     // Wording only — every figure on that page comes from /api/cable-costing/*,
@@ -430,7 +432,7 @@ export const translations = {
       recovery: "Recovery",
       transfer: "Transfer",
       review: "Review",
-      needsFollowup: "Needs follow-up",
+      needsFollowup: "All overdue follow-ups",
       noUsers: "No users",
       noUsersFound: "No users found",
       holdSince: "Hold Since",
@@ -635,6 +637,8 @@ export const translations = {
       hoursAgo: "h ago",
       daysAgo: "d ago",
       markAllRead: "Mark all read",
+      tabMine: "Mine",
+      tabAll: "All",
       loading: "Loading...",
       types: {
         lead_created: "New Lead",
@@ -1391,7 +1395,7 @@ export const translations = {
       actions: "Actions",
       noMatching: "No matching users",
       addNewUser: "Add New User",
-      addNewUserDesc: "Create a new user and assign a role. The user will receive an activation email.",
+      addNewUserDesc: "Create a new user and assign a role. Set an initial password and tell the person in private; they must change it at first login.",
       fullName: "Full Name",
       enterName: "Enter full name",
       password: "Password",
@@ -2247,6 +2251,20 @@ export const translations = {
         waitingMinutes: "Customer has been waiting for a reply on WhatsApp for {n} min",
       },
     },
+    // ── S42 老板数字与管理 (2026-11-24) — separate block at the end ──
+    s42: {
+      noTargets: "Signing and collection targets are not set for this month",
+      leadNotFound: "This lead does not exist, or you do not have permission to view it",
+      backToLeads: "Back to leads",
+      intake: {
+        newToday: "New today",
+        uncontacted1h: "Waiting over 1 hour, not contacted",
+        unassigned: "Unassigned",
+      },
+      ads: { scope: "{window}, by the day the lead was created · grouped {group}" },
+      a11y: { selectLead: "Select {name}" },
+      import: { sourceRequired: "{n} rows have no source and will not be imported. Fill the \"Leads from\" column and upload again." },
+    },
     // ── S39 销售愿意天天用 (2026-11-23) — separate block at the end ──
     s39: {
       actions: { title: "Quick actions", call: "Call", quickLog: "Log a contact" },
@@ -2316,6 +2334,56 @@ export const translations = {
         scheduled: "scheduled",
         switchOff: "Routing to covers is switched off on this server; covers are saved and will take effect once it is on.",
       },
+    },
+    // ── S41 销售日常（2026-11-24）— separate block at the end ──
+    s41: {
+      health: { fresh: "New lead" },
+      stageNote: {
+        label: "Stage note (optional; the reason is required when marking Lost)",
+        hint: "Stages advance automatically from the contacts and quotes you log; you can also complete any later step directly.",
+      },
+      actions: {
+        quickQuote: "Record quote amount",
+        markContacted: "Mark as contacted?",
+        yes: "Yes, log it",
+        no: "Not now",
+      },
+      workbench: {
+        today: "Today's 3 things",
+        newUncontacted: "New leads not contacted",
+        dueToday: "Tasks due today",
+        longestOverdue: "Longest overdue",
+        none: "None",
+        overdueTag: "Overdue",
+        openLead: "Open lead",
+      },
+      duplicate: {
+        owner: "Owner",
+        stage: "Stage",
+        lastContact: "Last contact",
+        never: "never",
+        openExisting: "Open existing lead",
+        createAnyway: "Create anyway (give a reason)",
+        colleagueFollowing: "A colleague is already following up this number.",
+        existing: "Existing lead",
+      },
+      codes: {
+        signed: "Signed",
+        active: "Active",
+        pending: "Pending",
+        cancelled: "Cancelled",
+        void: "Void",
+        completed: "Completed",
+        paid: "Paid",
+        unpaid: "Unpaid",
+      },
+      delete: {
+        title: "Delete this lead?",
+        description: "The lead and its history will be removed. This cannot be undone.",
+        confirm: "Delete",
+        busy: "Deleting…",
+      },
+      tasks: { unassigned: "Unassigned", unknownAssignee: "Colleague" },
     },
   },
   zh: {
@@ -2516,6 +2584,8 @@ export const translations = {
       roleFinance: "财务",
       roleDesigner: "设计师",
       financePayments: "回款",
+      // ── OS fix S41: secondary group of the sales sidebar ──
+      more: "更多",
     },
     cableCosting: {
       title: "线材与穿线报价",
@@ -2739,7 +2809,7 @@ export const translations = {
       recovery: "回收",
       transfer: "转移",
       review: "审阅",
-      needsFollowup: "需跟进",
+      needsFollowup: "所有逾期跟进",
       noUsers: "无用户",
       noUsersFound: "未找到用户",
       holdSince: "搁置时间",
@@ -2944,6 +3014,8 @@ export const translations = {
       hoursAgo: "小时前",
       daysAgo: "天前",
       markAllRead: "全部已读",
+      tabMine: "我的",
+      tabAll: "全部",
       loading: "加载中...",
       types: {
         lead_created: "新线索",
@@ -3684,7 +3756,7 @@ export const translations = {
       actions: "操作",
       noMatching: "没有匹配的用户",
       addNewUser: "添加新用户",
-      addNewUserDesc: "创建新用户并分配角色。用户将收到激活邮件。",
+      addNewUserDesc: "创建新用户并分配角色。设置初始密码并线下告知对方；首次登录会要求修改密码。",
       fullName: "姓名",
       enterName: "输入姓名",
       password: "密码",
@@ -4540,6 +4612,20 @@ export const translations = {
         waitingMinutes: "客户在 WhatsApp 等回复 {n} 分钟",
       },
     },
+    // ── S42 老板数字与管理 (2026-11-24) — 独立区块，放在末尾 ──
+    s42: {
+      noTargets: "本月签约 / 回款目标未设置",
+      leadNotFound: "线索不存在或你没有权限查看",
+      backToLeads: "返回线索列表",
+      intake: {
+        newToday: "今天进来",
+        uncontacted1h: "超过 1 小时未联系",
+        unassigned: "未分配",
+      },
+      ads: { scope: "{window}，按线索建档日 · {group}" },
+      a11y: { selectLead: "选择 {name}" },
+      import: { sourceRequired: "有 {n} 行没有来源，不会导入。请在表格的“Leads from”列补上来源后重新上传。" },
+    },
     // ── S39 销售愿意天天用 (2026-11-23) — 独立区块，放在末尾 ──
     s39: {
       actions: { title: "快捷操作", call: "拨号", quickLog: "记一笔" },
@@ -4609,6 +4695,56 @@ export const translations = {
         scheduled: "已安排",
         switchOff: "服务器上代管转发尚未开启；代管已保存，开启后即生效。",
       },
+    },
+    // ── S41 销售日常（2026-11-24）— separate block at the end ──
+    s41: {
+      health: { fresh: "新线索" },
+      stageNote: {
+        label: "阶段备注（选填；标记输单时要写原因）",
+        hint: "阶段会根据你记录的联系、报价自动推进；也可以直接完成任一后续步骤。",
+      },
+      actions: {
+        quickQuote: "记报价金额",
+        markContacted: "记为已联系？",
+        yes: "是，记一笔",
+        no: "暂不",
+      },
+      workbench: {
+        today: "今天 3 件事",
+        newUncontacted: "新线索未联系",
+        dueToday: "今天到期任务",
+        longestOverdue: "逾期最久",
+        none: "无",
+        overdueTag: "逾期",
+        openLead: "打开线索",
+      },
+      duplicate: {
+        owner: "负责人",
+        stage: "阶段",
+        lastContact: "最后联系",
+        never: "从未",
+        openExisting: "打开已有线索",
+        createAnyway: "仍然新建（填原因）",
+        colleagueFollowing: "已有同事在跟进这个号码。",
+        existing: "已有线索",
+      },
+      codes: {
+        signed: "已签署",
+        active: "生效中",
+        pending: "待处理",
+        cancelled: "已取消",
+        void: "已作废",
+        completed: "已完成",
+        paid: "已付款",
+        unpaid: "未付款",
+      },
+      delete: {
+        title: "删除这条线索？",
+        description: "线索及其历史记录将被删除，无法恢复。",
+        confirm: "删除",
+        busy: "删除中…",
+      },
+      tasks: { unassigned: "未分配", unknownAssignee: "同事" },
     },
   },
 } as const;

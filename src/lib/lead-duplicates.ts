@@ -18,10 +18,13 @@ export interface DuplicateLead {
   email: string | null;
   assigned_to: string | null;
   archived: boolean | null;
+  /** S41 (F13): shown to viewers who may see the lead. */
+  stage?: string | null;
+  last_contact_date?: string | null;
   matched_on: "phone" | "email" | "phone_email";
 }
 
-const COLUMNS = "id, customer_name, phone, email, assigned_to, archived";
+const COLUMNS = "id, customer_name, phone, email, assigned_to, archived, stage, last_contact_date";
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (character) => `\\${character}`);
@@ -49,12 +52,39 @@ export async function findDuplicateLeads(
 }
 
 /**
+ * S41 (F13): full names of the owners of the duplicates a viewer may see, read with the service client (a salesperson's
+ * own profile read may be scoped). Best effort: on any failure the dialog simply shows no owner name.
+ */
+export async function duplicateOwnerNames(
+  db: SupabaseClient,
+  duplicates: DuplicateLead[],
+  viewer: { id: string; role: string },
+): Promise<Record<string, string | null>> {
+  const seesAll = ["admin", "boss", "operator"].includes(viewer.role);
+  const ids = [...new Set(duplicates
+    .filter((lead) => lead.assigned_to && (seesAll || lead.assigned_to === viewer.id))
+    .map((lead) => lead.assigned_to as string))];
+  if (ids.length === 0) return {};
+  try {
+    const { data, error } = await db.from("profiles").select("id, full_name").in("id", ids);
+    if (error || !Array.isArray(data)) return {};
+    return Object.fromEntries((data as Array<{ id: string; full_name: string | null }>).map((row) => [row.id, row.full_name]));
+  } catch {
+    return {};
+  }
+}
+
+/**
  * What a requester may see about each duplicate. Admin, boss and operator see
  * every lead already; a salesperson only learns the name and link of a lead
  * they own. For anyone else's lead they learn only that a possible duplicate
  * exists — nothing about it.
  */
-export function presentDuplicates(duplicates: DuplicateLead[], viewer: { id: string; role: string }) {
+export function presentDuplicates(
+  duplicates: DuplicateLead[],
+  viewer: { id: string; role: string },
+  ownerNames: Record<string, string | null | undefined> = {},
+) {
   const seesAll = ["admin", "boss", "operator"].includes(viewer.role);
   return duplicates.map((lead) => (seesAll || lead.assigned_to === viewer.id)
     ? {
@@ -63,6 +93,10 @@ export function presentDuplicates(duplicates: DuplicateLead[], viewer: { id: str
       archived: Boolean(lead.archived),
       matched_on: lead.matched_on,
       visible: true,
+      // S41 (F13): owner · stage · last contact, so the dialog can say who is on it. Name, never an id.
+      assigned_to_name: (lead.assigned_to && ownerNames[lead.assigned_to]) || null,
+      stage: lead.stage ?? null,
+      last_contact_date: lead.last_contact_date ?? null,
     }
     // A lead the requester cannot see: no name, link, owner, status or match field.
     : { id: null, customer_name: null, archived: false, matched_on: null, visible: false });

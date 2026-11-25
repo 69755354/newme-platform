@@ -24,7 +24,7 @@ test("Guided Deal Canvas keeps one milestone completion path instead of direct s
 
   assert.ok(page.includes("Deal workspace · next action"));
   assert.ok(page.includes("Auditable timeline"));
-  assert.ok(process.includes("Complete the current milestone above with a real progress note"));
+  assert.ok(process.includes('t("s41.stageNote.hint")')); // S41: stages advance from logged contacts/quotes; no "unlock in sequence"
   assert.equal(process.includes("onStageChange={"), false);
 });
 

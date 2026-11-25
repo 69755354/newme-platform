@@ -78,6 +78,7 @@ import { confirmPayment, allocatePayment as allocatePaymentAction } from "@/app/
 import { fmtAED } from "@/shared/utils/format";
 import { logFetchFailure, onFetchFailure } from "@/lib/fetch-interruption";
 import { dubaiDateKey } from "@/lib/dubai-time.mjs";
+import { formatShortDate } from "@/lib/display-format.mjs";
 
 // ─── Types ───────────────────────────────────────────────────────────
 //
@@ -119,7 +120,7 @@ const SETTLEMENT_ROLES = ["admin", "boss", "finance"];
 export default function PaymentsPage() {
   const { loading: roleLoading, blocked } = useRequireRole([...PAYMENT_PAGE_ROLES]);
   const supabase = createClient();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
 
   // Core state
   const [payments, setPayments] = useState<PaymentListRow[]>([]);
@@ -647,7 +648,7 @@ export default function PaymentsPage() {
                             </span>
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {payment.payment_date?.slice(0, 10)}
+                              {payment.payment_date ? formatShortDate(payment.payment_date, lang) : "—"}
                             </span>
                             <span className="flex items-center gap-1">
                               <FileText className="w-3 h-3" />
@@ -940,7 +941,7 @@ export default function PaymentsPage() {
                             {t("payments.installment")} #{plan.seq}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {t("payments.due")}: {plan.due_date?.slice(0, 10)}
+                            {t("payments.due")}: {plan.due_date ? formatShortDate(plan.due_date, lang) : "—"}
                           </span>
                         </div>
                         {/* allocated_amount, not paid_amount: allocate_payment()
@@ -1043,7 +1044,7 @@ export default function PaymentsPage() {
                 <p>
                   {t("payments.paymentDate")}:{" "}
                   <span className="text-foreground font-medium">
-                    {voidTarget.payment_date?.slice(0, 10)}
+                    {voidTarget.payment_date ? formatShortDate(voidTarget.payment_date, lang) : "—"}
                   </span>
                 </p>
               </div>

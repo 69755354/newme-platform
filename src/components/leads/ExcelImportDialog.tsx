@@ -40,6 +40,7 @@ interface PreviewResponse {
   total_rows: number;
   importable: number;
   skipped: number;
+  source_missing?: number; // S42 (F22): rows with no source (not importable)
   warnings: string[];
   preview: PreviewRow[];
   // Normalized rows returned by the server — these are what the confirm
@@ -289,6 +290,11 @@ export default function ExcelImportDialog({ open, onOpenChange, onImported }: Pr
               <StatCard label={t("leads.importSkipped")} value={preview.skipped} tone="amber" />
             </div>
 
+            {(preview.source_missing ?? 0) > 0 && (
+              <p className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/15 rounded-lg p-2.5" data-testid="import-source-required">
+                {t("s42.import.sourceRequired").replace("{n}", String(preview.source_missing))}
+              </p>
+            )}
             {preview.warnings.length > 0 && (
               <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg p-2.5 max-h-24 overflow-auto">
                 <p className="text-xs text-amber-400 font-medium mb-1">

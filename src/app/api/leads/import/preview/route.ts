@@ -150,6 +150,7 @@ export async function POST(request: NextRequest) {
 
     const previews: PreviewRow[] = [];
     const warnings: string[] = [];
+    let sourceMissingRows = 0; // S42 (F22)
     const allRows: NormalizedRow[] = [];
 
     for (let i = 0; i < rawRows.length; i++) {
@@ -183,8 +184,13 @@ export async function POST(request: NextRequest) {
       const nonEmpty = Object.values(norm).filter((v) => v !== "");
       if (nonEmpty.length === 0) continue;
 
-      // Map source
+      // Map source. S42 (F22): a lead with no source cannot be attributed, so the row is not importable.
       const source = mapSource(norm.source || "");
+      const sourceMissing = (norm.source || "").trim() === "";
+      if (sourceMissing) {
+        rowWarnings.push(`Row ${rowNum}: Source is required ("Leads from" column is empty)`);
+        sourceMissingRows += 1;
+      }
       if ((norm.source || "").toLowerCase().trim() === "instgram") {
         rowWarnings.push(`Row ${rowNum}: "instgram" → mapped to "ins"`);
       }
@@ -261,16 +267,18 @@ export async function POST(request: NextRequest) {
         },
         _warnings: rowWarnings,
       };
-      allRows.push(normalized);
+      // S42 (F22): rows without a source never reach the confirm step.
+      if (!sourceMissing) allRows.push(normalized);
     }
 
-    const skipped = allRows.filter((r) => r._warnings.length > 0).length;
-    const importable = allRows.length - skipped;
+    const skipped = allRows.filter((r) => r._warnings.length > 0).length + sourceMissingRows;
+    const importable = allRows.length - allRows.filter((r) => r._warnings.length > 0).length;
 
     return NextResponse.json({
       total_rows: rawRows.length,
       importable,
       skipped,
+      source_missing: sourceMissingRows,
       warnings,
       preview: previews,
       all_rows: allRows,

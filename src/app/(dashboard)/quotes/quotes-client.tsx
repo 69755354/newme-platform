@@ -479,8 +479,38 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
       ) : (
         /* ─── Rich Table ─── */
         <div className="rounded-xl border border-border/30 overflow-hidden">
+          {/* S41 (F15/V8): on phones (<640px) each quotation is a card — number · customer / amount · status / dates — instead of twelve overlapping grid columns. */}
+          <ul data-testid="quotes-mobile-cards" className="sm:hidden divide-y divide-border/20">
+            {filtered.map((quote) => {
+              const statusStyle = STATUS_STYLES[quote.status] || STATUS_STYLES.draft;
+              return (
+                <li key={quote.id}>
+                  <button type="button" onClick={() => openDetail(quote)} className="w-full px-3 py-3 text-left hover:bg-muted/30">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{getCustomerName(quote)}</p>
+                        <p className="text-xs font-mono text-muted-foreground">{quote.quote_no || "—"}</p>
+                      </div>
+                      <span className={cn("shrink-0 text-sm font-semibold", quote.status === "accepted" ? "text-emerald-700" : "text-copper-700")}>
+                        {fmtAED(quote.total_amount)}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <Badge className={cn("text-xs px-1.5 py-0.5 font-medium border", statusStyle.color, statusStyle.bg, statusStyle.border)}>
+                        {t(`quotes.${quote.status}`)}
+                      </Badge>
+                      <span className="truncate">
+                        {fmtDate(quote.created_at, t("locale.dateLocale"))}
+                        {quote.valid_until && ` · ${t("quotes.validUntil")} ${fmtDate(quote.valid_until, t("locale.dateLocale"))}`}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
           {/* Table Header */}
-          <div className="grid grid-cols-12 gap-3 px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/40 border-b border-border/30">
+          <div className="hidden sm:grid grid-cols-12 gap-3 px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/40 border-b border-border/30">
             <div className="col-span-2 flex items-center gap-1.5"><Hash className="w-3 h-3" />{t("quotes.quoteNoShort")}</div>
             <div className="col-span-2 flex items-center gap-1.5"><User className="w-3 h-3" />{t("quotes.customer")}</div>
             <div className="col-span-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />{t("quotes.status")}</div>
@@ -500,7 +530,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
             return (
               <div
                 key={quote.id}
-                className="grid grid-cols-12 gap-3 px-4 py-3 items-center border-b border-border/20 hover:bg-muted/30 transition-colors cursor-pointer group"
+                className="hidden sm:grid grid-cols-12 gap-3 px-4 py-3 items-center border-b border-border/20 hover:bg-muted/30 transition-colors cursor-pointer group"
                 onClick={() => openDetail(quote)}
               >
                 {/* Quote No */}

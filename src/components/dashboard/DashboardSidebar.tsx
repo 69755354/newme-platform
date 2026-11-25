@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Menu, X, LogOut, ShieldCheck } from "lucide-react";
+import { Menu, X, LogOut, ShieldCheck, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { navForRole } from "@/lib/nav";
+import { navForRole, primaryNavItems, moreNavItems, type NavItem } from "@/lib/nav";
 
 /**
  * DashboardSidebar — DashboardLayout 左侧 sidebar (含 mobile hamburger + overlay)
@@ -53,6 +53,12 @@ export function DashboardSidebar({
   // admin/boss, not every management role) so the sidebar cannot offer a link
   // the target page will bounce this role off.
   const nav = navForRole(role);
+  // S41 (F16): sales see 6 primary items; the rest sit under a collapsed "More" that opens itself when the current page
+  // is one of them.
+  const primary = primaryNavItems(nav);
+  const more = moreNavItems(nav);
+  const moreActive = more.some((item) => pathname.startsWith(item.href));
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const isItemActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -60,6 +66,30 @@ export function DashboardSidebar({
     if (href === "/pipeline" && isManagement) return pathname.startsWith("/pipeline");
     if (href === "/pipeline" && !isManagement) return pathname.startsWith("/pipeline");
     return pathname.startsWith(href);
+  };
+
+  const renderItem = (item: NavItem) => {
+    const ItemIcon = item.icon;
+    const active = isItemActive(item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        prefetch={false}
+        onClick={() => setSidebarOpen(false)}
+        className={cn(
+          "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
+          active
+            ? "bg-slate-600/10 text-slate-700 font-medium border-l-[3px] border-slate-600 pl-2.5"
+            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+        )}
+      >
+        <ItemIcon className="w-4 h-4 shrink-0" />
+        <span className="flex-1 truncate">
+{t(`nav.${item.labelKey}`)}
+        </span>
+      </Link>
+    );
   };
 
   return (
@@ -112,35 +142,34 @@ export function DashboardSidebar({
 
         <div className="h-px bg-border mx-3" />
 
-        {/* Navigation — flat list, no groups */}
+        {/* Navigation — flat list; sales get a collapsed "More" group (S41) */}
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {!role ? (
             // Avoid flash of wrong nav while role is loading
             <div className="px-3 py-4 text-xs text-muted-foreground animate-pulse">{t("common.loading")}</div>
           ) : (
-          nav.map((item) => {
-            const ItemIcon = item.icon;
-            const active = isItemActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false}
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
-                  active
-                    ? "bg-slate-600/10 text-slate-700 font-medium border-l-[3px] border-slate-600 pl-2.5"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                )}
+          <>
+          {primary.map((item) => renderItem(item))}
+          {more.length > 0 && (
+            <div className="pt-1">
+              <button
+                type="button"
+                data-testid="nav-more"
+                aria-expanded={moreOpen || moreActive}
+                onClick={() => setMoreOpen((v) => !v)}
+                className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               >
-                <ItemIcon className="w-4 h-4 shrink-0" />
-                <span className="flex-1 truncate">
-{t(`nav.${item.labelKey}`)}
-                </span>
-              </Link>
-            );
-          })
+                <ChevronDown className={cn("w-4 h-4 shrink-0 transition-transform", (moreOpen || moreActive) && "rotate-180")} />
+                <span className="flex-1 truncate text-left">{t("nav.more")}</span>
+              </button>
+              {(moreOpen || moreActive) && (
+                <div className="space-y-0.5 pl-2">
+                  {more.map((item) => renderItem(item))}
+                </div>
+              )}
+            </div>
+          )}
+          </>
           )}
         </nav>
 

@@ -36,9 +36,10 @@ import {
 } from "lucide-react";
 import { COMPLETABLE_MILESTONES } from "@/lib/milestones";
 import { calculateHealthScore } from "@/lib/health-score";
+import { hasRecentContact, healthBadgeLevel } from "@/lib/lead-health.mjs";
 import { evaluateFirstContactGate, isAssessedQuality } from "@/lib/first-contact-gate.mjs";
 import { STAGES, STAGE_COLORS } from "./types";
-import { fmtAED, daysSince } from "./utils";
+import { fmtAED } from "./utils";
 import type {
   Lead,
   LeadField,
@@ -154,9 +155,10 @@ export default function LeadSalesProcess({
   const nextTaskOverdue = clockNow > 0 && !!nextTask && new Date(nextTask.due_at).getTime() < clockNow;
 
   // ── Health score (Phase B) — shown as a badge in Stage Progress ──
+  // S41 (F11/N1): 记一笔 and the quick quote do not bump followup_count, so "recent" reads last_contact_date and the
+  // follow_up_logs rows; a lead created under 48 h ago is shown as "New lead", never "Stale".
   const health = calculateHealthScore({
-    hasRecentFollowUp:
-      (lead.followup_count ?? 0) > 0 && (daysSince(lead.last_contact_date) ?? Infinity) <= 7,
+    hasRecentFollowUp: hasRecentContact({ lead, followUpLogs, now: clockNow > 0 ? new Date(clockNow) : new Date() }),
     hasMeeting:
       lead.final_status === "won" ||
       ["negotiation", "pending_decision"].includes(lead.stage),
@@ -175,14 +177,19 @@ export default function LeadSalesProcess({
     lead.stage === "won" ||
     lead.stage === "lost";
   const closedAsWon = lead.final_status === "won" || lead.stage === "won";
+  const badgeLevel = healthBadgeLevel(health.level, lead, clockNow > 0 ? new Date(clockNow) : new Date());
   const healthLevelLabel =
-    health.level === "healthy"
+    badgeLevel === "healthy"
       ? t("leadDetail.health_healthy")
-      : health.level === "at_risk"
+      : badgeLevel === "at_risk"
       ? t("leadDetail.health_at_risk")
+      : badgeLevel === "fresh"
+      ? t("s41.health.fresh")
       : t("leadDetail.health_stale");
   const healthColor =
-    health.score >= 50
+    badgeLevel === "fresh"
+      ? "bg-slate-500/10 text-slate-700"
+      : health.score >= 50
       ? "bg-emerald-500/10 text-emerald-700"
       : health.score >= 20
       ? "bg-amber-500/10 text-amber-700"
@@ -906,7 +913,7 @@ export default function LeadSalesProcess({
           ) : (<>
           <div>
             <label htmlFor="stage-note" className="text-xs text-muted-foreground">
-              {t("leadDetail.stageNoteRequired")}
+              {t("s41.stageNote.label")}
             </label>
             <textarea
               id="stage-note"
@@ -936,7 +943,7 @@ export default function LeadSalesProcess({
             </div>
           )}
           <p className="rounded-md border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
-            {lang === "zh" ? "阶段只能通过上方当前里程碑的真实推进备注完成；后续阶段会在满足顺序后解锁。" : "Complete the current milestone above with a real progress note. Future stages unlock in sequence."}
+            {t("s41.stageNote.hint")}
           </p>
           <div className="flex gap-2">
             <Button
@@ -947,7 +954,7 @@ export default function LeadSalesProcess({
                 const changed = await onWon(stageNote, wonAmount);
                 if (changed) { setStageNote(""); setWonAmount(""); }
               }}
-              disabled={updating || !firstContactGate.allowed || !stageNote.trim() || (!(lead.quotation_value != null && lead.quotation_value > 0) && !(Number(wonAmount) > 0))}
+              disabled={updating || !firstContactGate.allowed || (!(lead.quotation_value != null && lead.quotation_value > 0) && !(Number(wonAmount) > 0))}
               title={!firstContactGate.allowed ? firstContactGate.reasons.join("; ") : undefined}
             >
               <CheckCircle className="w-4 h-4 mr-1" />{t("stageLabels.won")}

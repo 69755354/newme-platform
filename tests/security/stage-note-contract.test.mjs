@@ -9,7 +9,7 @@ test("stage API requires a real stage note", async () => {
   assert.ok(source.includes('let note = String(body?.note ?? "").trim()'));
   assert.ok(source.includes("note.length > 1000"));
   assert.ok(source.includes("Stage note must be 1000 characters or fewer"));
-  assert.ok(source.includes('if (!note && (stage === "won" || stage === "lost"))')); // S39: optional for the funnel stages
+  assert.ok(source.includes('if (!note && stage === "lost")')); // S39: optional for the funnel stages; S41: Won needs the amount, not a note
   assert.ok(source.includes('Stage note is required'));
   const migration = await read("supabase/migrations/20260714000003_atomic_stage_transition.sql");
   assert.ok(migration.includes("jsonb_build_object('from', current_lead.stage, 'to', p_next_stage)"));
@@ -17,9 +17,9 @@ test("stage API requires a real stage note", async () => {
 
 test("sales process reserves direct stage actions for terminal outcomes", async () => {
   const source = await read("src/app/(dashboard)/leads/[id]/LeadSalesProcess.tsx");
-  assert.ok(source.includes('t("leadDetail.stageNoteRequired")'));
+  assert.ok(source.includes('t("s41.stageNote.label")')); // S41: the note is optional (Lost still needs its reason)
   assert.ok(source.includes("maxLength={1000}"));
-  assert.ok(source.includes("Complete the current milestone above with a real progress note"));
+  assert.ok(source.includes('t("s41.stageNote.hint")'));
   assert.equal(source.includes("onStageChange(s, stageNote)"), false);
   assert.ok(source.includes("onWon(stageNote, wonAmount)")); // S36: won carries the deal amount
   assert.ok(source.includes("onLost(stageNote)"));

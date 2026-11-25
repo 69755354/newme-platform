@@ -100,6 +100,10 @@ export interface UseLeadDetailMutationsReturn {
   // Handlers
   reassignSales: (newUserId: string) => Promise<void>;
   handleDelete: () => Promise<void>;
+  /** S41: the delete confirmation dialog state and its confirm action. */
+  deleteDialogOpen: boolean;
+  setDeleteDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  confirmDelete: () => Promise<boolean>;
   handleMarkPoor: () => Promise<void>;
   writeEvent: (eventType: string, description: string, eventData?: EventData) => Promise<void>;
   updateField: <K extends keyof LeadUpdate>(field: K, value: LeadUpdate[K], eventType?: string, eventDesc?: string) => Promise<boolean>;
@@ -209,21 +213,27 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   );
 
   // ─── Delete lead ───
+  // S41 (F29②): deleting a lead is an admin/boss action (sales no longer see the icon) and goes through the shared
+  // ConfirmDialog instead of window.confirm. handleDelete opens the dialog; confirmDelete performs the delete and
+  // resolves true to close it, false to keep it open after a failure.
+  const canDelete = ["admin", "boss"].includes(salesRole ?? "");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const handleDelete = useCallback(async () => {
-    if (!lead) return;
-    const canDelete = ["admin", "boss", "operator"].includes(salesRole ?? "") || (salesRole === "sales" && lead.assigned_to === currentUserId);
-    if (!canDelete) return;
-    const confirmed = confirm(t("leadDetail.confirmDelete") || "Are you sure you want to delete this lead? This action cannot be undone.");
-    if (!confirmed) return;
+    if (!lead || !canDelete) return;
+    setDeleteDialogOpen(true);
+  }, [lead, canDelete]);
+  const confirmDelete = useCallback(async (): Promise<boolean> => {
+    if (!lead || !canDelete) return true;
     const { error: delErr } = await supabase.from("leads").delete().eq("id", lead.id);
     if (delErr) {
       onFetchFailure(delErr, () => console.error("[LeadDetail] delete failed"));
       toast.error(t("common.saveFailed") || "Delete failed");
-      return;
+      return false;
     }
     toast.success(lang === "zh" ? "已删除" : "Lead deleted");
     window.location.href = "/leads";
-  }, [lead, salesRole, currentUserId, t, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+    return true;
+  }, [lead, canDelete, t, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Mark lead as poor quality ───
   // P0 schema-alias fix: route via /api/leads/[id]/quality instead of direct
@@ -651,7 +661,7 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
     // Setters
     setUpdating, setEditField, setEditValue, setShowSalesDropdown, setMarkingPoor, setPoorReasonText, setProjectInfoStatus, setError,
     // Handlers
-    reassignSales, handleDelete, handleMarkPoor, writeEvent, updateField, saveProjectInfo, resetProjectInfoDraft, updateStage, updateNextTask, handleWon, handleLost, addNote, toggleMilestone, reopenMilestone, addStructuredContact,
+    reassignSales, handleDelete, deleteDialogOpen, setDeleteDialogOpen, confirmDelete, handleMarkPoor, writeEvent, updateField, saveProjectInfo, resetProjectInfoDraft, updateStage, updateNextTask, handleWon, handleLost, addNote, toggleMilestone, reopenMilestone, addStructuredContact,
   };
 }
 

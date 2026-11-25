@@ -6,10 +6,12 @@ import { localizeServerText } from "@/lib/i18n/server-text.mjs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Inbox, ListTodo, Clock, AlertTriangle, BarChart3, User } from "lucide-react"
+import { Inbox, ListTodo, Clock, AlertTriangle, BarChart3, User, Phone, MessageCircle, Plus } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
+import { mergeTasksWithOverdue, todayThreeThings } from "@/lib/workbench-today.mjs";
+import { telHref, whatsappHref } from "@/lib/lead-contact.mjs";
 
 interface InboxItem {
   id: string
@@ -121,6 +123,10 @@ export default function WorkbenchPage() {
     const label = t(key)
     return label === key ? source : label
   }
+  // S41 (N4, from S42): milestone keys (basic_info, first_contact…) are shown through the lead-detail milestone labels,
+  // then the stages dictionary, and only then as the raw key.
+  const milestoneLabel = (key: string) =>
+    translatedOrRaw(t, `leadDetail.milestone_${key}`, translatedOrRaw(t, `stages.${key}`, key))
   const [data, setData] = useState<WorkbenchData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -165,10 +171,33 @@ export default function WorkbenchPage() {
   }
 
   const inbox = data?.inbox ?? []
-  const tasks = data?.tasks ?? []
+  const rawTasks = data?.tasks ?? []
   const overdue = data?.overdue ?? []
   const alerts = data?.alerts ?? []
   const progress = data?.progress ?? []
+  // S41 (F04): one task list (overdue first, red) and the three numbers that matter today.
+  const tasks = mergeTasksWithOverdue(rawTasks, overdue)
+  const today = todayThreeThings({ inbox, tasks: rawTasks, overdue })
+  const dateLocale = t("locale.dateLocale")
+  const contactLinks = (phone: string | null | undefined) => {
+    const wa = whatsappHref(phone)
+    const tel = telHref(phone)
+    if (!wa && !tel) return null
+    return (
+      <span className="flex shrink-0 items-center gap-1">
+        {tel && (
+          <a href={tel} aria-label={t("s39.actions.call")} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-copper-700 hover:bg-copper-500/10">
+            <Phone className="h-4 w-4" />
+          </a>
+        )}
+        {wa && (
+          <a href={wa} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-emerald-700 hover:bg-emerald-500/10">
+            <MessageCircle className="h-4 w-4" />
+          </a>
+        )}
+      </span>
+    )
+  }
 
   return (
     <DashboardScrollContainer className="mx-auto max-w-7xl space-y-6 p-6">
@@ -182,8 +211,67 @@ export default function WorkbenchPage() {
         </p>
       </div>
 
+      {/* S41 (F04): today's 3 things — new leads not contacted, tasks due today, the longest overdue — each actionable. */}
+      <section data-testid="today-three" aria-label={t("s41.workbench.today")} className="rounded-xl border border-copper-500/30 bg-copper-500/5 p-3">
+        <h2 className="mb-2 text-sm font-semibold text-copper-700">{t("s41.workbench.today")}</h2>
+        <ol className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <li className="rounded-lg border bg-card p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">{t("s41.workbench.newUncontacted")}</span>
+              <span data-testid="today-new-count" className="text-xl font-semibold">{today.uncontactedNew.count}</span>
+            </div>
+            {today.uncontactedNew.items.slice(0, 2).map((lead) => (
+              <div key={lead.id} className="mt-2 flex items-center justify-between gap-2">
+                <Link prefetch={false} href={`/leads/${lead.id}`} className="truncate text-sm font-medium hover:underline">{lead.customer_name}</Link>
+                {contactLinks(lead.phone)}
+              </div>
+            ))}
+          </li>
+          <li className="rounded-lg border bg-card p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">{t("s41.workbench.dueToday")}</span>
+              <span data-testid="today-due-count" className="text-xl font-semibold">{today.dueToday.count}</span>
+            </div>
+            {today.dueToday.items.slice(0, 2).map((task) => (
+              <div key={task.id} className="mt-2 flex items-center justify-between gap-2">
+                {task.lead_id ? (
+                  <Link prefetch={false} href={`/leads/${task.lead_id}`} className="truncate text-sm font-medium hover:underline">{task.lead_name || localizeServerText(task.title, lang)}</Link>
+                ) : (
+                  <span className="truncate text-sm font-medium">{localizeServerText(task.title, lang)}</span>
+                )}
+                {contactLinks(inbox.find((row) => row.id === task.lead_id)?.phone)}
+              </div>
+            ))}
+          </li>
+          <li className="rounded-lg border bg-card p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">{t("s41.workbench.longestOverdue")}</span>
+              {today.longestOverdue && (
+                <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
+                  {formatDate(today.longestOverdue.due_at, dateLocale)}
+                </span>
+              )}
+            </div>
+            {today.longestOverdue ? (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                {today.longestOverdue.lead_id ? (
+                  <Link prefetch={false} href={`/leads/${today.longestOverdue.lead_id}`} className="truncate text-sm font-medium hover:underline">
+                    {today.longestOverdue.customer_name || localizeServerText(today.longestOverdue.title, lang)}
+                  </Link>
+                ) : (
+                  <span className="truncate text-sm font-medium">{localizeServerText(today.longestOverdue.title, lang)}</span>
+                )}
+                {contactLinks(today.longestOverdue.phone)}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">{t("s41.workbench.none")}</p>
+            )}
+          </li>
+        </ol>
+      </section>
+
       {/* Card grid */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {/* Tomorrow's Tasks (明日预告) */}
         <Card className="flex flex-col border-emerald-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -289,12 +377,12 @@ export default function WorkbenchPage() {
                           )}
                           {item.current_milestone && (
                             <span
-                              className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium capitalize text-white ${
+                              className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-white ${
                                 milestoneColors[item.current_milestone] ||
                                 "bg-slate-400"
                               }`}
                             >
-                              {item.current_milestone}
+                              {milestoneLabel(item.current_milestone)}
                             </span>
                           )}
                         </div>
@@ -351,92 +439,44 @@ export default function WorkbenchPage() {
                   const inner = (
                     <>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="line-clamp-1 text-sm font-medium">
+                        <span className={`line-clamp-1 text-sm font-medium ${task.overdue ? "text-red-800" : ""}`}>
                           {localizeServerText(task.title, lang)}
                         </span>
-                        {task.source && (
-                          <Badge variant="secondary" className="shrink-0 text-xs">
-                            {taskSourceLabel(task.source)}
-                          </Badge>
-                        )}
+                        <span className="flex shrink-0 items-center gap-1">
+                          {task.overdue && (
+                            <Badge data-testid="task-overdue-tag" className="bg-red-100 text-xs text-red-800">
+                              {t("s41.workbench.overdueTag")}
+                            </Badge>
+                          )}
+                          {task.source && (
+                            <Badge variant="secondary" className="shrink-0 text-xs">
+                              {taskSourceLabel(task.source)}
+                            </Badge>
+                          )}
+                        </span>
                       </div>
                       {task.lead_name && (
                         <span className="line-clamp-1 text-xs text-slate-500">
                           {task.lead_name}
                         </span>
                       )}
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <span className={`flex items-center gap-1 text-xs ${task.overdue ? "font-medium text-red-600" : "text-muted-foreground"}`}>
                         <Clock className="h-3 w-3" />
                         {formatDate(task.due_at, t("locale.dateLocale"))}
                       </span>
                     </>
                   )
+                  const rowClass = task.overdue
+                    ? "flex flex-col gap-1 rounded-md border border-red-200 bg-red-50/60 px-2 py-2 transition hover:bg-red-100/70"
+                    : "flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-slate-100"
                   return (
                     <li key={task.id}>
                       {href ? (
-                        <Link prefetch={false}
-                          href={href}
-                          className="flex flex-col gap-1 rounded-md px-2 py-2 transition hover:bg-slate-100"
-                        >
+                        <Link prefetch={false} href={href} className={rowClass}>
                           {inner}
                         </Link>
                       ) : (
-                        <div className="flex flex-col gap-1 rounded-md px-2 py-2 hover:bg-slate-50">
-                          {inner}
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Overdue */}
-        <Card className="flex flex-col border-red-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-sm font-medium text-red-700">
-              {t("workbench.overdue") || "Overdue"}
-            </CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent className="flex-1">
-            {overdue.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                {t("workbench.empty.overdue") || "Nothing overdue"}
-              </p>
-            ) : (
-              <ul className="-mx-2 max-h-[320px] space-y-1 overflow-y-auto">
-                {overdue.map((task) => {
-                  const href = task.lead_id ? `/leads/${task.lead_id}` : null
-                  const inner = (
-                    <>
-                      <span className="line-clamp-1 text-sm font-medium text-red-800">
-                        {localizeServerText(task.title, lang)}
-                      </span>
-                      {task.lead_name && (
-                        <span className="line-clamp-1 text-xs text-red-500/80">
-                          {task.lead_name}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1 text-xs text-red-600">
-                        <Clock className="h-3 w-3" />
-                        {formatDate(task.due_at, t("locale.dateLocale"))}
-                      </span>
-                    </>
-                  )
-                  return (
-                    <li key={task.id}>
-                      {href ? (
-                        <Link prefetch={false}
-                          href={href}
-                          className="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50/60 px-2 py-2 transition hover:bg-red-100/70"
-                        >
-                          {inner}
-                        </Link>
-                      ) : (
-                        <div className="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50/60 px-2 py-2">
+                        <div className={rowClass}>
                           {inner}
                         </div>
                       )}
@@ -469,9 +509,9 @@ export default function WorkbenchPage() {
                   return (
                     <li key={g.current_milestone} className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1.5 font-medium capitalize">
+                        <span className="flex items-center gap-1.5 font-medium">
                           <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
-                          {g.current_milestone}
+                          {milestoneLabel(g.current_milestone)}
                         </span>
                         <span className="text-muted-foreground">
                           {g.count} · {width}%
@@ -588,18 +628,25 @@ export default function WorkbenchPage() {
 
       {/* Quick actions */}
       <div className="flex flex-wrap items-center gap-2 pt-2">
-        <Link prefetch={false} href="/leads/new">
-          <Button>
-            <User className="mr-2 h-4 w-4" />
-            {t("workbench.newLead")}
-          </Button>
-        </Link>
         <Link prefetch={false} href="/leads">
           <Button variant="outline">
+            <User className="mr-2 h-4 w-4" />
             {t("workbench.allLeads")}
           </Button>
         </Link>
       </div>
+
+      {/* S41 (F04): New Lead floats bottom-right so it is on the first phone screen whatever the page height. */}
+      <Link
+        prefetch={false}
+        href="/leads/new"
+        data-testid="workbench-new-lead-fab"
+        aria-label={t("workbench.newLead")}
+        className="fixed bottom-5 right-5 z-30 inline-flex min-h-12 items-center gap-2 rounded-full bg-copper-500 px-4 text-sm font-semibold text-foreground shadow-lg hover:bg-copper-600"
+      >
+        <Plus className="h-5 w-5" />
+        {t("workbench.newLead")}
+      </Link>
 
       {/* Feedback banner */}
       <Card className="border-slate-200 bg-slate-50/60">

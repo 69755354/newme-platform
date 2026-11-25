@@ -141,3 +141,15 @@ test("the pages whose server side refuses operator do not appear in operator's s
     assert.ok(shown.includes("/team"), `${role} lost /team`);
   }
 });
+
+test("S41 (F16): a salesperson sees at most 6 primary items; grouped items stay in SALES_NAV so they are still guard-checked", () => {
+  const start = NAV.indexOf("export const SALES_NAV: NavItem[] = [");
+  const end = NAV.indexOf("\n];", start);
+  const items = [...NAV.slice(start, end).matchAll(/\{\s*href:\s*"([^"]+)"([^}]*)\}/g)].map((m) => ({ href: m[1], more: /group:\s*"more"/.test(m[2]) }));
+  const primary = items.filter((i) => !i.more);
+  assert.ok(primary.length <= 6, `sales primary items: ${primary.map((i) => i.href).join(", ")}`);
+  assert.ok(items.filter((i) => i.more).length >= 1, "the remaining sales pages live under More, not dropped");
+  assert.match(NAV, /export function primaryNavItems/);
+  assert.match(NAV, /export function moreNavItems/);
+  assert.match(SIDEBAR, /moreNavItems\(nav\)/);
+});

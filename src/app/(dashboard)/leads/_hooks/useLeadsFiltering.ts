@@ -31,7 +31,8 @@
  *   - assignedToFilter   (assigned_to exact, "all" otherwise)
  *   - followupFilter     (next_followup_date ≤ today AND no final_status)
  *   - search (trim)      (case-insensitive substring across
- *                         customer_name / phone / location / assigned_to)
+ *                         customer_name / location / assigned_to; phone by
+ *                         digits in any format — S41, lib/leads-search.mjs)
  * Final step: sort by updated_at desc.
  *
  * Behaviour contract: 100% identical filter result. Memoisation deps
@@ -46,6 +47,7 @@ import { daysSince } from "../_utils/format";
 import { followUpOverdue, type MetricLead } from "@/lib/lead-metrics.mjs";
 import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { WHATSAPP_AD_FILTER, isWhatsAppAdLead } from "@/lib/whatsapp-ad-display.mjs";
+import { leadMatchesSearch } from "@/lib/leads-search.mjs";
 
 export type StageTotal = { count: number; value: number };
 
@@ -124,14 +126,8 @@ export function useLeadsFiltering({
       });
     }
     if (search.trim()) {
-      const s = search.toLowerCase().trim();
-      result = result.filter(
-        (l) =>
-          (l.customer_name || "").toLowerCase().includes(s) ||
-          (l.phone || "").includes(s) ||
-          (l.location || "").toLowerCase().includes(s) ||
-          (l.assigned_to || "").toLowerCase().includes(s)
-      );
+      // S41 (F12/OA9): a phone typed in any format finds the lead whatever format it was stored in.
+      result = result.filter((l) => leadMatchesSearch(l, search));
     }
     result.sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()

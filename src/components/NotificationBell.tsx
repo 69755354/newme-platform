@@ -131,16 +131,16 @@ export default function NotificationBell() {
       if (res.ok) {
         const json = await res.json();
         setNotifications(json.data ?? []);
-        // Also update the unread count from the data
-        const unread = (json.data ?? []).filter((n: Notification) => !n.is_read).length;
-        setUnreadCount(unread);
+        // S41 (B14): the badge is the server's count over the same filtered query, not a recount of the 20 rows shown
+        // (which turned "99+" into "20" the moment the panel opened).
+        await fetchUnreadCount();
       }
     } catch (e) {
       // Silent fail
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchUnreadCount]);
 
   useEffect(() => {
     fetchUnreadCount();

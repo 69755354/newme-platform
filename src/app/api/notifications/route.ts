@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { VALID_NOTIFICATION_TYPES } from "@/lib/notifications";
 import type { NotificationType } from "@/lib/notifications";
+import { notificationTypesForRole } from "@/lib/notification-display.mjs";
 
 // GET /api/notifications?limit=20&offset=0&unread_only=false
 export async function GET(request: NextRequest) {
@@ -20,7 +21,6 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get("offset") || "0");
     const unreadOnly = searchParams.get("unread_only") === "true";
 
-    // Check role for admin/boss access
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
@@ -30,18 +30,16 @@ export async function GET(request: NextRequest) {
     if (!profile?.role) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const isAdmin = ["admin", "boss"].includes(profile.role);
 
+    // S41 (F14/B14/V7): the bell is personal — the same rows for every role (own user_id), and a salesperson only sees
+    // the types that ask them to act (no approval traffic). unread-count applies the identical filter, so the badge
+    // always equals what the list shows.
+    const visibleTypes = notificationTypesForRole(profile.role);
     let query = supabase
       .from("notifications")
-      .select("*");
-
-    if (isAdmin) {
-      // Admin/boss sees all
-    } else {
-      // Regular user sees only their own
-      query = query.eq("user_id", user.id);
-    }
+      .select("*")
+      .eq("user_id", user.id);
+    if (visibleTypes) query = query.in("type", visibleTypes);
 
     if (unreadOnly) {
       query = query.eq("is_read", false);

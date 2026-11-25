@@ -138,13 +138,13 @@ test("S39-3 milestones may skip forward but not go back; the first one is still 
   assert.equal(canCompleteMilestone([], "quotation").allowed, false);
 });
 
-test("S39-3 notes are optional on milestones and funnel stages; won still needs its note and amount, lost its reason", () => {
+test("S39-3 notes are optional on milestones and funnel stages; won still needs its amount, lost its reason (S41: won's note is optional too)", () => {
   const milestone = read("src/app/api/leads/[id]/milestone/route.ts");
   assert.ok(milestone.includes("|| `Milestone completed: ${milestoneKey}`"));
   assert.equal(milestone.includes("Milestone note is required"), false);
   assert.equal(milestone.includes("isAssessedQuality"), false);
   const stage = read("src/app/api/leads/[id]/stage/route.ts");
-  assert.ok(stage.includes('stage === "won" || stage === "lost"'));
+  assert.ok(stage.includes('if (!note && stage === "lost")')); // S41 (F02/N2): the amount tells Won's story, only Lost needs its reason
   assert.ok(stage.includes("ensureWonAmount"), "won still needs an amount");
 });
 

@@ -36,10 +36,76 @@ function localize(field, value, t) {
   return value;
 }
 
+// ── S41 (recheck §2-10, F14/B14/V7) ─────────────────────────────────────────────────────────────────────────────────
+// Contract rows end in the raw status ("C-1 · AED 1,000 · pending_ceo"). The last " · code" segment is translated
+// through the s37.codes dictionary (approval states) or s41.codes (the remaining contract/payment states); an unknown
+// code is left as written.
+const TRAILING_CODE = /^(.*) · ([a-z][a-z_]*)$/s;
+const CODE_GROUPS = ["s37.codes", "s41.codes"];
+
+function translateCode(code, t) {
+  for (const group of CODE_GROUPS) {
+    const key = `${group}.${code}`;
+    const value = t(key);
+    if (value && value !== key) return value;
+  }
+  return null;
+}
+
+function localizeTrailingCode(body, t) {
+  if (typeof body !== "string") return body ?? null;
+  const match = body.match(TRAILING_CODE);
+  if (!match) return body;
+  const translated = translateCode(match[2], t);
+  return translated ? `${match[1]} · ${translated}` : body;
+}
+
+/**
+ * Notification types a salesperson (or any non-management role) does not need in the bell: approval traffic between
+ * operators, admin and boss, team administration, and stage/quote chatter about leads they already work on. What stays
+ * is what asks them to act: a lead assigned or created for them, follow-up reminders, a contract approved or rejected,
+ * payment states, KPI targets.
+ */
+export const SALES_HIDDEN_NOTIFICATION_TYPES = Object.freeze([
+  "contract_pending_approval",
+  "contract_created",
+  "contract_signed",
+  "contract_superseded",
+  "team_member_added",
+  "quote_created",
+  "lead_stage_change",
+  "lead_stage_changed",
+]);
+
+export const SALES_VISIBLE_NOTIFICATION_TYPES = Object.freeze([
+  "lead_created",
+  "lead_assigned",
+  "follow_up_reminder",
+  "follow_up_overdue",
+  "followup_reminder",
+  "reminder",
+  "warning",
+  "contract_approved",
+  "contract_rejected",
+  "payment_due",
+  "payment_overdue",
+  "payment_received",
+  "first_payment_reminder",
+  "kpi_target_set",
+]);
+
+const MANAGEMENT_ROLES = ["admin", "boss", "operator"];
+
+/** null = every type (management); otherwise the list of types to show, for both the badge and the list. */
+export function notificationTypesForRole(role) {
+  if (MANAGEMENT_ROLES.includes(role)) return null;
+  return [...SALES_VISIBLE_NOTIFICATION_TYPES];
+}
+
 /** Localised { title, body } for one notification row. */
 export function localizeNotification(notification, t) {
   return {
     title: localize("title", notification?.title, t),
-    body: localize("body", notification?.body, t),
+    body: localizeTrailingCode(localize("body", notification?.body, t), t),
   };
 }

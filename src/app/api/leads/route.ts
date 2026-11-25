@@ -17,7 +17,7 @@ import {
   requestAuthErrorResponse,
 } from "@/lib/request-auth-context";
 import { validateNewLead, LEAD_FIELD_LIMITS } from "@/lib/lead-contact.mjs";
-import { findDuplicateLeads, presentDuplicates } from "@/lib/lead-duplicates";
+import { duplicateOwnerNames, findDuplicateLeads, presentDuplicates } from "@/lib/lead-duplicates";
 import { isLeadTransferCandidate } from "@/lib/lead-transfer-candidates.mjs";
 import { createFollowUpTask } from "@/lib/tasks";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -71,7 +71,8 @@ export async function POST(request: NextRequest) {
   // to the admin/operator queue for duplicate review.
   const reviewRequired = !OVERRIDE_ROLES.includes(auth.role);
   if (duplicates.length > 0) {
-    const shown = presentDuplicates(duplicates, { id: auth.user.id, role: auth.role });
+    const viewer = { id: auth.user.id, role: auth.role };
+    const shown = presentDuplicates(duplicates, viewer, await duplicateOwnerNames(supabaseAdmin, duplicates, viewer));
     if (!override) {
       return respond({ error: "duplicate_lead", code: "DUPLICATE_LEAD", duplicates: shown, canOverride: true, reviewRequired }, { status: 409 });
     }

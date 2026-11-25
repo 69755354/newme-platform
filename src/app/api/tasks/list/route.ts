@@ -8,6 +8,24 @@ import {
   requestAuthErrorResponse,
 } from "@/lib/request-auth-context"
 import { excludeSystemAccountsQuery } from "@/lib/system-accounts.mjs"
+import { supabaseAdmin } from "@/lib/supabase-admin"
+
+/**
+ * S41 (F15): names of the assignees on this page, read with the service client because a salesperson's own profiles
+ * read may not include colleagues, which left the page showing "02db8b32" ids. Best effort: on failure the page shows a
+ * neutral label, never an id.
+ */
+async function assigneeNames(tasks: Array<{ assignee_id?: string | null }>): Promise<Array<{ id: string; full_name: string | null }>> {
+  const ids = [...new Set(tasks.map((task) => task.assignee_id).filter((id): id is string => Boolean(id)))]
+  if (ids.length === 0) return []
+  try {
+    const { data, error } = await supabaseAdmin.from("profiles").select("id, full_name").in("id", ids)
+    if (error || !Array.isArray(data)) return []
+    return data as Array<{ id: string; full_name: string | null }>
+  } catch {
+    return []
+  }
+}
 
 const PAGE_SIZE = 20
 
@@ -61,6 +79,7 @@ export async function GET(request: Request) {
     const responseData = {
       tasks: tasks ?? [],
       profiles: profilesResult.data ?? [],
+      assignees: await assigneeNames((tasks ?? []) as Array<{ assignee_id?: string | null }>),
       totalCount: count ?? 0,
     }
 

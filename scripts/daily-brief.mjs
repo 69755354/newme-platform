@@ -240,11 +240,11 @@ export async function planWaitAlerts(db, data, now, env) {
   const done = waLedgerKeys(now);
   const unanswered = rows.filter((c) => isUnanswered(c) && !done.has(`${c.id}:${c.last_outbound_at ? Date.parse(c.last_outbound_at) : 0}`));
   const leadIds = [...new Set(unanswered.map((c) => c.lead_id).filter(Boolean))];
-  const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source,stage,last_contact_date,updated_at").in("id", part));
+  const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source,last_contact_date").in("id", part));
   const ignored = new Set(leads.filter((l) => l.archived || l.final_status || l.source === "synthetic_qa" || data.excludedTestIds.has(l.id)).map((l) => l.id));
   // S45: the company number cannot see replies from a salesperson's own phone or a call. A lead already followed up in OS after the
   // customer's last message is not "waiting" (follow-up log, contact date, stage moved on).
-  const logs = await inChunksAll(leadIds, (part, withCount) => db.from("follow_up_logs").select("id,lead_id,contact_type,contact_time,created_at", withCount ? { count: "exact" } : undefined)
+  const logs = await inChunksAll(leadIds, (part, withCount) => db.from("follow_up_logs").select("id,lead_id,contact_type,no_answer,contact_time,created_at", withCount ? { count: "exact" } : undefined)
     .in("lead_id", part).or("contact_type.is.null,contact_type.neq.note").order("id"));
   const logsByLead = new Map();
   for (const l of logs) logsByLead.set(l.lead_id, [...(logsByLead.get(l.lead_id) ?? []), l]);

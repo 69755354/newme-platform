@@ -155,27 +155,22 @@ export function selectWaiting({ conversations = [], waitStarts = new Map(), igno
 /**
  * S45: has anyone followed this lead up since the customer's last message? Salespeople mostly answer from their own phone or by
  * call, which the company number never sees, so OS records are the evidence:
- *   * a follow-up log (not a note-only log) written after the message;
- *   * last_contact_date on or after the Dubai day of the message (it is a date, so the same day counts);
- *   * a stage past "new" with the lead changed (updated_at) after the message (the stage itself has no timestamp).
- * logs: follow_up_logs rows { lead_id, contact_type, contact_time, created_at }.
+ *   * a follow-up log (not a note-only log, not a no-answer attempt) written after the message;
+ *   * last_contact_date carrying a real time later than the message. A pure date (midnight) is ignored: the functions that write
+ *     notes and logs stamp the day only, and logs are covered exactly by the first rule.
+ * Stage and updated_at are deliberately NOT evidence: the system bumps updated_at itself (inbound messages, dispatch, sync).
+ * logs: follow_up_logs rows { lead_id, contact_type, no_answer, contact_time, created_at }.
  */
 export function salesFollowedUpSince(lead, logs = [], lastInboundMs) {
   if (!lead || !Number.isFinite(lastInboundMs)) return false;
   for (const log of logs) {
-    if (log?.contact_type === "note") continue;
+    if (log?.contact_type === "note" || log?.no_answer) continue;
     const at = ms(log?.contact_time ?? log?.created_at);
     if (Number.isFinite(at) && at > lastInboundMs) return true;
   }
-  const dubaiDay = (t) => new Date(t + DUBAI_OFFSET).toISOString().slice(0, 10);
-  const contactDay = text(lead.last_contact_date).slice(0, 10);
-  if (contactDay && contactDay >= dubaiDay(lastInboundMs)) return true;
-  const stage = text(lead.stage);
-  if (stage && stage !== "new") {
-    const changed = ms(lead.updated_at);
-    if (Number.isFinite(changed) && changed > lastInboundMs) return true;
-  }
-  return false;
+  const contactMs = lead.last_contact_date ? ms(lead.last_contact_date) : NaN;
+  const dateOnly = Number.isFinite(contactMs) && contactMs % DAY === 0;
+  return Number.isFinite(contactMs) && !dateOnly && contactMs > lastInboundMs;
 }
 
 /** Group alert items per responsible person. */

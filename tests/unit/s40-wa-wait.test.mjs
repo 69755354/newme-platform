@@ -315,10 +315,12 @@ test("S45: salesFollowedUpSince reads OS follow-up evidence after the customer's
   assert.equal(salesFollowedUpSince(lead, [{ contact_type: "call", contact_time: iso("2026-11-23T06:00:00Z") }], lastIn), true);
   assert.equal(salesFollowedUpSince(lead, [{ contact_type: "call", contact_time: iso("2026-11-23T05:00:00Z") }], lastIn), false, "an older log does not count");
   assert.equal(salesFollowedUpSince(lead, [{ contact_type: "note", created_at: iso("2026-11-23T06:00:00Z") }], lastIn), false, "a note is not a contact");
-  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-23" }, [], lastIn), true);
-  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-20" }, [], lastIn), false);
-  assert.equal(salesFollowedUpSince({ ...lead, stage: "contacted", updated_at: iso("2026-11-23T07:00:00Z") }, [], lastIn), true);
-  assert.equal(salesFollowedUpSince({ ...lead, stage: "contacted", updated_at: iso("2026-11-23T05:00:00Z") }, [], lastIn), false, "stage moved before the message");
+  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-23" }, [], lastIn), false, "a pure date is not evidence");
+  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-23T00:00:00Z" }, [], lastIn), false, "midnight = date only");
+  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-23T07:10:00Z" }, [], lastIn), true, "a real time after the message");
+  assert.equal(salesFollowedUpSince({ ...lead, last_contact_date: "2026-11-23T05:10:00Z" }, [], lastIn), false, "a real time before the message");
+  assert.equal(salesFollowedUpSince({ ...lead, stage: "contacted", updated_at: iso("2026-11-23T07:00:00Z") }, [], lastIn), false, "system updated_at is never evidence");
+  assert.equal(salesFollowedUpSince(lead, [{ contact_type: "call", no_answer: true, contact_time: iso("2026-11-23T06:00:00Z") }], lastIn), false, "an unanswered call attempt does not count");
 });
 
 test("S45: runner skips a lead the salesperson already followed up, and the alert text does not claim nobody replied", async () => {

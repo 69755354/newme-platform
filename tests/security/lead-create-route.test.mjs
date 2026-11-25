@@ -27,7 +27,8 @@ async function loadTs(file, mocks) {
   });
   const contact = await import("../../src/lib/lead-contact.mjs");
   const candidates = await import("../../src/lib/lead-transfer-candidates.mjs");
-  const all = { "@/lib/lead-contact.mjs": contact, "@/lib/lead-transfer-candidates.mjs": candidates, "@supabase/supabase-js": {}, ...mocks };
+  const dubaiTime = await import("../../src/lib/dubai-time.mjs");
+  const all = { "@/lib/lead-contact.mjs": contact, "@/lib/lead-transfer-candidates.mjs": candidates, "@/lib/dubai-time.mjs": dubaiTime, "@supabase/supabase-js": {}, ...mocks };
   const loaded = new Module(filename);
   loaded.filename = filename;
   loaded.paths = Module._nodeModulePaths(path.dirname(filename));

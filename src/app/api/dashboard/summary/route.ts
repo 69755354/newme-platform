@@ -435,15 +435,18 @@ export async function GET(request: Request) {
     .slice(0, 3);
   hotLeads.forEach((l: any) => {
     const fresh = !l.last_contact_date;
+    // S42 (N8): a quote was recorded but no contact was logged, so the stage is still "new". Say that,
+    // not "awaiting first contact" next to a quote amount (same sentence is translated in server-text.mjs).
+    const freshReason = (l.quotation_value || 0) > 0 ? "Quoted · first contact not logged" : "New lead · awaiting first contact";
     actions.push({
       type: "hot_lead",
       title: l.customer_name || "Unnamed",
-      subtitle: fresh ? `${l.customer_name || "Unnamed"} · New lead · awaiting first contact` : `${l.customer_name || "Unnamed"} · Win prob ${l.win_probability || 0}%`,
+      subtitle: fresh ? `${l.customer_name || "Unnamed"} · ${freshReason}` : `${l.customer_name || "Unnamed"} · Win prob ${l.win_probability || 0}%`,
       link: `/leads/${l.id}`,
       priority: (l.win_probability || 0) >= 70 || fresh ? "high" : "medium",
       customerName: l.customer_name || "Unnamed",
       value: l.quotation_value || 0,
-      reason: fresh ? "New lead · awaiting first contact" : "Hot lead priority",
+      reason: fresh ? freshReason : "Hot lead priority",
       phone: l.phone || null,
       leadId: l.id,
     });

@@ -220,7 +220,8 @@ export function LeadCard({
               <div className="flex h-5 items-center" onClick={e => e.stopPropagation()}>
                 <input type="checkbox" checked={selected}
                   onChange={onToggleSelect}
-                  className="h-4 w-4 rounded border-border/50 bg-card accent-copper-500 cursor-pointer opacity-40 group-hover:opacity-100 checked:opacity-100 transition-opacity" />
+                  aria-label={t("s42.a11y.selectLead").replace("{name}", !isPlaceholder(lead.customer_name) ? String(lead.customer_name) : (lead.phone || t("common.unnamed")))}
+                  className="h-6 w-6 rounded border-border/50 bg-card accent-copper-500 cursor-pointer opacity-40 group-hover:opacity-100 checked:opacity-100 transition-opacity" />
               </div>
             )}
           </div>

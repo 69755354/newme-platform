@@ -121,9 +121,10 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
     return () => { active = false; };
   }, []);
 
+  // S42 (F23): placeholder states keep the panel height so the page does not shift.
   if (loading) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
+      <div className="py-8 text-center text-sm text-muted-foreground min-h-[380px]">
         {t("analytics.loadingTrends")}
       </div>
     );
@@ -131,7 +132,7 @@ export default function WeeklyTrends({ isManagement = true }: WeeklyTrendsProps)
 
   if (error) {
     return (
-      <div className="py-8 text-center text-sm text-rose-700">
+      <div className="py-8 text-center text-sm text-rose-700 min-h-[380px]">
         {error}
       </div>
     );

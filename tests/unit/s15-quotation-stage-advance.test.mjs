@@ -5,6 +5,7 @@
 //
 // This file replaces the module loader for one load, so scripts/run-node-tests.mjs
 // runs it in its own process.
+import * as dubaiTimeModule from "../../src/lib/dubai-time.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -135,6 +136,7 @@ async function generate(lead) {
     "../../../../lib/quotation-engine": {
       calculateQuotation: () => ({ subtotal: 1000, discount_rate: 0, discount_amount: 0, tax_rate: 5, tax_amount: 50, total: 1050, currency: "AED", valid_until: "2026-12-01", devices_json: [] }),
     },
+    "@/lib/dubai-time.mjs": dubaiTimeModule,
     "@/lib/device-catalog": { DEVICE_CATALOG: [{ devices: [{ id: "device-1" }] }] },
     "@/lib/logger": { logger: world.logger, genReqId: () => "request-1" },
     "@/lib/quotation-labour-request": { buildBottomUpLabourRequest: () => undefined },

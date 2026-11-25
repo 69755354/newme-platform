@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDubaiTime } from "@/lib/display-format.mjs";
+import { dubaiDateKey } from "@/lib/dubai-time.mjs";
 import { translatedOrRaw } from "@/lib/chart-labels.mjs";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { cn, fmtDubai } from "@/lib/utils";
@@ -117,7 +118,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 // ─── Helpers ───
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return dubaiDateKey() as string; // N7: Dubai calendar day, not UTC
 }
 
 function formatTime(iso: string): string {

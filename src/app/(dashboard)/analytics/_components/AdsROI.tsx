@@ -100,9 +100,10 @@ export default function AdsROI() {
     return () => { active = false; };
   }, [days]);
 
+  // S42 (F23): placeholder keeps the panel height so the page does not shift.
   if (loading) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
+      <div className="py-8 text-center text-sm text-muted-foreground min-h-[280px]">
         {t("analytics.loadingAds")}
       </div>
     );

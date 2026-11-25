@@ -376,8 +376,8 @@ export default function TeamPage() {
       </Link>
 
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header — S41 (F15): the buttons wrap under the title on phones instead of squeezing it. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">
             {t("team.title")}
@@ -386,7 +386,7 @@ export default function TeamPage() {
             {t("team.subtitle")}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button variant="outline" size="sm" onClick={fetchUsers}>
             <RefreshCw className="w-3.5 h-3.5 mr-1" />
             {t("common.refresh")}
@@ -463,7 +463,66 @@ export default function TeamPage() {
 
           {/* Users Table */}
           <div className="rounded-xl border border-border/50 overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* S41 (F15/V8): phone layout (<768px) — one card per member; actions stay reachable. */}
+            <ul data-testid="team-mobile-cards" className="md:hidden divide-y divide-border/20">
+              {filtered.map((user) => (
+                <li key={user.id} className="px-3 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-copper-500/20 flex items-center justify-center text-copper-700 text-xs font-bold shrink-0">
+                        {(user.full_name || user.email || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground text-sm">{user.full_name || user.email || "-"}</p>
+                        {user.full_name && user.email && <p className="truncate text-xs text-muted-foreground">{user.email}</p>}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {(currentUserRole === "admin" || currentUserRole === "boss") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 px-2 text-xs text-copper-700 hover:text-copper-700 hover:bg-copper-500/10"
+                          onClick={() => { setRevealTarget({ id: user.id, name: (user.full_name || user.email || "—") }); setResetPasswordValue(""); setRevealedPassword(null); }}
+                          aria-label={t("team.resetPassword")}
+                          title={t("team.resetPassword")}
+                        >
+                          <KeyRound className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      {(currentUserRole === "admin" || currentUserRole === "boss") && user.id !== currentUserId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 px-2 text-xs text-rose-700 hover:text-rose-700 hover:bg-rose-500/10"
+                          onClick={() => setHandoverMember({ id: user.id, name: user.full_name || user.email || "User" })}
+                          aria-label={t("team.deactivate")}
+                          title={t("team.deactivate")}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <Badge
+                      variant="outline"
+                      className={cn("text-xs font-medium", ROLE_COLORS[user.role] || "bg-muted text-muted-foreground border-border")}
+                    >
+                      <ShieldCheck className="w-3 h-3 mr-1" />
+                      {t(`team.role${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`)}
+                    </Badge>
+                    {user.is_active ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="w-3 h-3" />{t("team.active")}</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-muted-foreground"><XCircle className="w-3 h-3" />{t("team.inactive")}</span>
+                    )}
+                    <span className="inline-flex items-center gap-1 text-muted-foreground"><Clock className="w-3 h-3" />{formatLastActive(user.last_active_at)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-border/50 bg-muted/30">

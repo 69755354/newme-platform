@@ -374,7 +374,8 @@ function LeadsContent() {
         onSelectAll={() => selectAllVisible(filtered.map(l => l.id))}
         onClear={clearSelection}
       />
-      <QuickCreateLeadDialog open={showQuickCreate} onOpenChange={setShowQuickCreate} onCreated={fetchLeads} />
+      {/* S41 (F17): after a quick create, open the new lead so the salesperson can call / WhatsApp at once. */}
+      <QuickCreateLeadDialog open={showQuickCreate} onOpenChange={setShowQuickCreate} onCreated={(id) => { void fetchLeads(); router.push(`/leads/${id}`); }} />
       <ExcelImportDialog open={showImport} onOpenChange={setShowImport} onImported={fetchLeads} />
     </DashboardScrollContainer>
   );

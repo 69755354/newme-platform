@@ -158,13 +158,14 @@ test("won and lost controls disappear once a lead is closed, and the note label 
   assert.match(source, /const isClosed =/);
   assert.match(source, /isClosed \? \(/);
   assert.doesNotMatch(source, /Stage note \(optional\)/);
-  assert.match(source, /t\("leadDetail\.stageNoteRequired"\)/);
+  // S41 (F02/N2): the label comes from the s41 block — optional note, Lost still needs its reason.
+  assert.match(source, /t\("s41\.stageNote\.label"\)/);
   assert.doesNotMatch(source, /Stage note \(required\)/);
   const translations = read("src/lib/i18n/translations.ts");
   for (const key of ["leadClosedWon", "leadClosedLost", "stageNoteRequired"]) {
     assert.equal((translations.match(new RegExp(`\\b${key}:`, "g")) ?? []).length, 2, key);
   }
-  assert.match(source, /!stageNote\.trim\(\)/);
+  assert.match(source, /!stageNote\.trim\(\)/); // Lost
 });
 
 test("the create-contract buttons only render for roles that can open /contracts/new", () => {

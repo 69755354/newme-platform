@@ -57,8 +57,9 @@ export async function PATCH(
     if (!VALID_STAGES.has(stage)) {
       return respond({ error: "Invalid stage" }, { status: 400 });
     }
-    // S39: a note is optional for a move along the funnel; won (the amount's story) and lost (the reason) still need one.
-    if (!note && (stage === "won" || stage === "lost")) {
+    // S39: a note is optional for a move along the funnel. S41: Won needs the amount, not a note (the quotation or the
+    // deal amount tells the story); only Lost still needs its reason.
+    if (!note && stage === "lost") {
       return respond({ error: "Stage note is required" }, { status: 400 });
     }
     if (!note) note = `Stage set to ${stage}`;

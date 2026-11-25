@@ -204,6 +204,8 @@ export const translations = {
       roleFinance: "Finance",
       roleDesigner: "Designer",
       financePayments: "Payments",
+      // ── OS fix S41: secondary group of the sales sidebar ──
+      more: "More",
     },
     // Cable & pulling-labour costing (employee self-service estimating tool).
     // Wording only — every figure on that page comes from /api/cable-costing/*,
@@ -635,6 +637,8 @@ export const translations = {
       hoursAgo: "h ago",
       daysAgo: "d ago",
       markAllRead: "Mark all read",
+      tabMine: "Mine",
+      tabAll: "All",
       loading: "Loading...",
       types: {
         lead_created: "New Lead",
@@ -2281,6 +2285,56 @@ export const translations = {
         empty: "No leads match",
       },
     },
+    // ── S41 销售日常（2026-11-24）— separate block at the end ──
+    s41: {
+      health: { fresh: "New lead" },
+      stageNote: {
+        label: "Stage note (optional; the reason is required when marking Lost)",
+        hint: "Stages advance automatically from the contacts and quotes you log; you can also complete any later step directly.",
+      },
+      actions: {
+        quickQuote: "Record quote amount",
+        markContacted: "Mark as contacted?",
+        yes: "Yes, log it",
+        no: "Not now",
+      },
+      workbench: {
+        today: "Today's 3 things",
+        newUncontacted: "New leads not contacted",
+        dueToday: "Tasks due today",
+        longestOverdue: "Longest overdue",
+        none: "None",
+        overdueTag: "Overdue",
+        openLead: "Open lead",
+      },
+      duplicate: {
+        owner: "Owner",
+        stage: "Stage",
+        lastContact: "Last contact",
+        never: "never",
+        openExisting: "Open existing lead",
+        createAnyway: "Create anyway (give a reason)",
+        colleagueFollowing: "A colleague is already following up this number.",
+        existing: "Existing lead",
+      },
+      codes: {
+        signed: "Signed",
+        active: "Active",
+        pending: "Pending",
+        cancelled: "Cancelled",
+        void: "Void",
+        completed: "Completed",
+        paid: "Paid",
+        unpaid: "Unpaid",
+      },
+      delete: {
+        title: "Delete this lead?",
+        description: "The lead and its history will be removed. This cannot be undone.",
+        confirm: "Delete",
+        busy: "Deleting…",
+      },
+      tasks: { unassigned: "Unassigned", unknownAssignee: "Colleague" },
+    },
   },
   zh: {
     // ── S3 线索流程修复（2026-11-04）— 独立区块，放在语言开头以避免与 S6 合并冲突 ──
@@ -2480,6 +2534,8 @@ export const translations = {
       roleFinance: "财务",
       roleDesigner: "设计师",
       financePayments: "回款",
+      // ── OS fix S41: secondary group of the sales sidebar ──
+      more: "更多",
     },
     cableCosting: {
       title: "线材与穿线报价",
@@ -2908,6 +2964,8 @@ export const translations = {
       hoursAgo: "小时前",
       daysAgo: "天前",
       markAllRead: "全部已读",
+      tabMine: "我的",
+      tabAll: "全部",
       loading: "加载中...",
       types: {
         lead_created: "新线索",
@@ -4537,6 +4595,56 @@ export const translations = {
         loadMore: "再显示 {n} 条",
         empty: "没有符合条件的线索",
       },
+    },
+    // ── S41 销售日常（2026-11-24）— separate block at the end ──
+    s41: {
+      health: { fresh: "新线索" },
+      stageNote: {
+        label: "阶段备注（选填；标记输单时要写原因）",
+        hint: "阶段会根据你记录的联系、报价自动推进；也可以直接完成任一后续步骤。",
+      },
+      actions: {
+        quickQuote: "记报价金额",
+        markContacted: "记为已联系？",
+        yes: "是，记一笔",
+        no: "暂不",
+      },
+      workbench: {
+        today: "今天 3 件事",
+        newUncontacted: "新线索未联系",
+        dueToday: "今天到期任务",
+        longestOverdue: "逾期最久",
+        none: "无",
+        overdueTag: "逾期",
+        openLead: "打开线索",
+      },
+      duplicate: {
+        owner: "负责人",
+        stage: "阶段",
+        lastContact: "最后联系",
+        never: "从未",
+        openExisting: "打开已有线索",
+        createAnyway: "仍然新建（填原因）",
+        colleagueFollowing: "已有同事在跟进这个号码。",
+        existing: "已有线索",
+      },
+      codes: {
+        signed: "已签署",
+        active: "生效中",
+        pending: "待处理",
+        cancelled: "已取消",
+        void: "已作废",
+        completed: "已完成",
+        paid: "已付款",
+        unpaid: "未付款",
+      },
+      delete: {
+        title: "删除这条线索？",
+        description: "线索及其历史记录将被删除，无法恢复。",
+        confirm: "删除",
+        busy: "删除中…",
+      },
+      tasks: { unassigned: "未分配", unknownAssignee: "同事" },
     },
   },
 } as const;

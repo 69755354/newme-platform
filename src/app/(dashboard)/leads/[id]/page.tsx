@@ -29,6 +29,7 @@ import LeadCustomerProfile from "./LeadCustomerProfile";
 import LeadWhatsAppAdPanel from "./LeadWhatsAppAdPanel";
 import LeadWaitingBadge from "./LeadWaitingBadge";
 import LeadActionBar from "./LeadActionBar";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeadAiNoteCard from "./LeadAiNoteCard";
 import LeadFollowupCard from "./LeadFollowupCard";
 
@@ -213,6 +214,9 @@ export default function LeadDetailPage() {
     projectInfoStatus,
     reassignSales,
     handleDelete,
+    deleteDialogOpen,
+    setDeleteDialogOpen,
+    confirmDelete,
     handleMarkPoor,
     updateField,
     saveProjectInfo,
@@ -565,14 +569,18 @@ export default function LeadDetailPage() {
             {creatorName && ` · ${t("leadDetail.createdBy")}: ${creatorName}`}
           </p>
         </div>
-        {(["admin", "boss", "operator"].includes(salesRole ?? "") || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
+        {/* S41 (F29②): the delete icon is admin/boss only and opens a confirm dialog; sales never see it. */}
+        {(["admin", "boss", "operator"].includes(salesRole ?? "")) && (
           <>
+          {(["admin", "boss"].includes(salesRole ?? "")) && (
           <Button variant="ghost" size="icon"
+            data-testid="lead-delete"
             className="text-muted-foreground hover:text-red-700 hover:bg-red-500/10"
             onClick={handleDelete}
             title={t("common.delete") || "Delete"}>
             <Trash2 className="w-5 h-5" />
           </Button>
+          )}
           {(["admin", "boss", "operator"].includes(salesRole ?? "")) && (
             <Button variant="ghost" size="sm"
               className="text-amber-700 hover:bg-amber-500/10"
@@ -599,6 +607,7 @@ export default function LeadDetailPage() {
           repName={assignedToName}
           canLog={["admin", "boss", "operator"].includes(salesRole ?? "") || (!!currentUserId && lead.assigned_to === currentUserId)}
           onLogged={refreshData}
+          onQuickQuote={() => setShowQuickQuote(true)}
           t={t}
         />
       )}
@@ -719,6 +728,16 @@ export default function LeadDetailPage() {
         onOpenChange={setShowQuickQuote}
         leadId={id as string}
         onSaved={() => { void refreshData(); }}
+      />
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title={t("s41.delete.title")}
+        description={t("s41.delete.description")}
+        confirmLabel={t("s41.delete.confirm")}
+        cancelLabel={t("common.cancel")}
+        busyLabel={t("s41.delete.busy")}
+        onConfirm={confirmDelete}
       />
       {/* T2-4: toast 层级约定 — z-toast z-50
           sonner Toaster 已固定 z-50，作为最高优先级反馈层，

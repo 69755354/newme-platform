@@ -45,7 +45,9 @@ test("milestone reopen is owner-scoped for sales and global for management", asy
 
   assert.match(auth, /profile\.role === "operator"/);
   assert.match(page, /\["admin", "boss", "operator"\]/);
-  assert.match(mutations, /\["admin", "boss", "operator"\]/);
+  // S41 (F29②): the only client role gate in the mutations hook is lead deletion, now admin/boss; reopen scoping
+  // stays on the server (the route checks below).
+  assert.match(mutations, /\["admin", "boss"\]/);
   assert.match(route, /export async function PATCH/);
   assert.match(route, /lead\.assigned_to !== authContext\.user\.id/);
   assert.match(route, /Reopen reason is required/);

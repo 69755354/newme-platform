@@ -11,7 +11,8 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { logger } from "@/lib/logger";
-import { buildFollowupNote, evaluateFollowup, resolveFollowupConfig, type FollowupState } from "@/lib/followup-monitor.mjs";
+import { buildFollowupNote, evaluateFollowup, manualWhatsAppEvents, resolveFollowupConfig, type FollowupState } from "@/lib/followup-monitor.mjs";
+import { withCoverRecipients } from "@/lib/leave-cover.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -77,11 +78,19 @@ async function handle(request: Request) {
     for (let i = 0; i < leadIds.length; i += CHUNK) {
       if (summary.changed >= MAX_CHANGES) { summary.capped = true; break; }
       const ids = leadIds.slice(i, i + CHUNK);
-      const [{ data: leads, error: leadError }, { data: states, error: stateError }] = await Promise.all([
+      const [{ data: leads, error: leadError }, { data: states, error: stateError }, { data: manualLogs, error: logError }] = await Promise.all([
         supabaseAdmin.from("leads").select("id, assigned_to, customer_name, stage, archived, final_status").in("id", ids),
         supabaseAdmin.from("lead_followup_state").select("lead_id, state, abandon_risk").in("lead_id", ids),
+        // S43 (B12): a WhatsApp contact logged by hand is reply evidence too (a reply from a personal phone).
+        supabaseAdmin.from("follow_up_logs").select("lead_id, contact_type, contact_time").in("lead_id", ids).eq("contact_type", "whatsapp"),
       ]);
       if (leadError || stateError) throw new Error("lead_query_failed");
+      const manualByLead = new Map<string, Array<{ contact_type: string; contact_time: string }>>();
+      for (const log of (logError ? [] : (manualLogs ?? [])) as Array<{ lead_id: string; contact_type: string; contact_time: string }>) {
+        const list = manualByLead.get(log.lead_id) ?? [];
+        list.push(log);
+        manualByLead.set(log.lead_id, list);
+      }
       const stateByLead = new Map(((states ?? []) as StateRow[]).map((row) => [row.lead_id, row]));
       for (const lead of (leads ?? []) as LeadRow[]) {
         if (lead.archived || lead.final_status) { summary.skipped_closed += 1; continue; }
@@ -93,7 +102,10 @@ async function handle(request: Request) {
         if (eventError) { summary.failed += 1; continue; }
         summary.scanned += 1;
         const result = evaluateFollowup({
-          events: ((events ?? []) as Array<{ direction: "inbound" | "outbound"; occurred_at: string }>).map((e) => ({ direction: e.direction, occurredAt: e.occurred_at })),
+          events: [
+            ...((events ?? []) as Array<{ direction: "inbound" | "outbound"; occurred_at: string }>).map((e) => ({ direction: e.direction, occurredAt: e.occurred_at })),
+            ...manualWhatsAppEvents(manualByLead.get(lead.id) ?? []),
+          ],
           now, config, silenceRules: SILENCE_STAGES.has(lead.stage ?? ""),
         });
         const previous = stateByLead.get(lead.id);
@@ -101,7 +113,10 @@ async function handle(request: Request) {
           result, previous: previous ? { state: previous.state, abandonRisk: previous.abandon_risk } : { state: "normal", abandonRisk: false },
           now, config, leadName: lead.customer_name ?? "",
         });
-        const recipients = [...new Set([lead.assigned_to, ...operators].filter((id): id is string => Boolean(id)))];
+        // S43: the owner's leave cover (default off, NEWME_LEAVE_COVER_ENABLED) is told as well.
+        let ownerAndCover: string[] = lead.assigned_to ? [lead.assigned_to] : [];
+        try { ownerAndCover = await withCoverRecipients(supabaseAdmin, ownerAndCover, { now: new Date(now) }); } catch { /* the owner is still told */ }
+        const recipients = [...new Set([...ownerAndCover, ...operators].filter((id): id is string => Boolean(id)))];
         const { data, error } = await supabaseAdmin.rpc("upsert_lead_followup_state", {
           p_lead_id: lead.id,
           p_first_inbound_at: result.firstInboundAt,

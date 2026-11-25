@@ -3004,6 +3004,9 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          cover_end: string | null
+          cover_start: string | null
+          cover_user_id: string | null
           created_at: string | null
           email: string | null
           force_password_change: boolean | null
@@ -3021,6 +3024,9 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          cover_end?: string | null
+          cover_start?: string | null
+          cover_user_id?: string | null
           created_at?: string | null
           email?: string | null
           force_password_change?: boolean | null
@@ -3038,6 +3044,9 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          cover_end?: string | null
+          cover_start?: string | null
+          cover_user_id?: string | null
           created_at?: string | null
           email?: string | null
           force_password_change?: boolean | null
@@ -4614,6 +4623,10 @@ export type Database = {
       }
       record_lead_note_atomic: {
         Args: { p_idempotency_key: string; p_lead_id: string; p_note: string }
+        Returns: Json
+      }
+      set_leave_cover: {
+        Args: { p_cover: string | null; p_end: string | null; p_start: string | null; p_user: string }
         Returns: Json
       }
       reopen_lead_milestone: {

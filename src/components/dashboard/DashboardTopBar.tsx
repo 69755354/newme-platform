@@ -3,6 +3,7 @@
 import { LogOut } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { roleLabelKey } from "@/lib/role-landing.mjs";
 
 /**
  * DashboardTopBar — DashboardLayout 顶部 header bar
@@ -41,8 +42,8 @@ export function DashboardTopBar({
 }: DashboardTopBarProps) {
   const { t } = useLanguage();
 
-  const isManagement = role === "admin" || role === "boss" || role === "operator";
-  const roleLabel = isManagement ? t("nav.roleManagement") : t("nav.roleSales");
+  // S43 / F08: the real role (Management / Sales / Finance / Designer), same mapping as the sidebar.
+  const roleLabel = t(roleLabelKey(role));
 
   return (
     <div className="flex items-center justify-end gap-3 px-6 py-2.5 border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-30">

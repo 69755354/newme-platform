@@ -51,7 +51,8 @@ export async function GET(request: NextRequest) {
   const includeSystem = new URL(request.url).searchParams.get("includeSystem") === "1";
   const userQuery = supabaseAdmin
     .from("profiles")
-    .select("id, email, full_name, role, is_active, last_active_at, force_password_change");
+    // S43: the leave-cover columns feed the team page's cover panel.
+    .select("id, email, full_name, role, is_active, last_active_at, force_password_change, cover_user_id, cover_start, cover_end");
   const { data, error } = await (
     includeSystem ? userQuery : excludeSystemAccountsQuery(userQuery, { viewerId: role.userId })
   ).order("full_name", { ascending: true });

@@ -31,6 +31,7 @@ import LeadWaitingBadge from "./LeadWaitingBadge";
 import LeadActionBar from "./LeadActionBar";
 import LeadAiNoteCard from "./LeadAiNoteCard";
 import LeadFollowupCard from "./LeadFollowupCard";
+import LeadWhatsAppConversationCard from "./LeadWhatsAppConversationCard";
 
 import LeadOpportunitiesCard from "./LeadOpportunitiesCard";
 import LeadVisitsCard from "./LeadVisitsCard";
@@ -500,9 +501,17 @@ export default function LeadDetailPage() {
   }
 
   if (notFound || !lead) {
+    // S43 / F08 + F27: a designer or finance account reaching a lead is told why there is nothing here;
+    // everyone else gets "does not exist or you may not view it" plus a way back to the list.
+    const limitedRole = salesRole === "designer" || salesRole === "finance";
     return (
-      <div className="text-center py-16">
-        <p className="text-muted-foreground">{t("common.notFound")}</p>
+      <div className="text-center py-16 space-y-3" data-testid="lead-not-found">
+        <p className="text-muted-foreground">{limitedRole ? t("s43.lead.salesOnly") : t("s43.lead.notFoundOrNoAccess")}</p>
+        {!limitedRole && (
+          <Button variant="outline" size="sm" onClick={() => router.push("/leads")}>
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" />{t("s43.lead.backToList")}
+          </Button>
+        )}
       </div>
     );
   }
@@ -621,6 +630,7 @@ export default function LeadDetailPage() {
           <LeadWhatsAppAdPanel lead={lead} t={t} />
           <LeadAiNoteCard activities={activities} />
           <LeadFollowupCard lead={lead} t={t} />
+          <LeadWhatsAppConversationCard lead={lead} t={t} />
 
           <LeadOpportunitiesCard lead={lead} t={t} lang={lang} role={salesRole} />
           <LeadVisitsCard lead={lead} t={t} role={salesRole} />

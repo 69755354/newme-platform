@@ -40,6 +40,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { DashboardScrollContainer } from "@/components/DashboardScrollContainer";
 import MemberHandoverDialog from "@/components/team/MemberHandoverDialog";
+import LeaveCoverPanel from "@/components/team/LeaveCoverPanel"; // S43 leave cover (own component, one mount line)
 import {
   Dialog,
   DialogContent,
@@ -76,6 +77,9 @@ interface UserProfile {
   role: string;
   is_active: boolean | null;
   last_active_at: string | null;
+  cover_user_id?: string | null; // S43
+  cover_start?: string | null;
+  cover_end?: string | null;
 }
 
 interface ActivityAction {
@@ -591,6 +595,7 @@ export default function TeamPage() {
               </div>
             )}
           </div>
+          <LeaveCoverPanel users={users} t={(key) => t(key as any)} onSaved={fetchUsers} />
         </TabsContent>
 
         {/* ─── Activity Log Tab ─── */}

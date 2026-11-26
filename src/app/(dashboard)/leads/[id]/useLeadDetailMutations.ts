@@ -225,9 +225,23 @@ export function useLeadDetailMutations(params: UseLeadDetailMutationsParams): Us
   }, [lead, canDelete]);
   const confirmDelete = useCallback(async (): Promise<boolean> => {
     if (!lead || !canDelete) return true;
-    const { error: delErr } = await supabase.from("leads").delete().eq("id", lead.id);
-    if (delErr) {
-      onFetchFailure(delErr, () => console.error("[LeadDetail] delete failed"));
+    // Same path as the leads list: the API route calls delete_lead_atomic (writes the delete log, enforces role
+    // checks). A rejected or failed request must never be reported as deleted.
+    let response: Response;
+    try {
+      response = await fetch(`/api/leads/${lead.id}/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+      });
+    } catch {
+      console.error("[LeadDetail] delete request failed");
+      toast.error(t("common.saveFailed") || "Delete failed");
+      return false;
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      console.error("[LeadDetail] delete failed:", payload.error || response.status);
       toast.error(t("common.saveFailed") || "Delete failed");
       return false;
     }

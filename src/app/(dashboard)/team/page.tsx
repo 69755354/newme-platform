@@ -655,7 +655,7 @@ export default function TeamPage() {
               </div>
             )}
           </div>
-          <LeaveCoverPanel users={users} t={(key) => t(key as any)} onSaved={fetchUsers} />
+          <LeaveCoverPanel users={users} t={(key) => t(key as Parameters<typeof t>[0])} onSaved={fetchUsers} />
         </TabsContent>
 
         {/* ─── Activity Log Tab ─── */}

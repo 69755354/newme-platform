@@ -11,6 +11,7 @@ export interface FollowupResult {
 }
 export const DEFAULT_FOLLOWUP_CONFIG: Readonly<FollowupConfig>;
 export function resolveFollowupConfig(overrides?: Partial<FollowupConfig>): FollowupConfig;
+export function manualWhatsAppEvents(logs: Array<{ contact_type?: string | null; contact_time?: string | null }>): Array<{ direction: "outbound"; occurredAt: string }>;
 export function isWorkingDay(ms: number, config?: FollowupConfig): boolean;
 export function workingElapsedMs(fromMs: number, toMs: number, config?: FollowupConfig): number;
 export function windowBounds(firstInboundMs: number, config?: FollowupConfig): { startMs: number; endMs: number };

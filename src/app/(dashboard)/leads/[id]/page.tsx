@@ -32,6 +32,7 @@ import LeadActionBar from "./LeadActionBar";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import LeadAiNoteCard from "./LeadAiNoteCard";
 import LeadFollowupCard from "./LeadFollowupCard";
+import LeadWhatsAppConversationCard from "./LeadWhatsAppConversationCard";
 
 import LeadOpportunitiesCard from "./LeadOpportunitiesCard";
 import LeadVisitsCard from "./LeadVisitsCard";
@@ -504,13 +505,17 @@ export default function LeadDetailPage() {
   }
 
   if (notFound || !lead) {
-    // S42 (F27): the row may not exist or may be another salesperson's lead (RLS hides it); say both, offer the way back.
+    // S43 / F08 + F27: a designer or finance account reaching a lead is told why there is nothing here;
+    // everyone else gets "does not exist or you may not view it" plus a way back to the list.
+    const limitedRole = salesRole === "designer" || salesRole === "finance";
     return (
-      <div className="text-center py-16 space-y-4">
-        <p className="text-muted-foreground">{t("s42.leadNotFound")}</p>
-        <Button variant="outline" onClick={() => router.push("/leads")}>
-          <ArrowLeft className="w-4 h-4" />{t("s42.backToLeads")}
-        </Button>
+      <div className="text-center py-16 space-y-3" data-testid="lead-not-found">
+        <p className="text-muted-foreground">{limitedRole ? t("s43.lead.salesOnly") : t("s43.lead.notFoundOrNoAccess")}</p>
+        {!limitedRole && (
+          <Button variant="outline" size="sm" onClick={() => router.push("/leads")}>
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" />{t("s42.backToLeads")}
+          </Button>
+        )}
       </div>
     );
   }
@@ -634,6 +639,7 @@ export default function LeadDetailPage() {
           <LeadWhatsAppAdPanel lead={lead} t={t} />
           <LeadAiNoteCard activities={activities} />
           <LeadFollowupCard lead={lead} t={t} />
+          <LeadWhatsAppConversationCard lead={lead} t={t} />
 
           <LeadOpportunitiesCard lead={lead} t={t} lang={lang} role={salesRole} />
           <LeadVisitsCard lead={lead} t={t} role={salesRole} />

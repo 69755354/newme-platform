@@ -5,6 +5,8 @@
 // double-notify. Titles and bodies are the stable English templates the notification bell already localises (zh + en,
 // src/lib/notification-display.mjs). Works with any Supabase client (route, script).
 
+import { withCoverRecipients } from "./leave-cover.mjs";
+
 export const INTAKE_QUEUE_ROLES = Object.freeze(["admin", "boss", "operator"]);
 /** A lead older than this is history (a backfill or a re-synced row), not a new arrival: nobody is pinged. */
 export const INTAKE_MAX_AGE_MS = 24 * 3_600_000;
@@ -45,6 +47,8 @@ export async function notifyNewLead(db, lead, { now = Date.now(), maxAgeMs = INT
   if (lead.assigned_to) {
     recipients = await activeIds(db, db.from("profiles").select("id").eq("is_active", true).in("id", [lead.assigned_to]));
     assigned = recipients.length > 0;
+    // S43: the owner's leave cover (default off, NEWME_LEAVE_COVER_ENABLED) is told too.
+    if (assigned) recipients = await withCoverRecipients(db, recipients, { now: new Date(now) });
   }
   if (!assigned) {
     recipients = await activeIds(db, db.from("profiles").select("id").eq("is_active", true).in("role", [...INTAKE_QUEUE_ROLES]));

@@ -1,4 +1,6 @@
 import "server-only";
+import { withCoverRecipients } from "@/lib/leave-cover.mjs";
+import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import type { NotificationDraft, NotificationType } from "@/lib/notifications";
@@ -238,7 +240,15 @@ export async function deriveNotificationDispatch(options: {
       const lead = result.data!;
       assertAllowed(allowRole(actor, OPERATIONS) || lead.assigned_to === actor.id);
       if (!lead.assigned_to) throw new NotificationDispatchError(409, "lead_is_unassigned");
-      const recipients = await activeRecipients(db, [lead.assigned_to], actor.id);
+      // S43: the owner's leave cover (default off, NEWME_LEAVE_COVER_ENABLED) is told as well.
+      // A failed cover lookup must not cost the owner their notification: fall back to the owner alone.
+      let ownerAndCover: string[] = [lead.assigned_to];
+      try {
+        ownerAndCover = await withCoverRecipients(db, [lead.assigned_to], { now });
+      } catch {
+        logger.warn({ operation: "lead_assigned_cover_lookup", lead_id: lead.id }, "leave_cover_lookup_failed");
+      }
+      const recipients = await activeRecipients(db, ownerAndCover, actor.id);
       const customer = text(lead.customer_name, "Lead");
       return rows(recipients, input.type, `New lead assigned: ${customer}`, `Lead "${customer}" has been assigned to you`, lead.id, "lead");
     }

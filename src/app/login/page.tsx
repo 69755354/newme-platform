@@ -47,8 +47,10 @@ function LoginPageInner() {
         return t("login.inactiveAccount");
       case "auth_unavailable":
         return t("login.unavailable");
+      case "invalid_credentials":
+        // S43 / F25: say what went wrong without distinguishing a wrong password from an unknown address.
+        return t("s43.login.invalidCredentials");
       default:
-        // Never distinguish a wrong password from an unknown address.
         return t("login.failed");
     }
   }
@@ -133,6 +135,13 @@ function LoginPageInner() {
             >
               {loading ? t("login.signingIn") : t("login.signIn")}
             </Button>
+            {/* S43 / F25: there is no self-service reset (the app's auth setup has no recovery handler and
+                sign-in is server-side), so the way back in is the administrators, who reset passwords on the
+                team page. */}
+            <p data-testid="forgot-password" className="text-center text-xs text-gray-400 pt-1">
+              <span className="font-medium text-gray-300">{t("s43.login.forgotPassword")}</span>{" "}
+              {t("s43.login.forgotPasswordHint")}
+            </p>
           </form>
         </CardContent>
       </Card>

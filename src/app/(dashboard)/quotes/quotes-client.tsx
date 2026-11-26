@@ -359,6 +359,9 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
   };
 
   /* ─── Delete quote (creator only) ─── */
+  const canDeleteQuote = (quote: Quotation) =>
+    Boolean((currentUserId && quote.created_by === currentUserId) ||
+      userRole === "admin" || userRole === "boss" || userRole === "operator");
   const handleDeleteQuote = async (e: React.MouseEvent, quote: Quotation) => {
     e.stopPropagation();
     if (deletingQuoteId) return; // prevent double-click
@@ -484,8 +487,8 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
             {filtered.map((quote) => {
               const statusStyle = STATUS_STYLES[quote.status] || STATUS_STYLES.draft;
               return (
-                <li key={quote.id}>
-                  <button type="button" onClick={() => openDetail(quote)} className="w-full px-3 py-3 text-left hover:bg-muted/30">
+                <li key={quote.id} className="flex items-stretch">
+                  <button type="button" onClick={() => openDetail(quote)} className="min-w-0 flex-1 px-3 py-3 text-left hover:bg-muted/30">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{getCustomerName(quote)}</p>
@@ -505,6 +508,19 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                       </span>
                     </div>
                   </button>
+                  {canDeleteQuote(quote) && (
+                    <button
+                      type="button"
+                      data-testid="quote-mobile-delete"
+                      onClick={(e) => handleDeleteQuote(e, quote)}
+                      disabled={deletingQuoteId === quote.id}
+                      className="shrink-0 px-3 text-muted-foreground hover:text-rose-700 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={t("quotes.deleteQuote")}
+                      aria-label={t("quotes.deleteQuote")}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -631,8 +647,7 @@ export default function QuotesClient({ initialData, fetchError, userRole }: Quot
                   >
                     <Eye className="w-4 h-4" />
                   </button>
-                  {(currentUserId && quote.created_by === currentUserId) ||
-                   userRole === "admin" || userRole === "boss" || userRole === "operator" ? (
+                  {canDeleteQuote(quote) ? (
                     <button
                       onClick={(e) => handleDeleteQuote(e, quote)}
                       disabled={deletingQuoteId === quote.id}

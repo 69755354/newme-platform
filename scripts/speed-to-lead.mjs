@@ -19,6 +19,9 @@ import {
 
 const DEFAULT_PHONE_NUMBER_ID = "1322723804261987"; // company WABA number
 const LEAD_COLUMNS = "id,customer_name,phone,source,source_channel,created_at,assigned_to,archived,stage,final_status,hold_since,imported_at,property_type,area,location";
+// Test records and leads held or closed by a duplicate decision are never contacted (the dispatch function records these
+// states without archiving the lead).
+export const BLOCKED_DISPATCH_STATUSES = Object.freeze(["excluded_test", "duplicate_review", "duplicate_not_dispatched"]);
 const isTrue = (v) => String(v ?? "").trim().toLowerCase() === "true";
 const stateDir = (env) => env.NEWME_SPEED_STATE_DIR || "/var/lib/newme-speed-to-lead";
 const KEEP_MS = 3 * 86_400_000;
@@ -52,7 +55,7 @@ export async function loadData(db, now) {
     .eq("archived", false).eq("source_channel", "meta_lead_form").or("source.is.null,source.neq.synthetic_qa").gte("created_at", since).order("id").range(from, to));
   if (leads.error) throw new Error("leads unavailable");
   const excluded = await fetchAllRows((from, to, withCount) => db.from("lead_dispatch_state").select("lead_id", withCount ? { count: "exact" } : undefined)
-    .eq("status", "excluded_test").order("lead_id").range(from, to));
+    .in("status", BLOCKED_DISPATCH_STATUSES).order("lead_id").range(from, to));
   if (excluded.error) throw new Error("dispatch state unavailable");
   const profiles = await db.from("profiles").select("id,full_name,phone,email,role,is_active").eq("is_active", true);
   if (profiles.error) throw new Error("profiles unavailable");
@@ -65,9 +68,11 @@ export async function runSpeedToLead(db, { execute = false, now = new Date(), se
   const data = await loadData(db, now);
   const dir = stateDir(env);
   const ledger = readLedger(dir);
-  const open = (key) => !ledger[key]?.done && (ledger[key]?.tries ?? 0) < MAX_TRIES;
+  // An in-flight record (written before Meta is contacted) that was never settled means the run was interrupted mid-send: the
+  // message may have gone out, so it is never sent again.
+  const open = (key) => !ledger[key]?.done && !ledger[key]?.inflight && (ledger[key]?.tries ?? 0) < MAX_TRIES;
   const summary = { job: "speed-to-lead", mode: execute ? "execute" : "dry_run", candidates: 0, waiting_for_owner: 0, ack_due: 0, ack_skipped_bad_number: 0, ack_skipped_no_credentials: 0,
-    alert_due: 0, ack_sent: 0, alert_sent: 0, failed: 0 };
+    alert_due: 0, ack_inflight_unsettled: Object.values(ledger).filter((e) => e?.inflight && !e?.done).length, ack_sent: 0, alert_sent: 0, failed: 0 };
   const hasToken = Boolean(env.CUSTOMER_WA_ACCESS_TOKEN);
   const work = [];
   for (const lead of selectFormLeads(data.leads, { now, excludedTestIds: data.excludedTestIds })) {
@@ -99,11 +104,11 @@ export async function runSpeedToLead(db, { execute = false, now = new Date(), se
     }
     if (w.ack && hasToken) {
       try {
-        record(w.ackKey, { tries: (ledger[w.ackKey]?.tries ?? 0) + 1 });
+        record(w.ackKey, { tries: (ledger[w.ackKey]?.tries ?? 0) + 1, inflight: true }); // persisted BEFORE contacting Meta
         const r = await sendCustomer({ body: buildTemplateMessage(w.lead, w.owner, w.number), env });
-        if (r.ok) { record(w.ackKey, { done: true }); summary.ack_sent += 1; }
-        else if (r.ambiguous) { record(w.ackKey, { done: true, ambiguous: true }); summary.failed += 1; } // no answer: may have gone out, never sent twice
-        else summary.failed += 1;
+        if (r.ok) { record(w.ackKey, { done: true, inflight: false }); summary.ack_sent += 1; }
+        else if (r.ambiguous) { record(w.ackKey, { done: true, ambiguous: true, inflight: false }); summary.failed += 1; } // no answer: may have gone out, never sent twice
+        else { record(w.ackKey, { inflight: false }); summary.failed += 1; } // a definite refusal: the tries counter allows a retry
       } catch { summary.failed += 1; }
     }
   }

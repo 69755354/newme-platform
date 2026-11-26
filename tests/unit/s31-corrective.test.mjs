@@ -104,21 +104,24 @@ test("(d) a live delivery promotes a backfilled history row instead of returning
 
 test("the release plumbing names the migration (last until S32 followed) and CI runs its database test", () => {
   const manifest = JSON.parse(read("infra/release/release-manifest.json"));
-  // S32, S33, S36, S37, S39 and S46 follow S31 in that order; S31 keeps its place and predicate.
+  // S32, S33, S36, S37, S39, S43 and S46 follow S31 in that order; S31 keeps its place and predicate.
   const at = manifest.deferred_contract.findIndex((x) => x.file === "20261120100000_dispatch_and_history_corrections.sql");
-  assert.ok(at >= 0 && at >= manifest.deferred_contract.length - 9, "S31 is among the last nine deferred entries");
+  assert.ok(at >= 0 && at >= manifest.deferred_contract.length - 10, "S31 is among the last ten deferred entries");
   const predAt = manifest.posture.deferred_contract.predicates.findIndex((x) => x.name === "s31-dispatch-and-history-corrections-present");
-  assert.ok(predAt >= 0 && predAt >= manifest.posture.deferred_contract.predicates.length - 9);
-  assert.equal(manifest.deferred_contract.at(-8).file, "20261120200000_tasks_future_only_not_valid.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-8).name, "s32-tasks-future-only-not-valid");
-  assert.equal(manifest.deferred_contract.at(-7).file, "20261121100000_sync_advance_lead_stage_from_sheet.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-7).name, "s33-sync-advance-lead-stage-from-sheet-present");
-  assert.equal(manifest.deferred_contract.at(-6).file, "20261122200000_quotation_value_follows_quotations.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-6).name, "s36-quotation-value-follows-quotations-present");
-  assert.equal(manifest.deferred_contract.at(-5).file, "20261122300000_s37_new_lead_not_dormant.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-5).name, "s37-new-lead-not-dormant");
-  assert.equal(manifest.deferred_contract.at(-4).file, "20261123100000_s39_stage_rules_relaxed.sql");
-  assert.equal(manifest.posture.deferred_contract.predicates.at(-4).name, "s39-stage-rules-relaxed");
+  assert.ok(predAt >= 0 && predAt >= manifest.posture.deferred_contract.predicates.length - 10);
+  assert.equal(manifest.deferred_contract.at(-9).file, "20261120200000_tasks_future_only_not_valid.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-9).name, "s32-tasks-future-only-not-valid");
+  assert.equal(manifest.deferred_contract.at(-8).file, "20261121100000_sync_advance_lead_stage_from_sheet.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-8).name, "s33-sync-advance-lead-stage-from-sheet-present");
+  assert.equal(manifest.deferred_contract.at(-7).file, "20261122200000_quotation_value_follows_quotations.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-7).name, "s36-quotation-value-follows-quotations-present");
+  assert.equal(manifest.deferred_contract.at(-6).file, "20261122300000_s37_new_lead_not_dormant.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-6).name, "s37-new-lead-not-dormant");
+  assert.equal(manifest.deferred_contract.at(-5).file, "20261123100000_s39_stage_rules_relaxed.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-5).name, "s39-stage-rules-relaxed");
+  // S43 followed S39 (leave cover).
+  assert.equal(manifest.deferred_contract.at(-4).file, "20261124300000_s43_leave_cover.sql");
+  assert.equal(manifest.posture.deferred_contract.predicates.at(-4).name, "s43-leave-cover");
   assert.equal(manifest.deferred_contract.at(-3).file, "20261126000100_s46_leads_delete_admin_boss_only.sql");
   assert.equal(manifest.deferred_contract.at(-2).file, "20261126000200_s46_milestone_order_ignores_reopened.sql");
   assert.equal(manifest.deferred_contract.at(-1).file, "20261126000300_s46_quotation_value_currency_and_lock.sql");

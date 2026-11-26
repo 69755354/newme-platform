@@ -13,7 +13,9 @@ import {
 import {
   allocatedTotal,
   allocationDraftStatus,
+  countsAsCash,
   filterPaymentsByState,
+  isVoided,
   hasAllocationData,
   isFullyAllocated,
   paymentAllowsAllocate,
@@ -131,7 +133,9 @@ export default function PaymentsPage() {
   // Tab filter. Four values, not three: a voided payment used to fall into
   // `pending`, where it was counted as money awaiting confirmation and offered a
   // Confirm button that confirm_payment() refuses with 22023.
-  const [activeTab, setActiveTab] = useState<PaymentStateFilter>("all");
+  // S43 / F08: the list opens on the live payments (confirmed + pending); voided rows sit behind their own
+  // tab. "active" is a view of the page, not a fifth model state: the state model keeps its four filters.
+  const [activeTab, setActiveTab] = useState<PaymentStateFilter | "active">("active");
 
   // Record Payment dialog state
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
@@ -211,10 +215,25 @@ export default function PaymentsPage() {
       bank_transfer: t("payments.methodBankTransfer"),
       cash: t("payments.methodCash"),
       cheque: t("payments.methodCheck"),
-      card: "Card",
-      other: "Other",
+      card: t("s43.payments.methodCard"),
+      other: t("s43.payments.methodOther"),
     };
     return map[m] || m;
+  };
+
+  // S43 / F08: what the contract picker says instead of a UUID: "contract no · client · balance". The balance
+  // is the contract amount less the cash already counted (countsAsCash = confirmed and not voided).
+  const cashByContract = new Map<string, number>();
+  payments.forEach((p) => {
+    if (countsAsCash(p)) cashByContract.set(p.contract_id, (cashByContract.get(p.contract_id) ?? 0) + Number(p.amount || 0));
+  });
+  const contractOptionLabel = (c: PaymentContractOption) => {
+    const balance = Math.max(0, Number(c.contract_amount || 0) - (cashByContract.get(c.id) ?? 0));
+    return `${c.contract_no} · ${c.party_a_name || "—"} · ${t("s43.payments.balance")} ${fmtAED(balance)}`;
+  };
+  const contractOptionLabelById = (id: string | null) => {
+    const found = id ? contracts.find((c) => c.id === id) : null;
+    return found ? contractOptionLabel(found) : "";
   };
 
   // Build a contract_no lookup map from the payments themselves
@@ -237,7 +256,9 @@ export default function PaymentsPage() {
 
   // ─── Filtered Payments ───────────────────────────────────────────
 
-  const filteredPayments = filterPaymentsByState(payments, activeTab);
+  const filteredPayments = activeTab === "active"
+    ? payments.filter((p) => !isVoided(p))
+    : filterPaymentsByState(payments, activeTab);
 
   // ─── Allocation Draft ────────────────────────────────────────────
 
@@ -533,9 +554,12 @@ export default function PaymentsPage() {
       {/* Status Filter Tabs */}
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as PaymentStateFilter)}
+        onValueChange={(v) => setActiveTab(v as PaymentStateFilter | "active")}
       >
         <TabsList className="mb-4">
+          <TabsTrigger value="active">
+            {t("s43.payments.active")} ({totals.counts.all - totals.counts.voided})
+          </TabsTrigger>
           <TabsTrigger value="all">
             {t("payments.all")} ({totals.counts.all})
           </TabsTrigger>
@@ -761,12 +785,15 @@ export default function PaymentsPage() {
               </Label>
               <Select value={recContractId} onValueChange={(v: string | null) => v && setRecContractId(v)}>
                 <SelectTrigger className="w-full bg-muted border-border text-foreground h-9">
-                  <SelectValue placeholder={t("payments.selectContract")} />
+                  {/* Base UI shows the raw value (the contract UUID) unless told what to render. */}
+                  <SelectValue placeholder={t("payments.selectContract")}>
+                    {(value: unknown) => contractOptionLabelById(typeof value === "string" ? value : null) || t("payments.selectContract")}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {contracts.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      {c.contract_no} — {fmtAED(c.contract_amount)}
+                      {contractOptionLabel(c)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -810,7 +837,8 @@ export default function PaymentsPage() {
               </Label>
               <Select value={recMethod} onValueChange={(v: string | null) => v && setRecMethod(v)}>
                 <SelectTrigger className="w-full bg-muted border-border text-foreground h-9">
-                  <SelectValue />
+                  {/* Words, not the stored code ("bank_transfer"). */}
+                  <SelectValue>{(value: unknown) => methodLabel(String(value ?? ""))}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {PAYMENT_UI_METHODS.map((method) => (

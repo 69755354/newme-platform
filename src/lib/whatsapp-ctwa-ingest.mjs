@@ -2,9 +2,23 @@
 // replayed webhook, a retry after a partial failure and concurrent deliveries all leave
 // one lead per customer phone (see record_whatsapp_ad_event in the S18 migration).
 import { notifyNewLead } from "./lead-intake-notify.mjs";
+import { normalizeWhatsAppPhoneKey } from "./whatsapp-ctwa.mjs";
 
 export function organicLeadsEnabled(env = process.env) {
   return env.WHATSAPP_ORGANIC_LEADS_ENABLED !== "false";
+}
+
+/**
+ * S45: staff and personal chats on the company number. NEWME_WA_INTERNAL_NUMBERS is a comma-separated list of E.164 numbers
+ * (empty or unset = nobody excluded, behaviour unchanged). Returns the set of phone keys (same key as the database uses).
+ */
+export function internalNumberKeys(env = process.env) {
+  const keys = new Set();
+  for (const part of String(env.NEWME_WA_INTERNAL_NUMBERS ?? "").split(",")) {
+    const key = normalizeWhatsAppPhoneKey(part.trim());
+    if (key) keys.add(key);
+  }
+  return keys;
 }
 
 export function adLeadsEnabled(env = process.env) {
@@ -26,11 +40,15 @@ async function pingNewLead(db, result) {
   }
 }
 
-export async function recordWhatsAppAdEvents(db, events, { createOrganic = true } = {}) {
+export async function recordWhatsAppAdEvents(db, events, { createOrganic = true, internalKeys = internalNumberKeys() } = {}) {
   const summary = { recorded: 0, duplicate: 0, leads_created: 0, attributed: 0, queued: 0, failed: 0 };
-  for (const event of events) {
+  for (const original of events) {
     try {
-      const { data, error } = await db.rpc("record_whatsapp_ad_event", { p_event: event, p_create_organic: createOrganic });
+      // An internal number's chat is stored like any other, but can never create a lead or carry a click id (so no Meta event):
+      // organic creation is off for it and its referral is dropped (the writer only creates an ad lead from a referral).
+      const internal = internalKeys.size > 0 && internalKeys.has(normalizeWhatsAppPhoneKey(original?.customer_phone));
+      const event = internal ? { ...original, referral: null } : original;
+      const { data, error } = await db.rpc("record_whatsapp_ad_event", { p_event: event, p_create_organic: internal ? false : createOrganic });
       if (error) throw new Error("rpc_failed");
       summary.recorded++;
       if (data?.duplicate) summary.duplicate++;

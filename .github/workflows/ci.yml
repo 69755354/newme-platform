@@ -764,6 +764,12 @@ jobs:
           createdb --template history newme_s39_stage_test
           PGDATABASE=newme_s39_stage_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s39-stage-rules.sql
 
+      # S43: leave cover columns and set_leave_cover (admin/boss only). Rolled back.
+      - name: Leave cover (S43)
+        run: |
+          createdb --template history newme_s43_cover_test
+          PGDATABASE=newme_s43_cover_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s43-leave-cover.sql
+
       # S46: lead delete admin/boss only, milestone order ignores reopened steps, quotation value currency and lock. Rolled back.
       - name: Migration follow-ups (S46)
         run: |

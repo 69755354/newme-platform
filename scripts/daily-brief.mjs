@@ -27,6 +27,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dubaiDateKey } from "../src/lib/dubai-time.mjs";
 import { fetchAllRows } from "../src/lib/fetch-all-rows.mjs";
+import { expandReminderItems } from "../src/lib/leave-cover.mjs";
 import { FEEDBACK_REGISTER, FEEDBACK_SALES_TABS, summarizeFeedbackBacklog } from "../src/lib/sales-feedback-brief.mjs";
 import {
   adReminderNotificationRows, buildAdReminder, buildBrief, buildReminder, countNewLeads, planAdReminders, selectAdUncontacted, groupUncontactedForBrief, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
@@ -34,7 +35,7 @@ import {
 } from "../src/lib/daily-brief.mjs";
 
 import {
-  WAIT_ALERT_KEY, WAIT_ALERT_MAX_AGE_DAYS, buildWaitAlert, channelOwnerMap, isUnanswered, planWaitAlert, resolveWaitAlertHours, selectWaiting, summarizeFollowupWaits,
+  WAIT_ALERT_KEY, WAIT_ALERT_MAX_AGE_DAYS, buildWaitAlert, channelOwnerMap, isUnanswered, planWaitAlert, resolveWaitAlertHours, salesFollowedUpSince, selectWaiting, summarizeFollowupWaits,
 } from "../src/lib/wa-wait.mjs";
 
 const SENDER = process.env.NEWME_ALERT_SENDER || "/usr/local/libexec/newme/newme-whatsapp-alert.sh";
@@ -87,7 +88,10 @@ export async function loadData(db, now) {
     .in("lead_id", part).or("contact_type.is.null,contact_type.neq.note").order("id"));
   const transfers = await inChunksAll(ids, (part, withCount) => db.from("transfer_history").select("id,lead_id,to_user_id,created_at", withCount ? { count: "exact" } : undefined)
     .in("lead_id", part).order("id"));
-  const profiles = must(await db.from("profiles").select("id,full_name,phone,email,role,is_active").eq("is_active", true));
+  // S43: the leave-cover columns may not exist yet (migration not applied: Postgres 42703); the cover then reads as empty.
+  let profilesRead = await db.from("profiles").select("id,full_name,phone,email,role,is_active,cover_user_id,cover_start,cover_end").eq("is_active", true);
+  if (profilesRead.error?.code === "42703") profilesRead = await db.from("profiles").select("id,full_name,phone,email,role,is_active").eq("is_active", true);
+  const profiles = must(profilesRead);
   return { leads, candidates, excludedTestIds, logLeadIds: new Set(logs.map((r) => r.lead_id)), transfers, profiles, y };
 }
 
@@ -153,11 +157,19 @@ async function readFeedbackGrids(env = process.env) {
 }
 
 /** Sales feedback backlog for the brief; null on any failure (the brief goes out without the section). */
+export const FEEDBACK_READ_TIMEOUT_MS = 45_000;
+const feedbackTimeoutMs = (env) => {
+  const n = Number(env?.NEWME_BRIEF_FEEDBACK_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 120_000) : FEEDBACK_READ_TIMEOUT_MS;
+};
+/** The optional section never holds the brief back: the sheet reads get a deadline, and a timeout is the same as a failure. */
 export async function loadFeedbackBacklog({ now, env = process.env, readGrids = readFeedbackGrids } = {}) {
+  let timer;
   try {
-    const { registerGrid, salesGrids } = await readGrids(env);
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("feedback_read_timeout")), feedbackTimeoutMs(env)); });
+    const { registerGrid, salesGrids } = await Promise.race([Promise.resolve().then(() => readGrids(env)), timeout]);
     return summarizeFeedbackBacklog(registerGrid, salesGrids, { now });
-  } catch { return null; }
+  } catch { return null; } finally { clearTimeout(timer); }
 }
 
 export function sendWhatsapp({ key, text, number }) {
@@ -240,8 +252,18 @@ export async function planWaitAlerts(db, data, now, env) {
   const done = waLedgerKeys(now);
   const unanswered = rows.filter((c) => isUnanswered(c) && !done.has(`${c.id}:${c.last_outbound_at ? Date.parse(c.last_outbound_at) : 0}`));
   const leadIds = [...new Set(unanswered.map((c) => c.lead_id).filter(Boolean))];
-  const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source").in("id", part));
+  const leads = await inChunks(leadIds, (part) => db.from("leads").select("id,assigned_to,archived,final_status,source,last_contact_date").in("id", part));
   const ignored = new Set(leads.filter((l) => l.archived || l.final_status || l.source === "synthetic_qa" || data.excludedTestIds.has(l.id)).map((l) => l.id));
+  // S45: the company number cannot see replies from a salesperson's own phone or a call. A lead already followed up in OS after the
+  // customer's last message is not "waiting" (follow-up log, contact date, stage moved on).
+  const logs = await inChunksAll(leadIds, (part, withCount) => db.from("follow_up_logs").select("id,lead_id,contact_type,no_answer,contact_time,created_at", withCount ? { count: "exact" } : undefined)
+    .in("lead_id", part).or("contact_type.is.null,contact_type.neq.note").order("id"));
+  const logsByLead = new Map();
+  for (const l of logs) logsByLead.set(l.lead_id, [...(logsByLead.get(l.lead_id) ?? []), l]);
+  const leadById = new Map(leads.map((l) => [l.id, l]));
+  for (const c of unanswered) {
+    if (c.lead_id && salesFollowedUpSince(leadById.get(c.lead_id), logsByLead.get(c.lead_id) ?? [], Date.parse(c.last_inbound_at))) ignored.add(c.lead_id);
+  }
   const waitStarts = new Map();
   const open = [];
   for (const c of unanswered.filter((x) => !(x.lead_id && ignored.has(x.lead_id))).sort((a, b) => Date.parse(a.last_inbound_at) - Date.parse(b.last_inbound_at))) {
@@ -273,7 +295,8 @@ export async function runReminders(db, { execute = false, now = new Date(), send
   // S35: ad leads past their one-hour deadline, owned or not (the 24 hour plan above skips unowned leads on purpose).
   const adItems = selectAdUncontacted({ leads: data.candidates, logLeadIds: data.logLeadIds, excludedTestIds: data.excludedTestIds, now });
   const adDone = adLedgerKeys(now);
-  const adPlan = planAdReminders(adItems, data.profiles, adDone);
+  // S43: with NEWME_LEAVE_COVER_ENABLED=true an owner's active leave cover gets the same reminder (bell + WhatsApp).
+  const adPlan = planAdReminders(expandReminderItems(adItems, data.profiles, now, env), data.profiles, adDone);
   const summary = { job: "reminders", mode: execute ? "execute" : "dry_run", date: today, salespeople_with_uncontacted: plan.people.length,
     uncontacted: plan.people.reduce((s, p) => s + p.items.length, 0), missing_phone: plan.missingPhone.length, already_reminded_today: plan.sendable.length - due.length, due: due.length, sent: 0, failed: 0,
     ad_overdue: adItems.length, ad_unassigned: adItems.filter((i) => !i.assigned_to).length, ad_people: adPlan.people.length,

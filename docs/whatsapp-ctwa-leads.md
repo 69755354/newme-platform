@@ -18,3 +18,6 @@ A customer who taps a Meta "click to WhatsApp" ad and writes to the company numb
   set, otherwise the queue only fills. Exit code 1 on failures, review-required or events that used all 5 attempts.
 - Marketing export: `GET /api/leads/whatsapp-ads/export` (admin, boss, operator), `?format=json`, `?from=&to=`.
 - Switches: `WHATSAPP_AD_LEADS_ENABLED=false` turns the whole ad path off.
+
+## 内部号码排除（S45）
+环境变量 `NEWME_WA_INTERNAL_NUMBERS`：逗号分隔的 E.164 号码（例如 `+971500000000,+971500000001`），填员工号和私人号。留空或不设 = 完全不变（默认）。命中的号码：聊天照常保存，但不会新建线索、不带广告点击编号（因此不产生 Meta 事件）；若该号码此前已有未归档线索，聊天仍会挂到那条线索上。改值后需重启应用生效。

@@ -494,20 +494,34 @@ export async function runReconcile({ osReader, sheets, io, cfg = DEFAULTS, now =
   const nightly = io.latestNightlyCsv();
   const meta = reconcileMetaIds(osRows, grids.meta, nightly ? parseCsv(nightly.text) : null);
   if (nightly) meta.nas_file = nightly.name;
-  let x = null;
+  let x = null; let overdueWrites = 0;
+  const updatedByRef = new Map(leads.map((l) => [leadRef(l.id), Date.parse(l.updated_at)]));
   if (grids.sales) {
     const p = planCtwaColumnX(grids.sales.phoneCol, grids.sales.clidCol, ctwa, cfg, io.readState().x_written);
+    // a column X write still missing 60+ minutes after the lead last changed is a real gap: the 5-minute worker only looks at recent leads
+    overdueWrites = p.writes.filter((w) => !(now() - (updatedByRef.get(w.lead_ref) ?? 0) < 60 * 60_000)).length;
     x = { os_leads_with_click_id: ctwa.length, already_in_sheet: p.unchanged, would_write: p.writes.length, unmatched: p.unmatched.length, ambiguous: p.ambiguous.length, ambiguous_destination: p.ambiguousDestination.length, manual_value_skipped: p.manual.length };
   }
   const state = io.readState();
   const ageMin = state.last_ok_at ? Math.round((now() - Date.parse(state.last_ok_at)) / 60_000) : null;
   const nasUnconfirmed = io.listChanges().filter((s) => state.nas_uploaded[s.day] !== s.size).length;
-  const health = { last_ok_minutes_ago: ageMin ?? "never", consecutive_failures: state.consecutive_failures, pending_unmatched_click_ids: Object.keys(state.pending_ctwa).length, nas_unconfirmed_spool_days: nasUnconfirmed };
+  const health = { last_ok_minutes_ago: ageMin ?? "never", consecutive_failures: state.consecutive_failures, pending_unmatched_click_ids: Object.keys(state.pending_ctwa).length, overdue_x_writes: overdueWrites, nas_unconfirmed_spool_days: nasUnconfirmed };
   const stale = ageMin === null || ageMin > 60 || state.consecutive_failures >= 3;
-  const drift = meta.drift || (x?.would_write ?? 0) > 0 || stale || nasUnconfirmed > 0;
-  const text = formatReport({ day, mode: drift ? "DRIFT" : "ok", meta, ctwa: x, health, notes: drift ? ["Drift found: the 5-minute worker normally closes it; if it persists, check the worker log."] : [] });
+  // Real data-loss conditions only (Meta registry row/NAS mismatch, a stalled or repeatedly failing worker = write failures, unconfirmed NAS days) exit non-zero.
+  // Click ids that cannot be matched into column X (no sheet row, ambiguous rows, hand-filled cells, a fresh write the 5-minute worker has not made yet (older than 60 min = drift), pending retries) are WARNINGS:
+  // listed in the report and the log, exit 0 (S45: they made the nightly unit fail every night while all row counts agreed).
+  const drift = meta.drift || stale || nasUnconfirmed > 0 || overdueWrites > 0;
+  const warnings = [];
+  if (x) {
+    const parts = [["unmatched", x.unmatched], ["ambiguous", x.ambiguous], ["ambiguous_destination", x.ambiguous_destination], ["manual_value_skipped", x.manual_value_skipped], ["would_write", x.would_write]].filter(([, n]) => n > 0);
+    if (parts.length) warnings.push(`WARNING: some click ids are not matched into column X (${parts.map(([k, n]) => `${k}=${n}`).join(", ")}); not a data-loss condition, exit code unaffected.`);
+  }
+  if (health.pending_unmatched_click_ids > 0) warnings.push(`WARNING: ${health.pending_unmatched_click_ids} click id(s) still pending a sheet row (retried by the worker, expire automatically).`);
+  const notes = [...(drift ? ["Drift found: the 5-minute worker normally closes it; if it persists, check the worker log."] : []), ...warnings];
+  const text = formatReport({ day, mode: drift ? "DRIFT" : warnings.length ? "ok (with warnings)" : "ok", meta, ctwa: x, health, notes });
+  for (const w of warnings) console.warn(w);
   const file = io.writeReport(day, text);
-  return { summary: { ...meta, drift, report: file }, exitCode: drift ? 1 : 0 }; // overall drift, not only the Meta-sheet part
+  return { summary: { ...meta, drift, warnings: warnings.length, report: file }, exitCode: drift ? 1 : 0 }; // overall drift, not only the Meta-sheet part
 }
 
 // ---------- CLI ----------

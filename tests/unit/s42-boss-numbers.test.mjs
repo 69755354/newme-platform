@@ -161,8 +161,9 @@ test("S42 import preview refuses rows without a source and confirm never writes 
 // ── §2-18 F27: lead not found / no access ───────────────────────────────────────────────────────────────────────
 test("S42 lead page explains not-found-or-no-access and offers the way back", () => {
   const page = read("src/app/(dashboard)/leads/[id]/page.tsx");
-  const block = page.slice(page.indexOf("if (notFound || !lead)"), page.indexOf("if (notFound || !lead)") + 700);
-  assert.match(block, /s42\.leadNotFound/);
+  const block = page.slice(page.indexOf("if (notFound || !lead)"), page.indexOf("if (notFound || !lead)") + 900);
+  // S43 (F08) refined this block: the generic message moved to s43.lead.notFoundOrNoAccess; either key is the same promise.
+  assert.match(block, /s42\.leadNotFound|s43\.lead\.notFoundOrNoAccess/);
   assert.match(block, /s42\.backToLeads/);
   assert.match(block, /router\.push\("\/leads"\)/);
 });

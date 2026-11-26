@@ -20,7 +20,7 @@ export function mergeTasksWithOverdue<T extends { id: string; due_at?: string | 
   now?: Date,
 ): Array<T & { overdue: boolean }>;
 export function todayThreeThings<T extends { id: string; due_at?: string | null; lead_id?: string | null; lead_name?: string | null }>(
-  input: { inbox?: TodayInboxRow[]; tasks?: T[]; overdue?: T[] },
+  input: { inbox?: TodayInboxRow[]; tasks?: T[]; overdue?: T[]; todayTasks?: T[] },
   now?: Date,
 ): {
   uncontactedNew: { count: number; items: TodayInboxRow[] };

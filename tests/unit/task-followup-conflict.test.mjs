@@ -145,7 +145,7 @@ test("successor creation is caller-scoped, replay-safe, and returns an exact pen
 
 test("every task open/overdue consumer filters the canonical pending status", async () => {
   const entries = await Promise.all([
-    ["workbench", "src/app/api/workbench/route.ts", 3],
+    ["workbench", "src/app/api/workbench/route.ts", 4], // S44: + today's tasks, fetched on their own
     ["weekly review", "src/app/api/dashboard/weekly-review/route.ts", 2],
     // S37: the two risk-pool task counts are gone (the risk pool is now counted from leads), so 2 remain.
     ["dashboard summary", "src/app/api/dashboard/summary/route.ts", 2],

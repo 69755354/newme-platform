@@ -1,4 +1,4 @@
-// Migration fingerprint: sha256=473560767c931d27fcf58fbb6c29531566adeb4914147afc20f6d15f2b17753b
+// Migration fingerprint: sha256=aa0942b6b48b4fb50f873722b122adf599e19d65a3a0a8cf879fb1a3b1c70848
 export type Json =
   | string
   | number
@@ -3004,6 +3004,9 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          cover_end: string | null
+          cover_start: string | null
+          cover_user_id: string | null
           created_at: string | null
           email: string | null
           force_password_change: boolean | null
@@ -3021,6 +3024,9 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          cover_end?: string | null
+          cover_start?: string | null
+          cover_user_id?: string | null
           created_at?: string | null
           email?: string | null
           force_password_change?: boolean | null
@@ -3038,6 +3044,9 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          cover_end?: string | null
+          cover_start?: string | null
+          cover_user_id?: string | null
           created_at?: string | null
           email?: string | null
           force_password_change?: boolean | null
@@ -4614,6 +4623,10 @@ export type Database = {
       }
       record_lead_note_atomic: {
         Args: { p_idempotency_key: string; p_lead_id: string; p_note: string }
+        Returns: Json
+      }
+      set_leave_cover: {
+        Args: { p_cover: string | null; p_end: string | null; p_start: string | null; p_user: string }
         Returns: Json
       }
       reopen_lead_milestone: {

@@ -115,6 +115,18 @@ const iso = (ms) => (ms === null ? null : new Date(ms).toISOString());
  * silenceRules=false (leads past the new and contacted stages) keeps only the first-response rule: no
  * silence rule and no abandon risk.
  */
+/**
+ * S43 (B12): a WhatsApp contact the salesperson logged by hand (follow_up_logs.contact_type = 'whatsapp', e.g. a
+ * reply sent from a personal phone) counts as an outbound message for the first-response and silence rules.
+ * @param {Array<{ contact_type?: string|null, contact_time?: string|null }>} logs
+ * @returns {Array<{ direction: "outbound", occurredAt: string }>}
+ */
+export function manualWhatsAppEvents(logs) {
+  return (Array.isArray(logs) ? logs : [])
+    .filter((log) => String(log?.contact_type ?? "").toLowerCase() === "whatsapp" && Number.isFinite(toMs(log?.contact_time)))
+    .map((log) => ({ direction: "outbound", occurredAt: new Date(toMs(log.contact_time)).toISOString() }));
+}
+
 export function evaluateFollowup({ events, now, config = resolveFollowupConfig(), silenceRules = true }) {
   const inbound = [];
   const outbound = [];

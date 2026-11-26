@@ -143,3 +143,20 @@ test("sender prefers the WhatsApp dataset's own key over the shared pixel key na
   await sendWhatsAppCapiPayload(payload, { env: { META_WA_DATASET_ID: "5550001", META_WA_CAPI_ACCESS_TOKEN: "wa-tok", META_CAPI_ACCESS_TOKEN: "pixel-tok" }, fetchImpl });
   assert.equal(calls[0].headers.Authorization, "Bearer wa-tok");
 });
+
+test("S45: internal numbers are stored but never create a lead or carry a click id; empty list changes nothing", async () => {
+  const { internalNumberKeys } = await import("../../src/lib/whatsapp-ctwa-ingest.mjs");
+  const keys = internalNumberKeys({ NEWME_WA_INTERNAL_NUMBERS: " +971500000001 , 0500000002,,junk" });
+  assert.deepEqual([...keys].sort(), ["971500000001", "971500000002"]);
+  assert.equal(internalNumberKeys({}).size, 0);
+  const ref = { source_type: "ad", source_id: "120210000000001", ctwa_clid: "AfcT3sTcLiCkId_abc-123XYZ" };
+  const seen = [];
+  const db = { rpc: async (_n, args) => { seen.push(args); return { data: { lead_created: false }, error: null }; } };
+  const events = [{ message_id: "a", customer_phone: "971500000001", referral: ref }, { message_id: "b", customer_phone: "971500000099", referral: ref }];
+  await recordWhatsAppAdEvents(db, events, { createOrganic: true, internalKeys: keys });
+  assert.equal(seen[0].p_create_organic, false); assert.equal(seen[0].p_event.referral, null); assert.equal(seen[0].p_event.message_id, "a");
+  assert.equal(seen[1].p_create_organic, true); assert.deepEqual(seen[1].p_event.referral, ref);
+  seen.length = 0;
+  await recordWhatsAppAdEvents(db, events, { createOrganic: true, internalKeys: new Set() });
+  assert.deepEqual(seen.map((s) => s.p_create_organic), [true, true]);
+});

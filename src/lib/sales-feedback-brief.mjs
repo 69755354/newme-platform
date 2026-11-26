@@ -16,11 +16,30 @@ export const NO_FEEDBACK_AFTER_DAYS = 1;
 export const STALE_AFTER_DAYS = 3;
 const DAY = 86_400_000;
 const DAYS = ["Day 1 feedback", "Day 2 feedback", "Day 3 feedback", "Day 4 feedback", "Day 5 feedback"];
-const LATER = "Later follow-ups / previous records";
+// The sales sheets use several headers for the free-text follow-up column (same list as scripts/lib/drive-sync-sources.mjs).
+const LATER_ALIASES = ["Later follow-ups / previous records", "Later follow-ups / B2B notes", "Follow-up notes", "Previous records", "Sales feedback"];
 const s = (v) => (v === null || v === undefined ? "" : String(v).trim());
 // Feedback that says the customer was not reached (English and Chinese wording the sales team uses).
 const NO_ANSWER = /\b(no[\s-]*answer|not\s+answer(ed|ing)?|did(n'?t| not)\s+(pick|answer)|no\s+(reply|response)|unreachable|not\s+reachable|switched\s+off|voice\s?mail|busy|n\/?a)\b|无人接听|没接|未接|关机|无应答|不接/i;
-export const isNoAnswer = (text) => NO_ANSWER.test(s(text));
+const NO_ANSWER_MAX_FILLER_WORDS = 3; // "tried twice", "called again": a short fragment next to the no-answer phrase adds no news
+// A note that only promises another attempt ("will try calling again tomorrow", "call back later", 明天再打) is still no contact.
+const RETRY_ONLY_MAX_WORDS = 8; // longer sentences carry news beyond the retry
+const RETRY_ONLY = /\b(try|trying|tried|call(ing|ed)?|calling|ring|reach|follow[\s-]*up|contact|attempt|message|whatsapp|text)\b.*\b(again|later|tomorrow|back|next|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b(call[\s-]*back|retry|re-?attempt)\b|再(打|联系|试|拨)|稍后|明天|下次|回电/i;
+/**
+ * True only when the whole note says the customer was not reached. A note that mentions "busy" or "no answer" but also
+ * records real contact ("Was busy, confirmed interest and asked for a quote") is substantive feedback.
+ */
+export const isNoAnswer = (text) => {
+  const note = s(text);
+  if (!NO_ANSWER.test(note)) return false;
+  const segments = note.split(/[\n.;,!?]+|[،؛]/).map((x) => x.trim()).filter(Boolean);
+  return segments.every((seg) => {
+    if (NO_ANSWER.test(seg)) return true;
+    const words = seg.replace(/[\d:/\\-]+/g, " ").split(/\s+/).filter((w) => /[\p{L}]/u.test(w));
+    if (words.length <= NO_ANSWER_MAX_FILLER_WORDS) return true;
+    return words.length <= RETRY_ONLY_MAX_WORDS && RETRY_ONLY.test(seg);
+  });
+};
 
 const index = (head, names) => Object.fromEntries(names.map((n) => [n, head.indexOf(n)]));
 const headOf = (grid) => (grid?.[0] ?? []).map(s);
@@ -30,12 +49,13 @@ export function indexSalesRows(grids) {
   const byKey = new Map();
   for (const grid of grids) {
     const head = headOf(grid);
-    const c = index(head, ["Lead key", ...DAYS, LATER]);
+    const c = index(head, ["Lead key", ...DAYS, ...LATER_ALIASES]);
+    const laterCols = LATER_ALIASES.map((n) => c[n]).filter((i) => i >= 0);
     if (c["Lead key"] < 0 || c["Day 1 feedback"] < 0) throw new Error("sales_header_mismatch");
     for (const row of grid.slice(1)) {
       const key = s(row[c["Lead key"]]);
       if (!key) continue;
-      const entry = { days: DAYS.map((d) => (c[d] >= 0 ? s(row[c[d]]) : "")), later: c[LATER] >= 0 ? s(row[c[LATER]]) : "" };
+      const entry = { days: DAYS.map((d) => (c[d] >= 0 ? s(row[c[d]]) : "")), later: laterCols.map((i) => s(row[i])).filter(Boolean).join("\n") };
       const prev = byKey.get(key);
       byKey.set(key, prev ? { days: entry.days.map((v, i) => v || prev.days[i]), later: entry.later || prev.later } : entry);
     }

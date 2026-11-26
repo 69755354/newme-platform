@@ -17,7 +17,7 @@ PATTERNS=(
   "audit_log"
   "TypeError"
   "ReferenceError"
-  "500"
+  "(HTTP(/[0-9.]+)? +|status[=: ]+|(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) +[^ ]+ +)500([^0-9]|$)"  # HTTP status 500 only (not pid/duration/id)
   "Internal Server Error"
   "Cannot find module"
   "ENOENT"

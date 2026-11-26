@@ -47,14 +47,13 @@ export async function GET(request: NextRequest) {
 
   // QA and release-acceptance accounts are not people: the team page and the user
   // list leave them out (src/lib/system-accounts.mjs). The signed-in account keeps
-  // its own row, and ?includeSystem=1 shows everything. Same for admin and boss.
-  const includeSystem = new URL(request.url).searchParams.get("includeSystem") === "1";
+  // its own row. There is no switch that shows them: not for admin, not for boss.
   // S43: the leave-cover columns feed the team page's cover panel. While the S43 migration is not applied yet
   // (Postgres 42703, undefined column) the list is read without them and the cover reads as empty, so the team
   // page never breaks on the order of release.
   const readUsers = (columns: string) => {
     const userQuery = supabaseAdmin.from("profiles").select(columns);
-    return (includeSystem ? userQuery : excludeSystemAccountsQuery(userQuery, { viewerId: role.userId }))
+    return excludeSystemAccountsQuery(userQuery, { viewerId: role.userId })
       .order("full_name", { ascending: true });
   };
   const baseColumns = "id, email, full_name, role, is_active, last_active_at, force_password_change";

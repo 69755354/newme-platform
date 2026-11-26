@@ -5,6 +5,7 @@ import { effectiveLeadStatus, isWonLead, leadSourceKey, wonLeadValue, type Metri
 
 import { createServerSupabase } from "@/lib/supabase-server";
 import { applyPrivateNoStore } from "@/lib/request-auth-context";
+import { systemAccountIdSet } from "@/lib/system-accounts.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -53,11 +54,15 @@ export async function GET(request: NextRequest) {
     // ── Rep name lookup (for sales assignment) ──
     const repIds = [...new Set(leadRows.map((l) => l.assigned_to).filter(Boolean))] as string[];
     const repNames: Record<string, string> = {};
+    // QA / release-acceptance accounts are not people: they get no row in the
+    // per-rep assignment table (the signed-in account keeps its own row).
+    let hiddenRepIds = new Set<string>();
     if (repIds.length > 0) {
       const { data: reps } = await supabase
         .from("profiles")
         .select("id, full_name, email")
         .in("id", repIds);
+      hiddenRepIds = systemAccountIdSet(reps ?? [], { viewerId: user.id });
       (reps ?? []).forEach((r: any) => {
         repNames[r.id] = r.full_name || r.email || "Unknown";
       });
@@ -120,6 +125,7 @@ export async function GET(request: NextRequest) {
       Object.entries(a.assignment)
         .sort(([, x], [, y]) => y - x)
         .forEach(([repId, count]) => {
+          if (hiddenRepIds.has(repId)) return;
           assignment.push({ source, rep_id: repId, rep_name: repNames[repId] ?? "Unknown", count });
         });
     });

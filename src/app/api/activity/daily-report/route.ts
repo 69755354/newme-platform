@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { systemAccountIdSet } from "@/lib/system-accounts.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -107,16 +108,20 @@ export async function GET(request: NextRequest) {
   // Fetch user names from profiles
   const userIds = Array.from(userIdSet);
   let userNameMap: Record<string, string> = {};
+  let hiddenUserIds = new Set<string>();
 
   if (userIds.length > 0) {
     const { data: profiles, error: profileErr } = await supabaseAdmin
       .from("profiles")
-      .select("id, full_name")
+      .select("id, full_name, email")
       .in("id", userIds);
 
     if (profileErr) {
       console.error("[daily-report] profiles query error:", profileErr);
     } else if (profiles) {
+      // The per-person report is for real staff: QA / release-acceptance accounts
+      // (src/lib/system-accounts.mjs) are left out, their activity too.
+      hiddenUserIds = systemAccountIdSet(profiles);
       for (const p of profiles) {
         userNameMap[p.id] = p.full_name || p.id;
       }
@@ -135,7 +140,7 @@ export async function GET(request: NextRequest) {
   >();
 
   const addUser = (userId: string) => {
-    if (!userId) return;
+    if (!userId || hiddenUserIds.has(userId)) return;
     if (!userMap.has(userId)) {
       userMap.set(userId, {
         user_id: userId,
@@ -148,7 +153,7 @@ export async function GET(request: NextRequest) {
 
   // Process activities
   for (const a of activities) {
-    if (!a.user_id) continue;
+    if (!a.user_id || hiddenUserIds.has(a.user_id)) continue;
     addUser(a.user_id);
     const entry = userMap.get(a.user_id)!;
     entry.events.push({
@@ -161,7 +166,7 @@ export async function GET(request: NextRequest) {
 
   // Process business_events
   for (const e of businessEvents) {
-    if (!e.user_id) continue;
+    if (!e.user_id || hiddenUserIds.has(e.user_id)) continue;
     addUser(e.user_id);
     const entry = userMap.get(e.user_id)!;
     entry.events.push({

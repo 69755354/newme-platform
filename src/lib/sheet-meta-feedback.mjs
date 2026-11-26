@@ -23,6 +23,16 @@ const NOT_FIT = new Set(["not fit", "poor", "low", "invalid", "fake", "job seeke
 const norm = (v) => String(v ?? "").trim();
 const lc = (v) => norm(v).toLowerCase().replace(/\s+/g, " ");
 
+/**
+ * Register rows that must never feed Meta: test records and rows excluded as tests, rows decided as duplicates (not
+ * dispatched) and rows still held for duplicate review. Same dispatch wording as scripts/lib/drive-sync-sources.mjs.
+ */
+export function rowExclusion(row) {
+  if (row?.testRecord === "yes" || /^excluded\b/.test(row?.dispatch ?? "")) return "test";
+  if (/^duplicate\b/.test(row?.dispatch ?? "")) return "held";
+  return null;
+}
+
 export const DEFAULT_MAX_EVENTS = 100;
 export const DEFAULT_MAX_LEAD_AGE_DAYS = 28;
 
@@ -30,17 +40,17 @@ export const DEFAULT_MAX_LEAD_AGE_DAYS = 28;
 export function parseRegister(values) {
   const header = (values[0] ?? []).map(norm);
   const col = (name) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
-  const idx = { quality: col("Lead quality"), quote: col("Quote value AED"), master: col("Master Lead ID"), source: col("Source lead ID"), stage: col("Opportunity stage") };
+  const idx = { quality: col("Lead quality"), quote: col("Quote value AED"), master: col("Master Lead ID"), source: col("Source lead ID"), stage: col("Opportunity stage"), testRecord: col("Test record"), dispatch: col("Dispatch status") };
   // Sales write Day 1-5 feedback (R-V) and "Later follow-ups / B2B notes" (W); optional columns, found by name.
   const fbCols = [1, 2, 3, 4, 5].map((n) => col(`Day ${n} feedback`)).concat(col("Later follow-ups / B2B notes")).filter((i) => i >= 0);
-  const missing = Object.entries(idx).filter(([k, v]) => v < 0 && k !== "stage").map(([k]) => k);
+  const missing = Object.entries(idx).filter(([k, v]) => v < 0 && k !== "stage" && k !== "testRecord" && k !== "dispatch").map(([k]) => k);
   if (missing.length) throw new Error(`Lead Register header lacks: ${missing.join(", ")}`);
   const rows = [];
   for (let i = 1; i < values.length; i += 1) {
     const r = values[i] ?? [];
     const master = norm(r[idx.master]); const source = norm(r[idx.source]);
     if (!master && !source) continue;
-    rows.push({ master, source, quality: lc(r[idx.quality]), quoteRaw: norm(r[idx.quote]), feedback: fbCols.map((i) => norm(r[i])).filter(Boolean).join("\n") });
+    rows.push({ master, source, quality: lc(r[idx.quality]), quoteRaw: norm(r[idx.quote]), testRecord: idx.testRecord >= 0 ? lc(r[idx.testRecord]) : "", dispatch: idx.dispatch >= 0 ? lc(r[idx.dispatch]) : "", feedback: fbCols.map((i) => norm(r[i])).filter(Boolean).join("\n") });
   }
   return rows;
 }
@@ -112,12 +122,14 @@ export function matchLead(row, index) {
  * `waba` = Set of lead ids whose click-to-WhatsApp conversation has a valid business account id.
  */
 export function planFeedback(rows, index, { existing, waba, nowMs, maxEvents = DEFAULT_MAX_EVENTS, maxLeadAgeDays = DEFAULT_MAX_LEAD_AGE_DAYS, sendLost = true }) {
-  const counts = { sheet_rows: rows.length, qualified_rows: 0, rows_by_quality: 0, rows_by_quote: 0, rows_by_feedback: 0, leads_by_quality: 0, leads_by_quote: 0, leads_by_feedback: 0, leads_only_by_quality: 0, leads_only_by_quote: 0, leads_only_by_feedback: 0, not_fit_rows: 0, quote_rows: 0, bad_quote_cells: 0, unmatched: 0, unmatched_legacy: 0, archived: 0,
+  const counts = { sheet_rows: rows.length, qualified_rows: 0, rows_by_quality: 0, rows_by_quote: 0, rows_by_feedback: 0, leads_by_quality: 0, leads_by_quote: 0, leads_by_feedback: 0, leads_only_by_quality: 0, leads_only_by_quote: 0, leads_only_by_feedback: 0, not_fit_rows: 0, test_rows: 0, held_rows: 0, quote_rows: 0, bad_quote_cells: 0, unmatched: 0, unmatched_legacy: 0, archived: 0,
     too_old: 0, already_queued: 0, not_fit_wa_no_signal: 0, no_ctwa_clid_or_leadgen: 0, wa_no_waba: 0, lost_disabled: 0, deferred_by_cap: 0, duplicate_rows: 0,
     form_qualified: 0, form_quoted: 0, form_lost: 0, wa_qualified: 0, wa_quote_valued: 0, form_quoted_os_value_known: 0 };
   const items = []; const seen = new Set(); let total = 0;
   const maxAgeMs = maxLeadAgeDays * 86_400_000;
   for (const row of rows) {
+    const excluded = rowExclusion(row);
+    if (excluded) { counts[`${excluded}_rows`]++; continue; }
     const c = classifyRow(row);
     if (c.outcome === "qualified") counts.qualified_rows++;
     for (const r of c.rules) counts[`rows_by_${r}`]++;

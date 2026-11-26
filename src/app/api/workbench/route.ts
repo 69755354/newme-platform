@@ -68,12 +68,17 @@ export async function GET(request: Request) {
   const taskCols = "id,lead_id,title,due_at,status,source,created_at,assignee_id"
   const INBOX_COLUMNS = "id,customer_name,phone,current_milestone,next_followup_date,next_action,updated_at"
   const days = inboxDayKeys()
+  // Today's tasks are fetched on their own: the two earliest-20 lists below are filled by a backlog of old tasks.
+  const tomorrowStartMs = Date.parse(dubaiTomorrowBounds().startIso)
+  const todayStartIso = new Date(tomorrowStartMs - 24 * 3600 * 1000).toISOString()
+  const tomorrowStartIso = new Date(tomorrowStartMs).toISOString()
 
   // ── Phase 3: all data queries in parallel ──
   const [
     inboxResult,
     tasksResult,
     overdueResult,
+    todayTasksResult,
     alertsResult,
     progressResult,
     featuresResult,
@@ -123,6 +128,17 @@ export async function GET(request: Request) {
       .order("due_at", { ascending: true })
       .limit(20),
 
+    // tasks due today (Dubai), independent of the earliest-20 lists
+    supabase
+      .from("tasks")
+      .select(taskCols)
+      .eq("assignee_id", user.id)
+      .eq("status", "pending")
+      .gte("due_at", todayStartIso)
+      .lt("due_at", tomorrowStartIso)
+      .order("due_at", { ascending: true })
+      .limit(100),
+
     // alerts
     supabase
       .from("leads")
@@ -168,11 +184,12 @@ export async function GET(request: Request) {
 
   const tasksItems = (tasksResult.data ?? []) as any[]
   const overdueItems = (overdueResult.data ?? []) as any[]
+  const todayTaskItems = (todayTasksResult.data ?? []) as typeof tasksItems
 
   // ── Phase 4: lead names for tasks/overdue ──
   const taskLeadIds = Array.from(
     new Set(
-      [...tasksItems, ...overdueItems]
+      [...tasksItems, ...overdueItems, ...todayTaskItems]
         .map((t: any) => t.lead_id as string)
         .filter(Boolean),
     ),
@@ -192,6 +209,7 @@ export async function GET(request: Request) {
   })
   const tasksWithNames = tasksItems.map(withLeadName)
   const overdueWithNames = overdueItems.map(withLeadName)
+  const todayTasksWithNames = todayTaskItems.map(withLeadName)
 
   // ── Process alerts ──
   const nowMs = Date.now()
@@ -315,6 +333,7 @@ export async function GET(request: Request) {
     inbox: inboxItems,
     tasks: tasksWithNames,
     overdue: overdueWithNames,
+    tasks_today: todayTasksWithNames,
     alerts: alertsItems,
     progress: progressArray,
     tomorrowTasks,

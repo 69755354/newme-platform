@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 function testEnvironment() {
   const env = { ...process.env };
@@ -19,30 +20,62 @@ function testEnvironment() {
   return env;
 }
 
-const allTests = fs.globSync("tests/**/*.test.mjs").sort();
-const loaderHookTests = allTests.filter((file) =>
-  fs.readFileSync(file, "utf8").includes("Module._load"),
-);
-const ordinaryTests = allTests.filter((file) => !loaderHookTests.includes(file));
+export function planBatches(allTests, readFile = (file) => fs.readFileSync(file, "utf8")) {
+  const loaderHookTests = allTests.filter((file) => readFile(file).includes("Module._load"));
+  const ordinaryTests = allTests.filter((file) => !loaderHookTests.includes(file));
+  // Tests that replace the process-wide CommonJS loader must never share a test
+  // process. Node's file isolation has differed across runner/platform versions,
+  // so enforce the boundary explicitly instead of relying on its default.
+  return {
+    ordinary: ordinaryTests.length ? [ordinaryTests] : [],
+    loader: loaderHookTests.map((file) => [file]),
+  };
+}
 
-// Tests that replace the process-wide CommonJS loader must never share a test
-// process. Node's file isolation has differed across runner/platform versions,
-// so enforce the boundary explicitly instead of relying on its default.
-for (const files of [ordinaryTests, ...loaderHookTests.map((file) => [file])]) {
-  if (files.length === 0) continue;
-  const result = spawnSync(
-    process.execPath,
-    ["--test", "--test-concurrency=1", "--test-isolation=process", ...files],
-    { env: testEnvironment(), stdio: "inherit" },
+// Always runs every batch (ordinary + each loader-hook file) and reports a
+// per-batch failure summary; the exit code is non-zero if anything failed.
+export function runAll(plan, run, log = console.error) {
+  const failures = [];
+  const groups = [
+    ["ordinary", plan.ordinary],
+    ["loader", plan.loader],
+  ];
+  for (const [name, batches] of groups) {
+    for (const files of batches) {
+      const result = run(files);
+      let reason = null;
+      if (result.error) reason = result.error.message;
+      else if (result.signal) reason = `terminated by ${result.signal}`;
+      else if (result.status !== 0) reason = `exit ${result.status ?? 1}`;
+      if (reason) failures.push({ name, files, reason });
+    }
+  }
+  if (failures.length) {
+    log("Repository test failures by batch:");
+    for (const f of failures) {
+      log(`  [${f.name}] ${f.files.length === 1 ? f.files[0] : `${f.files.length} files`}: ${f.reason}`);
+    }
+  }
+  return { failures, exitCode: failures.length ? 1 : 0 };
+}
+
+// Compared by real path: a symlinked directory or a path with spaces/escapes must still run the tests.
+export function isMainModule(argv1, metaUrl) {
+  try {
+    return Boolean(argv1) && fs.realpathSync(argv1) === fs.realpathSync(fileURLToPath(metaUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule(process.argv[1], import.meta.url)) {
+  const plan = planBatches(fs.globSync("tests/**/*.test.mjs").sort());
+  const { exitCode } = runAll(plan, (files) =>
+    spawnSync(
+      process.execPath,
+      ["--test", "--test-concurrency=1", "--test-isolation=process", ...files],
+      { env: testEnvironment(), stdio: "inherit" },
+    ),
   );
-
-  if (result.error) {
-    console.error(result.error.message);
-    process.exit(1);
-  }
-  if (result.signal) {
-    console.error(`Repository tests terminated by ${result.signal}`);
-    process.exit(1);
-  }
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  process.exit(exitCode);
 }

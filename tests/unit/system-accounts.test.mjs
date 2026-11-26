@@ -196,6 +196,7 @@ test("daily report and lead-source assignment drop system accounts before buildi
 // name_by_id: the display name of an id already present in the data (not a people list).
 const REVIEWED_UNFILTERED = {
   name_by_id: [
+    "src/lib/lead-duplicates.ts", // owner names for duplicate hints, looked up by id
     "src/app/(dashboard)/leads/[id]/page.tsx",
     "src/app/api/contracts/[id]/remind-payment/route.ts",
     "src/app/api/contracts/[id]/route.ts",
@@ -205,6 +206,7 @@ const REVIEWED_UNFILTERED = {
     "src/app/api/leads/[id]/transfer-history/route.ts",
   ],
   self: [
+    "src/app/api/notifications/unread-count/route.ts", // the signed-in user's own role
     "src/app/(dashboard)/projects/projects-client.tsx",
     "src/app/api/ads/leads/route.ts",
     "src/app/api/alerts/route.ts",
@@ -257,6 +259,7 @@ const REVIEWED_UNFILTERED = {
     "src/lib/notification-dispatch.ts",
   ],
   recipients: [
+    "src/lib/leave-cover.mjs", // resolves the stand-in for given recipient ids; never lists people
     "src/app/api/cron/check-overdue-installments/route.ts",
     "src/app/api/cron/check-whatsapp-followups/route.ts",
     "src/app/api/cron/daily-digest/route.ts",

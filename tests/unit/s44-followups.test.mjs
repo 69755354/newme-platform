@@ -71,6 +71,11 @@ test("S44-3 sales feedback: a note with real contact is not a no-answer-only not
   assert.equal(isNoAnswer("Busy.\nNo answer again"), true);
   assert.equal(isNoAnswer("没接，关机"), true);
   assert.equal(isNoAnswer("Customer wants drawings"), false);
+  // Review P2: a promise to try again is not contact.
+  assert.equal(isNoAnswer("No answer, will try calling again tomorrow"), true);
+  assert.equal(isNoAnswer("Not answering. Will call back on Monday morning"), true);
+  assert.equal(isNoAnswer("没接，明天再打"), true);
+  assert.equal(isNoAnswer("No answer at first, then called back and he asked for a site visit next week"), false);
 });
 
 const NOW_FB = new Date("2026-11-23T08:00:00Z");

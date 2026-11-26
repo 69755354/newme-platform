@@ -22,6 +22,9 @@ const s = (v) => (v === null || v === undefined ? "" : String(v).trim());
 // Feedback that says the customer was not reached (English and Chinese wording the sales team uses).
 const NO_ANSWER = /\b(no[\s-]*answer|not\s+answer(ed|ing)?|did(n'?t| not)\s+(pick|answer)|no\s+(reply|response)|unreachable|not\s+reachable|switched\s+off|voice\s?mail|busy|n\/?a)\b|无人接听|没接|未接|关机|无应答|不接/i;
 const NO_ANSWER_MAX_FILLER_WORDS = 3; // "tried twice", "called again": a short fragment next to the no-answer phrase adds no news
+// A note that only promises another attempt ("will try calling again tomorrow", "call back later", 明天再打) is still no contact.
+const RETRY_ONLY_MAX_WORDS = 8; // longer sentences carry news beyond the retry
+const RETRY_ONLY = /\b(try|trying|tried|call(ing|ed)?|calling|ring|reach|follow[\s-]*up|contact|attempt|message|whatsapp|text)\b.*\b(again|later|tomorrow|back|next|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b(call[\s-]*back|retry|re-?attempt)\b|再(打|联系|试|拨)|稍后|明天|下次|回电/i;
 /**
  * True only when the whole note says the customer was not reached. A note that mentions "busy" or "no answer" but also
  * records real contact ("Was busy, confirmed interest and asked for a quote") is substantive feedback.
@@ -33,7 +36,8 @@ export const isNoAnswer = (text) => {
   return segments.every((seg) => {
     if (NO_ANSWER.test(seg)) return true;
     const words = seg.replace(/[\d:/\\-]+/g, " ").split(/\s+/).filter((w) => /[\p{L}]/u.test(w));
-    return words.length <= NO_ANSWER_MAX_FILLER_WORDS;
+    if (words.length <= NO_ANSWER_MAX_FILLER_WORDS) return true;
+    return words.length <= RETRY_ONLY_MAX_WORDS && RETRY_ONLY.test(seg);
   });
 };
 

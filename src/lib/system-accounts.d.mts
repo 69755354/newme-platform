@@ -11,3 +11,7 @@ export function omitSystemAccounts<T extends { id?: string | null; email?: strin
   rows: readonly T[] | null | undefined,
   options?: { viewerId?: string | null },
 ): T[];
+export function systemAccountIdSet<T extends { id?: string | null; email?: string | null }>(
+  rows: readonly T[] | null | undefined,
+  options?: { viewerId?: string | null },
+): Set<string>;

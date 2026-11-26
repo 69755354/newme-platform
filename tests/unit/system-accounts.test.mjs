@@ -3,7 +3,7 @@
 // login, the assignment checks and the release gate keep working.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   isSystemAccountEmail,
@@ -11,6 +11,7 @@ import {
   systemAccountVisibilityFilter,
   excludeSystemAccountsQuery,
   omitSystemAccounts,
+  systemAccountIdSet,
 } from "../../src/lib/system-accounts.mjs";
 import {
   filterLeadTransferCandidateQuery,
@@ -110,6 +111,8 @@ const LIST_SITES = [
   ["src/app/api/analytics/summary/route.ts", /excludeSystemAccountsQuery\(/],
   ["src/app/api/command-center/route.ts", /excludeSystemAccountsQuery\(/],
   ["src/app/api/tasks/list/route.ts", /excludeSystemAccountsQuery\(/],
+  ["src/app/api/activity/daily-report/route.ts", /systemAccountIdSet\(/],
+  ["src/app/api/dashboard/lead-sources/route.ts", /systemAccountIdSet\(/],
 ];
 
 for (const [file, pattern] of LIST_SITES) {
@@ -137,11 +140,11 @@ test("release gate paths keep working", () => {
   // /api/leads/list is what scripts/synthetic-journey.mjs reads its assignee
   // directory from; the signed-in account stays visible to itself there.
   assert.match(read("src/app/api/leads/list/route.ts"), /viewerId: user\.id|viewerId: userId/);
-  // The user list keeps an explicit way to see everything for the admin/boss
-  // callers of /api/users (same rule for both roles).
+  // The user list has no switch that shows them (S47): hidden for admin and boss alike,
+  // the signed-in account keeps its own row.
   const users = read("src/app/api/users/route.ts");
-  assert.match(users, /includeSystem/);
-  assert.doesNotMatch(users, /role === "admin" && .*includeSystem|includeSystem.*role === "admin"/);
+  assert.doesNotMatch(users, /includeSystem/);
+  assert.match(users, /excludeSystemAccountsQuery\(userQuery, \{ viewerId: role\.userId \}\)/);
   // The acceptance and synthetic scripts never read the team list or the user list.
   for (const script of ["scripts/run-postdeploy-browser-uat.mjs", "scripts/run-postdeploy-acceptance.mjs", "scripts/synthetic-journey.mjs"]) {
     assert.doesNotMatch(read(script), /\/api\/users|\/api\/team|team-ownership/, script);
@@ -153,6 +156,144 @@ test("login, session and profile reads of the signed-in account are not filtered
     "src/proxy.ts", "src/lib/request-auth-context.ts", "src/lib/action-auth-context.ts",
     "src/lib/server-page-auth.ts", "src/app/api/auth/me/route.ts", "src/lib/lead-auth.ts",
   ]) {
+    assert.doesNotMatch(read(file), /system-accounts|hideSystemAccounts/, file);
+  }
+});
+
+test("system account id set: ids of in-memory rows, the viewer's own row is never in it", () => {
+  const rows = [
+    { id: "1", email: "sam@newme.ae" },
+    { id: "2", email: "qa-boss@qa.newme.ae" },
+    { id: VIEWER, email: "release-uat-sales@newme.ae" },
+    { id: "4", email: "release-uat-admin@newme.ae" },
+    { id: "5", email: null },
+    { email: "qa-x@qa.newme.ae" },
+  ];
+  assert.deepEqual([...systemAccountIdSet(rows)].sort(), ["2", "4", VIEWER].sort());
+  assert.deepEqual([...systemAccountIdSet(rows, { viewerId: VIEWER })].sort(), ["2", "4"]);
+  assert.deepEqual([...systemAccountIdSet(null)], []);
+});
+
+test("daily report and lead-source assignment drop system accounts before building rows", () => {
+  const report = read("src/app/api/activity/daily-report/route.ts");
+  assert.match(report, /\.select\("id, full_name, email"\)/);
+  assert.match(report, /hiddenUserIds = systemAccountIdSet\(profiles\)/);
+  assert.match(report, /!a\.user_id \|\| hiddenUserIds\.has\(a\.user_id\)/);
+  assert.match(report, /!e\.user_id \|\| hiddenUserIds\.has\(e\.user_id\)/);
+  const sources = read("src/app/api/dashboard/lead-sources/route.ts");
+  assert.match(sources, /hiddenRepIds = systemAccountIdSet\(reps \?\? \[\], \{ viewerId: user\.id \}\)/);
+  assert.match(sources, /if \(hiddenRepIds\.has\(repId\)\) return;/);
+});
+
+// ── Inventory guard (S47) ──────────────────────────────────────────────────────
+// Every file under src that reads `profiles` is either filtered through the shared
+// module or listed here as reviewed. A new `from("profiles")` read in a new file
+// fails this test until someone decides which of the two it is.
+// Files that read `profiles` and were reviewed in the S47 inventory as NOT needing the filter.
+// self: the signed-in account reads its own role/profile (must keep working for system accounts).
+// recipients: notification fan-out; nothing a person reads is built from it (see inventory).
+// validation_or_write: id-based checks / writes; system accounts stay legal targets on purpose.
+// name_by_id: the display name of an id already present in the data (not a people list).
+const REVIEWED_UNFILTERED = {
+  name_by_id: [
+    "src/lib/lead-duplicates.ts", // owner names for duplicate hints, looked up by id
+    "src/app/(dashboard)/leads/[id]/page.tsx",
+    "src/app/api/contracts/[id]/remind-payment/route.ts",
+    "src/app/api/contracts/[id]/route.ts",
+    "src/app/api/contracts/list/route.ts",
+    "src/app/api/dashboard/lead-health/route.ts",
+    "src/app/api/kpi/targets/route.ts",
+    "src/app/api/leads/[id]/transfer-history/route.ts",
+  ],
+  self: [
+    "src/app/api/notifications/unread-count/route.ts", // the signed-in user's own role
+    "src/app/(dashboard)/projects/projects-client.tsx",
+    "src/app/api/ads/leads/route.ts",
+    "src/app/api/alerts/route.ts",
+    "src/app/api/auth/me/route.ts",
+    "src/app/api/contracts/[id]/approve/route.ts",
+    "src/app/api/contracts/[id]/confirm-upload/route.ts",
+    "src/app/api/contracts/[id]/upload-url/route.ts",
+    "src/app/api/contracts/route.ts",
+    "src/app/api/dashboard/ads-roi/import/route.ts",
+    "src/app/api/dashboard/ads-roi/route.ts",
+    "src/app/api/dashboard/pipeline-funnel/route.ts",
+    "src/app/api/dashboard/quality/route.ts",
+    "src/app/api/dashboard/weekly-trends/route.ts",
+    "src/app/api/leads/[id]/timeline/route.ts",
+    "src/app/api/leads/follow-up-overdue/route.ts",
+    "src/app/api/leads/import/confirm/route.ts",
+    "src/app/api/leads/import/preview/route.ts",
+    "src/app/api/meta/ads-status/route.ts",
+    "src/app/api/meta/ads-sync/route.ts",
+    "src/app/api/meta/oauth-start/route.ts",
+    "src/app/api/metrics/daily/route.ts",
+    "src/app/api/metrics/funnel/route.ts",
+    "src/app/api/notifications/[id]/route.ts",
+    "src/app/api/notifications/route.ts",
+    "src/app/api/payments/[id]/allocate/route.ts",
+    "src/app/api/payments/[id]/confirm/route.ts",
+    "src/app/api/payments/[id]/void/route.ts",
+    "src/app/api/payments/list/route.ts",
+    "src/app/api/payments/route.ts",
+    "src/app/api/products/import/route.ts",
+    "src/app/api/quotations/export/route.ts",
+    "src/app/api/team/list/route.ts",
+    "src/app/api/workbench/route.ts",
+    "src/app/api/workflow/route.ts",
+    "src/lib/action-auth-context.ts",
+    "src/lib/lead-auth.ts",
+    "src/lib/request-auth-context.ts",
+    "src/lib/server-page-auth.ts",
+    "src/proxy.ts",
+  ],
+  validation_or_write: [
+    "src/app/actions/team.ts",
+    "src/app/api/admin/impersonate/route.ts",
+    "src/app/api/auth/change-password/route.ts",
+    "src/app/api/dev/setup/route.ts",
+    "src/app/api/leads/archive/route.ts",
+    "src/app/api/tasks/[id]/route.ts",
+    "src/app/api/users/[id]/password/route.ts",
+    "src/app/api/users/[id]/route.ts",
+    "src/lib/notification-dispatch.ts",
+  ],
+  recipients: [
+    "src/lib/leave-cover.mjs", // resolves the stand-in for given recipient ids; never lists people
+    "src/app/api/cron/check-overdue-installments/route.ts",
+    "src/app/api/cron/check-whatsapp-followups/route.ts",
+    "src/app/api/cron/daily-digest/route.ts",
+    "src/lib/lead-intake-notify.mjs",
+    "src/lib/notification-events.ts",
+    "src/lib/notifications.ts",
+  ],
+};
+
+function sourceFiles(dir) {
+  const out = [];
+  for (const name of readdirSync(join(ROOT, dir))) {
+    const rel = `${dir}/${name}`;
+    const stat = statSync(join(ROOT, rel));
+    if (stat.isDirectory()) out.push(...sourceFiles(rel));
+    else if (/\.(ts|tsx|mjs)$/.test(name) && !/\.d\.(ts|mts)$/.test(name)) out.push(rel);
+  }
+  return out;
+}
+
+test("inventory: every profiles reader is filtered or on the reviewed list", () => {
+  const readers = sourceFiles("src").filter((file) => /from\((['"])profiles\1\)/.test(read(file)));
+  const reviewed = new Set(Object.values(REVIEWED_UNFILTERED).flat());
+  const filtered = readers.filter((file) => /system-accounts|hideSystemAccounts|lead-transfer-candidates/.test(read(file)));
+  const unclassified = readers.filter((file) => !filtered.includes(file) && !reviewed.has(file));
+  assert.deepEqual(unclassified, [], "new profiles reader: filter it or add it to REVIEWED_UNFILTERED with a reason");
+  const stale = [...reviewed].filter((file) => !readers.includes(file));
+  assert.deepEqual(stale, [], "listed file no longer reads profiles");
+  const both = [...reviewed].filter((file) => filtered.includes(file));
+  assert.deepEqual(both, [], "a file is both filtered and listed as unfiltered");
+});
+
+test("inventory: the self-lookup files never use the filter (a system account must see itself)", () => {
+  for (const file of REVIEWED_UNFILTERED.self) {
     assert.doesNotMatch(read(file), /system-accounts|hideSystemAccounts/, file);
   }
 });

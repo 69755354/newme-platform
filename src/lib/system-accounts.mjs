@@ -53,3 +53,14 @@ export function excludeSystemAccountsQuery(query, options = {}) {
 export function omitSystemAccounts(rows, { viewerId } = {}) {
   return (rows ?? []).filter((row) => (viewerId != null && row?.id === viewerId) || !isSystemAccount(row));
 }
+
+// Ids of the system accounts among rows that are already in memory (rows need `id`
+// and `email`). Used where a per-person result is built from ids found in other
+// tables (activity rows, lead owners): drop those ids from the result.
+export function systemAccountIdSet(rows, { viewerId } = {}) {
+  return new Set(
+    (rows ?? [])
+      .filter((row) => row?.id != null && row.id !== viewerId && isSystemAccount(row))
+      .map((row) => row.id),
+  );
+}

@@ -3,7 +3,6 @@
 // person on leave would be told about a new lead (assignment notification, reminders, follow-up alerts)
 // is also told to the cover. Default off: NEWME_LEAVE_COVER_ENABLED=true turns the routing on; the
 // columns can be set and shown either way.
-import { dubaiDateKey } from "./dubai-time.mjs";
 
 export const LEAVE_COVER_SWITCH = "NEWME_LEAVE_COVER_ENABLED";
 export const COVER_COLUMNS = "id, is_active, cover_user_id, cover_start, cover_end";
@@ -12,21 +11,8 @@ export function leaveCoverEnabled(env = process.env) {
   return String(env?.[LEAVE_COVER_SWITCH] ?? "").trim().toLowerCase() === "true";
 }
 
-const dateKey = (value) => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null);
-
-/**
- * The cover's id when the profile's cover is active on the given day (Dubai date), else null.
- * @param {{ id?: string, cover_user_id?: string|null, cover_start?: string|null, cover_end?: string|null } | null | undefined} profile
- * @param {Date|number|string} [now]
- */
-export function activeCoverId(profile, now = new Date()) {
-  if (!profile?.cover_user_id || profile.cover_user_id === profile.id) return null;
-  const start = dateKey(profile.cover_start);
-  const end = dateKey(profile.cover_end);
-  const today = dubaiDateKey(now instanceof Date ? now : new Date(now));
-  if (!start || !end || !today) return null;
-  return start <= today && today <= end ? profile.cover_user_id : null;
-}
+export { activeCoverId } from "./leave-cover-dates.mjs";
+import { activeCoverId } from "./leave-cover-dates.mjs";
 
 /**
  * Pure: the user ids plus the active cover of each (covers that are inactive profiles are left out).

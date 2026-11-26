@@ -770,6 +770,14 @@ jobs:
           createdb --template history newme_s43_cover_test
           PGDATABASE=newme_s43_cover_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s43-leave-cover.sql
 
+      # S46: lead delete admin/boss only, milestone order ignores reopened steps, quotation value currency and lock. Rolled back.
+      - name: Migration follow-ups (S46)
+        run: |
+          createdb --template history newme_s46_test
+          PGDATABASE=newme_s46_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s46-leads-delete-policy.sql
+          PGDATABASE=newme_s46_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s46-milestone-reopen.sql
+          PGDATABASE=newme_s46_test psql -v ON_ERROR_STOP=1 -q -f tests/database/s46-quotation-value.sql
+
       # Round-4 C4. The remote-history gate decides "production ran this release's
       # SQL" by comparing a digest the server computes over the recorded
       # statements with one this repository computes over its own migration files.

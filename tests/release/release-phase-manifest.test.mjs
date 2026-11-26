@@ -65,7 +65,7 @@ test("the committed manifest describes this tree", () => {
   // disabled-pilot provisioning. No historical migration is renumbered.
   const pending = cliFiles.filter((file) => file.slice(0, 14) > manifest.production_stamp);
   assert.equal(manifest.required_for_app.length + manifest.deferred_contract.length, pending.length);
-  assert.equal(manifest.deferred_contract.length, 21);
+  assert.equal(manifest.deferred_contract.length, 22);
   assert.equal(manifest.deferred_contract[4].file, "20261023123323_meta_ads_atomic_window.sql");
   assert.equal(manifest.deferred_contract[5].file, "20261025151000_website_capi_delivery_event.sql");
   assert.equal(manifest.deferred_contract[6].file, "20261025180000_meta_crm_lead_stage_events.sql");
@@ -83,6 +83,7 @@ test("the committed manifest describes this tree", () => {
   assert.equal(manifest.deferred_contract[18].file, "20261122200000_quotation_value_follows_quotations.sql");
   assert.equal(manifest.deferred_contract[19].file, "20261122300000_s37_new_lead_not_dormant.sql");
   assert.equal(manifest.deferred_contract[20].file, "20261123100000_s39_stage_rules_relaxed.sql");
+  assert.equal(manifest.deferred_contract[21].file, "20261124300000_s43_leave_cover.sql");
   assert.match(manifest.deferred_contract[0].file, /^20260818000000_money_direct_write_contract_phase\.sql$/);
   assert.equal(manifest.deferred_contract[1].file, "20261019104004_whatsapp_pilot_events.sql");
   assert.equal(manifest.deferred_contract[2].file, "20261022194620_whatsapp_privacy_lifecycle.sql");

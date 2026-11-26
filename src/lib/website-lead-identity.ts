@@ -7,7 +7,7 @@ const NAMESPACE = new Uint8Array([
   0x8f, 0xd1, 0xa1, 0xad, 0x85, 0x39, 0xe0, 0x5c,
 ]);
 
-export function websiteEventUuid(kind: "lead" | "task" | "delivery", eventId: string): string {
+export function websiteEventUuid(kind: "lead" | "task" | "delivery" | "merge", eventId: string): string {
   const bytes = createHash("sha1").update(NAMESPACE).update(`${kind}:${eventId}`).digest().subarray(0, 16);
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;

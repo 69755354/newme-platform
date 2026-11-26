@@ -300,6 +300,12 @@
       "version": "20261123100000",
       "file": "20261123100000_s39_stage_rules_relaxed.sql",
       "sha256": "f37603f9e7a0550b3795d6eb7e06a55220eef6c4caccb5b51ba7bf817415f435"
+    },
+    {
+      "$comment": "S43 (OS fix S43, B13 leave cover): three nullable columns on profiles (cover_user_id, cover_start, cover_end), two check constraints, one partial index and one new SECURITY DEFINER routine set_leave_cover (admin/boss only, pinned search_path, EXECUTE to authenticated and service_role, revoked from public/anon) and one new BEFORE UPDATE OF trigger profiles_cover_admin_only (definer routine trg_profiles_cover_admin_only) that stops a signed-in non-admin/boss from writing the three columns directly. Additive only; no policy or existing-routine changes. The application routes notifications to the cover only behind NEWME_LEAVE_COVER_ENABLED (default off).",
+      "version": "20261124300000",
+      "file": "20261124300000_s43_leave_cover.sql",
+      "sha256": "711f1a261f44d4ac0ed3f5446c752f69eee9616f5cee503b95be8853a4b02358"
     }
   ],
   "companions": [
@@ -690,6 +696,11 @@
           "name": "s39-stage-rules-relaxed",
           "expect": true,
           "sql": "SELECT coalesce((SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%S39: a stage may be skipped%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.transition_lead_stage(uuid,text,text,text,uuid)')) AND (SELECT count(*)=1 AND bool_and(p.prosrc LIKE '%Stage can only move forward%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.trg_check_stage_sequence()')) AND (SELECT count(*)=1 AND bool_and(p.prosrc NOT LIKE '%NEW.quality%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.trg_check_first_contact_gate()')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.prosrc LIKE '%skipping a milestone going forward%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.check_milestone_order()')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.prosrc NOT LIKE '%v_lead.quality%') AND bool_and(has_function_privilege('service_role',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('authenticated',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.sync_advance_lead_stage_from_sheet(uuid,text,text)')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%An earlier milestone must be completed first%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.recomplete_lead_milestone(uuid,text,text)')),false)"
+        },
+        {
+          "name": "s43-leave-cover",
+          "expect": true,
+          "sql": "SELECT coalesce((SELECT count(*)=3 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name IN ('cover_user_id','cover_start','cover_end')) AND (SELECT count(*)=2 FROM pg_catalog.pg_constraint WHERE conrelid='public.profiles'::regclass AND conname IN ('profiles_cover_not_self','profiles_cover_dates')) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%leave_cover_not_allowed%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.set_leave_cover(uuid,uuid,date,date)')) AND (SELECT count(*)=1 AND bool_and(t.tgenabled='O') FROM pg_catalog.pg_trigger t WHERE t.tgrelid='public.profiles'::regclass AND t.tgname='profiles_cover_admin_only' AND NOT t.tgisinternal) AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc LIKE '%leave_cover_not_allowed%') FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.trg_profiles_cover_admin_only()')),false)"
         }
       ]
     }

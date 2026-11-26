@@ -87,6 +87,8 @@ function load(db) {
     "@/lib/supabase-admin": { supabaseAdmin: db.supabaseAdmin },
     "@/lib/logger": { logger: { error() {}, info() {}, warn() {} } },
     "@/lib/followup-monitor.mjs": require("node:module").createRequire(import.meta.url)("../../src/lib/followup-monitor.mjs"),
+    // S43: the leave-cover helper (switch off in these tests: the owner list passes through unchanged)
+    "@/lib/leave-cover.mjs": require("node:module").createRequire(import.meta.url)("../../src/lib/leave-cover.mjs"),
     "node:crypto": require("node:crypto"),
   });
 }

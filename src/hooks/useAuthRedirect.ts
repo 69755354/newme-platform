@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { readSessionIdentity, type SessionIdentity } from "@/lib/session-identity";
 import { createSessionHandoff } from "@/lib/session-handoff";
+import { landingPathForRole, MANAGEMENT_ROLES } from "@/lib/role-landing.mjs";
 
 /**
  * useAuthRedirect — DashboardLayout 的鉴权 + 角色解析 + 重定向副作用集中点
@@ -114,12 +115,13 @@ export function useAuthRedirect() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redirect sales users from /dashboard to /workbench
+  // Redirect non-management users from /dashboard to their own landing page: sales -> /workbench,
+  // finance -> /contracts, designer -> /projects (S43 / F08: finance and designers used to land on the
+  // sales workbench). src/lib/role-landing.mjs is the single place that knows the mapping.
   useEffect(() => {
     if (!role) return;
-    const isMgmt = role === "admin" || role === "boss" || role === "operator";
-    if (!isMgmt && pathname === "/dashboard") {
-      router.replace("/workbench");
+    if (!MANAGEMENT_ROLES.includes(role) && pathname === "/dashboard") {
+      router.replace(landingPathForRole(role));
     }
   }, [role, pathname, router]);
 

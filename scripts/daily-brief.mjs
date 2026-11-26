@@ -27,6 +27,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dubaiDateKey } from "../src/lib/dubai-time.mjs";
 import { fetchAllRows } from "../src/lib/fetch-all-rows.mjs";
+import { expandReminderItems } from "../src/lib/leave-cover.mjs";
 import { FEEDBACK_REGISTER, FEEDBACK_SALES_TABS, summarizeFeedbackBacklog } from "../src/lib/sales-feedback-brief.mjs";
 import {
   adReminderNotificationRows, buildAdReminder, buildBrief, buildReminder, countNewLeads, planAdReminders, selectAdUncontacted, groupUncontactedForBrief, inReminderWindow, planReminders, selectUncontacted, summarizeQuotes,
@@ -87,7 +88,10 @@ export async function loadData(db, now) {
     .in("lead_id", part).or("contact_type.is.null,contact_type.neq.note").order("id"));
   const transfers = await inChunksAll(ids, (part, withCount) => db.from("transfer_history").select("id,lead_id,to_user_id,created_at", withCount ? { count: "exact" } : undefined)
     .in("lead_id", part).order("id"));
-  const profiles = must(await db.from("profiles").select("id,full_name,phone,email,role,is_active").eq("is_active", true));
+  // S43: the leave-cover columns may not exist yet (migration not applied: Postgres 42703); the cover then reads as empty.
+  let profilesRead = await db.from("profiles").select("id,full_name,phone,email,role,is_active,cover_user_id,cover_start,cover_end").eq("is_active", true);
+  if (profilesRead.error?.code === "42703") profilesRead = await db.from("profiles").select("id,full_name,phone,email,role,is_active").eq("is_active", true);
+  const profiles = must(profilesRead);
   return { leads, candidates, excludedTestIds, logLeadIds: new Set(logs.map((r) => r.lead_id)), transfers, profiles, y };
 }
 
@@ -273,7 +277,8 @@ export async function runReminders(db, { execute = false, now = new Date(), send
   // S35: ad leads past their one-hour deadline, owned or not (the 24 hour plan above skips unowned leads on purpose).
   const adItems = selectAdUncontacted({ leads: data.candidates, logLeadIds: data.logLeadIds, excludedTestIds: data.excludedTestIds, now });
   const adDone = adLedgerKeys(now);
-  const adPlan = planAdReminders(adItems, data.profiles, adDone);
+  // S43: with NEWME_LEAVE_COVER_ENABLED=true an owner's active leave cover gets the same reminder (bell + WhatsApp).
+  const adPlan = planAdReminders(expandReminderItems(adItems, data.profiles, now, env), data.profiles, adDone);
   const summary = { job: "reminders", mode: execute ? "execute" : "dry_run", date: today, salespeople_with_uncontacted: plan.people.length,
     uncontacted: plan.people.reduce((s, p) => s + p.items.length, 0), missing_phone: plan.missingPhone.length, already_reminded_today: plan.sendable.length - due.length, due: due.length, sent: 0, failed: 0,
     ad_overdue: adItems.length, ad_unassigned: adItems.filter((i) => !i.assigned_to).length, ad_people: adPlan.people.length,

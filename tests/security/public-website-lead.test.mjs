@@ -127,6 +127,11 @@ function loadRoute({ insertError = null, taskError = null, capiError = null, cap
       genReqId: () => "request-1",
       logger: { error() {}, warn() {}, info() {} },
     },
+    // S43: the route also reads the dedupe rule, the phone key and the Dubai date (real modules, no behaviour mocked;
+    // the dedupe switch is off in these tests so the lookup never runs).
+    "@/lib/lead-dedupe.mjs": require("../../src/lib/lead-dedupe.mjs"),
+    "@/lib/lead-contact.mjs": require("../../src/lib/lead-contact.mjs"),
+    "@/lib/dubai-time.mjs": require("../../src/lib/dubai-time.mjs"),
   });
   return { route, inserts, tasks, capi, deliveries, deliveryUpdates, rows, pings };
 }

@@ -27,6 +27,9 @@ function loadTs(relativePath) {
   const previousLoad = Module._load;
   Module._load = function mockedLoad(request, parent, isMain) {
     if (request === "server-only") return {};
+    // S43: notification-events reads the leave cover and logs through the alias paths
+    if (request === "@/lib/leave-cover.mjs") return require("../../src/lib/leave-cover.mjs");
+    if (request === "@/lib/logger") return { logger: { error() {}, info() {}, warn() {} } };
     return previousLoad.call(this, request, parent, isMain);
   };
   try {

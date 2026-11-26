@@ -46,6 +46,7 @@ select pg_temp.expect((select count(*) = 1 and bool_and(p.prosecdef)
     and bool_and(not has_function_privilege('anon', p.oid, 'EXECUTE'))
     and bool_and(not has_function_privilege('authenticated', p.oid, 'EXECUTE'))
     and bool_and(p.prosrc like '%for update%')
+    and bool_and(p.prosrc like '%deadlock_detected%')
   from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.sync_lead_quotation_value(uuid,numeric)')), 'sync-routine-posture-and-row-lock');
 select pg_temp.expect((select count(*) = 1 and bool_and(p.prosecdef)
     and bool_and(p.proconfig @> array['search_path=pg_catalog, public, pg_temp']::text[])

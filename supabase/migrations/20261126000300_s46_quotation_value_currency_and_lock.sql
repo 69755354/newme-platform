@@ -31,7 +31,13 @@ begin
   -- S46: the lead row is locked (to the end of the transaction) before anything is read, so two concurrent writers recompute one
   -- after the other and the later one sees the earlier one's committed rows. The lead row is also what the lead-won trigger and
   -- the stage routines already hold, so taking it first keeps one lock order (an advisory lock taken first could deadlock them).
-  select final_status, quotation_value into v_final, v_current from public.leads where id = p_lead_id for update;
+  begin
+    select final_status, quotation_value into v_final, v_current from public.leads where id = p_lead_id for update;
+  exception when lock_not_available or deadlock_detected then
+    -- the lead write never blocks the quotation / contract (S36 rule): the next write for this lead recomputes
+    raise warning 'sync_lead_quotation_value: lead % not locked: %', p_lead_id, sqlerrm;
+    return;
+  end;
   if not found then
     return;
   end if;

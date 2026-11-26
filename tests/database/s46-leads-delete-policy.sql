@@ -51,6 +51,34 @@ select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaa
 with d as (delete from public.leads where id = '46000000-0000-4000-8000-000000000003' returning 1)
 select pg_temp.expect((select count(*) = 1 from d), 'admin-can-delete');
 reset role;
+
+-- 4. the routine the leads list and board call (SECURITY DEFINER, bypasses row-level security) follows the same rule
+insert into public.leads (id, source, customer_name, phone, created_at, stage, quality, next_action, next_followup_date, assigned_to) values
+  ('46000000-0000-4000-8000-000000000005', 'website', 'S46 rpc sales',  '+971500004605', now(), 'contacted', 'good', 'call', current_date + 1, 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+  ('46000000-0000-4000-8000-000000000006', 'website', 'S46 rpc boss',   '+971500004606', now(), 'contacted', 'good', 'call', current_date + 1, 'cccccccc-cccc-cccc-cccc-cccccccccccc'),
+  ('46000000-0000-4000-8000-000000000007', 'website', 'S46 rpc admin',  '+971500004607', now(), 'contacted', 'good', 'call', current_date + 1, 'cccccccc-cccc-cccc-cccc-cccccccccccc');
+create or replace function pg_temp.sqlstate_of(p_sql text) returns text language plpgsql as $$
+begin
+  execute p_sql;
+  return 'ok';
+exception when others then
+  return sqlerrm;
+end $$;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc","role":"authenticated","iat":' || (extract(epoch from now())::bigint + 5) || '}', true);
+select pg_temp.expect(pg_temp.sqlstate_of($q$select public.delete_lead_atomic('46000000-0000-4000-8000-000000000005', gen_random_uuid())$q$) = 'FORBIDDEN_LEAD_DELETE', 'rpc-sales-cannot-delete-own-lead');
+select set_config('request.jwt.claims', '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated","iat":' || (extract(epoch from now())::bigint + 5) || '}', true);
+select pg_temp.expect(pg_temp.sqlstate_of($q$select public.delete_lead_atomic('46000000-0000-4000-8000-000000000006', gen_random_uuid())$q$) = 'ok', 'rpc-boss-can-delete');
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated","iat":' || (extract(epoch from now())::bigint + 5) || '}', true);
+select pg_temp.expect(pg_temp.sqlstate_of($q$select public.delete_lead_atomic('46000000-0000-4000-8000-000000000007', gen_random_uuid())$q$) = 'ok', 'rpc-admin-can-delete');
+reset role;
+select pg_temp.expect((select count(*) = 1 from public.leads where id = '46000000-0000-4000-8000-000000000005')
+  and (select count(*) = 0 from public.leads where id in ('46000000-0000-4000-8000-000000000006', '46000000-0000-4000-8000-000000000007')), 'rpc-only-the-sales-lead-survives');
+select pg_temp.expect((select count(*) = 1 and bool_and(p.prosecdef) and bool_and(p.proconfig @> array['search_path=pg_catalog, public, pg_temp']::text[])
+    and bool_and(has_function_privilege('authenticated', p.oid, 'EXECUTE')) and bool_and(has_function_privilege('service_role', p.oid, 'EXECUTE'))
+    and bool_and(not has_function_privilege('anon', p.oid, 'EXECUTE')) and bool_and(p.prosrc not like '%''sales''%')
+  from pg_proc p where p.oid = to_regprocedure('public.delete_lead_atomic(uuid,uuid)')), 'rpc-posture');
+
 select pg_temp.expect((select count(*) = 2 from public.leads where id in ('46000000-0000-4000-8000-000000000001', '46000000-0000-4000-8000-000000000004')), 'sales-leads-still-exist');
 
 rollback;

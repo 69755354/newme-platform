@@ -170,8 +170,8 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
 
   // ─── Delete lead ───
   const handleDelete = useCallback(
-    async (leadId: string, leadAssignedTo: string | null) => {
-      const canDelete = salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && leadAssignedTo === currentUserId);
+    async (leadId: string, _leadAssignedTo: string | null) => {
+      const canDelete = salesRole === "admin" || salesRole === "boss";
       if (!canDelete) return;
       const confirmed = confirm(t("leadDetail.confirmDelete") || "Are you sure you want to delete this lead? This action cannot be undone.");
       if (!confirmed) return;
@@ -189,7 +189,7 @@ export function useLeadMutations(params: UseLeadMutationsParams): UseLeadMutatio
       toast.success(lang === "zh" ? "已删除" : "Lead deleted");
       fetchLeads();
     },
-    [salesRole, currentUserId, fetchLeads, t, lang]
+    [salesRole, fetchLeads, t, lang]
   );
 
   return {

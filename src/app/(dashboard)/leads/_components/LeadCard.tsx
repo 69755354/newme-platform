@@ -277,7 +277,7 @@ export function LeadCard({
                 <Clock className="w-3 h-3" />{days === 0 ? t("common.today") : t("common.nDays").replace("{n}", String(days))}
               </span>
             )}
-            {(salesRole === "admin" || salesRole === "boss" || (salesRole === "sales" && lead.assigned_to === currentUserId)) && (
+            {(salesRole === "admin" || salesRole === "boss") && (
               <button title={t("common.delete") || "Delete"}
                 className="hidden h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-700 group-hover:inline-flex"
                 onClick={(event) => { event.stopPropagation(); void handleDelete(lead.id, lead.assigned_to); }}>

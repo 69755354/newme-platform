@@ -302,10 +302,10 @@
       "sha256": "f37603f9e7a0550b3795d6eb7e06a55220eef6c4caccb5b51ba7bf817415f435"
     },
     {
-      "$comment": "S46 (OS fix S46): drops the row-level-security policy policy_leads_delete_sales on public.leads so only admin and boss (policy_leads_delete_admin) can delete a lead. No table, column, function or grant changes.",
+      "$comment": "S46 (OS fix S46): drops the row-level-security policy policy_leads_delete_sales on public.leads and replaces public.delete_lead_atomic(uuid,uuid) in place, so only admin and boss can delete a lead. Same signature, security mode and pinned search_path; grants re-stated unchanged.",
       "version": "20261126000100",
       "file": "20261126000100_s46_leads_delete_admin_boss_only.sql",
-      "sha256": "cba585e1c2dfe8c08c7c64212be499834663fed30e45f110b1818f63daa37bcb"
+      "sha256": "10f49938f8be9cfc55b126dc3949b1590dce231f83ccceb68bfc159740254d2b"
     },
     {
       "$comment": "S46 (OS fix S46): trigger routine public.check_milestone_order() replaced in place: a reopened milestone (completed_at null) no longer counts as done. Same signature, security mode and pinned search_path; no table, column, policy or grant changes.",
@@ -317,7 +317,7 @@
       "$comment": "S46 (OS fix S46): public.sync_lead_quotation_value(uuid,numeric) and public.trg_sync_lead_quotation_value() replaced in place (old quotation currency checked before the lead value is cleared, foreign-currency contracts stay out of the AED lead value, the lead row is locked before recomputing); trigger trg_contract_sync_lead_value recreated to also watch contracts.currency. No data written, no grant changes.",
       "version": "20261126000300",
       "file": "20261126000300_s46_quotation_value_currency_and_lock.sql",
-      "sha256": "b1898311781df704e7622c497f843162425af19128c59dead91f0e0e3b4e32df"
+      "sha256": "58daac00240afd9e666431755d0abc277ecc744b0f62e8995aff6753de15aebc"
     }
   ],
   "companions": [
@@ -712,7 +712,7 @@
         {
           "name": "s46-leads-delete-admin-boss-only",
           "expect": true,
-          "sql": "SELECT coalesce((SELECT count(*)=0 FROM pg_catalog.pg_policies WHERE schemaname='public' AND tablename='leads' AND policyname='policy_leads_delete_sales') AND (SELECT count(*)=1 FROM pg_catalog.pg_policies WHERE schemaname='public' AND tablename='leads' AND policyname='policy_leads_delete_admin' AND cmd='DELETE'),false)"
+          "sql": "SELECT coalesce((SELECT count(*)=0 FROM pg_catalog.pg_policies WHERE schemaname='public' AND tablename='leads' AND policyname='policy_leads_delete_sales') AND (SELECT count(*)=1 FROM pg_catalog.pg_policies WHERE schemaname='public' AND tablename='leads' AND policyname='policy_leads_delete_admin' AND cmd='DELETE') AND (SELECT count(*)=1 AND bool_and(p.prosecdef) AND bool_and(p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::text[]) AND bool_and(p.prosrc NOT LIKE '%''sales''%') AND bool_and(has_function_privilege('authenticated',p.oid,'EXECUTE')) AND bool_and(NOT has_function_privilege('anon',p.oid,'EXECUTE')) FROM pg_catalog.pg_proc p WHERE p.oid=to_regprocedure('public.delete_lead_atomic(uuid,uuid)')),false)"
         },
         {
           "name": "s46-milestone-order-ignores-reopened",

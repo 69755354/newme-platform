@@ -442,3 +442,31 @@ test("S30: a NAS upload failure counts in worker health and reconcile reports th
   assert.match(readFileSync(ok.summary.report, "utf8"), /nas_unconfirmed_spool_days: 0/);
   assert.equal(ok.exitCode, 0);
 });
+
+test("S45: unmatched and fresh pending X writes are warnings (exit 0); a stale missing X write or lost registry row exits 1", async () => {
+  // lead 1 has a sheet row, lead 2 has none (unmatched), lead 3 has a row whose column X is empty
+  const mk = () => {
+    const leads = [lead(1), lead(2), lead(3)];
+    const t = setup(leads, { [META]: metaGrid(), [SALES]: salesGrid([sRow("+971500000001"), sRow("+971500000003")]) });
+    return { leads, t };
+  };
+  const { leads, t } = mk();
+  await t.run();
+  t.sheets.grids[SALES][2][23] = ""; // lead 3's X cell was cleared later
+  const recent = leads.map((l) => ({ ...l, updated_at: new Date(t.clock.t - 5 * 60_000).toISOString() }));
+  const warn = console.warn; const logged = []; console.warn = (m) => logged.push(m);
+  let r; try { r = await runReconcile({ osReader: reader(recent), sheets: t.sheets, io: t.io, now: () => t.clock.t }); } finally { console.warn = warn; }
+  assert.equal(r.exitCode, 0); assert.equal(r.summary.drift, false); assert.ok(r.summary.warnings >= 1);
+  assert.ok(logged.some((m) => /WARNING/.test(m)));
+  const text = readFileSync(r.summary.report, "utf8");
+  assert.match(text, /WARNING: some click ids are not matched into column X \(unmatched=1/); assert.match(text, /ok \(with warnings\)/);
+  assert.ok(!text.includes("971500"));
+  // the same gap two hours after the lead last changed is a real gap
+  const old = leads.map((l) => ({ ...l, updated_at: new Date(t.clock.t - 120 * 60_000).toISOString() }));
+  const stale = await runReconcile({ osReader: reader(old), sheets: t.sheets, io: t.io, now: () => t.clock.t });
+  assert.equal(stale.exitCode, 1); assert.equal(stale.summary.drift, true);
+  assert.match(readFileSync(stale.summary.report, "utf8"), /overdue_x_writes: 1/);
+  // a lost Meta registry row still fails
+  t.sheets.grids[META].length = 1;
+  assert.equal((await runReconcile({ osReader: reader(recent), sheets: t.sheets, io: t.io, now: () => t.clock.t })).exitCode, 1);
+});

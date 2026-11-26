@@ -152,6 +152,27 @@ export function selectWaiting({ conversations = [], waitStarts = new Map(), igno
   return out;
 }
 
+/**
+ * S45: has anyone followed this lead up since the customer's last message? Salespeople mostly answer from their own phone or by
+ * call, which the company number never sees, so OS records are the evidence:
+ *   * a follow-up log (not a note-only log, not a no-answer attempt) written after the message;
+ *   * last_contact_date carrying a real time later than the message. A pure date (midnight) is ignored: the functions that write
+ *     notes and logs stamp the day only, and logs are covered exactly by the first rule.
+ * Stage and updated_at are deliberately NOT evidence: the system bumps updated_at itself (inbound messages, dispatch, sync).
+ * logs: follow_up_logs rows { lead_id, contact_type, no_answer, contact_time, created_at }.
+ */
+export function salesFollowedUpSince(lead, logs = [], lastInboundMs) {
+  if (!lead || !Number.isFinite(lastInboundMs)) return false;
+  for (const log of logs) {
+    if (log?.contact_type === "note" || log?.no_answer) continue;
+    const at = ms(log?.contact_time ?? log?.created_at);
+    if (Number.isFinite(at) && at > lastInboundMs) return true;
+  }
+  const contactMs = lead.last_contact_date ? ms(lead.last_contact_date) : NaN;
+  const dateOnly = Number.isFinite(contactMs) && contactMs % DAY === 0;
+  return Number.isFinite(contactMs) && !dateOnly && contactMs > lastInboundMs;
+}
+
 /** Group alert items per responsible person. */
 export function planWaitAlert(items, { leadAssignee = new Map(), channelOwners = new Map(), profiles = [] } = {}) {
   const groups = new Map();
@@ -168,8 +189,8 @@ export function planWaitAlert(items, { leadAssignee = new Map(), channelOwners =
 /** The alert text, one line, within the sender's limit. Names and counts only. */
 export function buildWaitAlert(groups, thresholdHours = DEFAULT_WAIT_ALERT_HOURS) {
   const total = groups.reduce((s, g) => s + g.count, 0);
-  const head = `WhatsApp有${total}位客户已等回复超过${thresholdHours}小时（工作时间）：`;
-  const tail = "。请尽快回复。";
+  const head = `WhatsApp公司号上有${total}位客户已等回复超过${thresholdHours}小时（工作时间）：`;
+  const tail = "。公司号上还没有回复，请确认销售是否已用自己手机或电话联系。";
   for (let shown = groups.length; shown >= 1; shown -= 1) {
     const who = groups.slice(0, shown).map((g) => `${g.name} ${g.count}条(最久${hoursLabel(g.longest_hours)})`).join("、");
     const candidate = `${head}${who}${shown < groups.length ? `等${groups.length}人` : ""}${tail}`;
